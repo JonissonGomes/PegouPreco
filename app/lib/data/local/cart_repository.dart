@@ -33,22 +33,24 @@ class CartRepository {
     double? wholesalePrice,
     double? minWholesaleQty,
   }) async {
+    if (product.id == Isar.autoIncrement) {
+      throw StateError('Produto sem id Isar — não é possível upsert no carrinho');
+    }
     await _isar.writeTxn(() async {
-      var item = await _isar.cartItems
-          .filter()
-          .productIdEqualTo(product.id)
-          .findFirst();
+      var item = await _isar.cartItems.getByProductId(product.id);
       item ??= CartItem()
         ..productId = product.id
         ..checkedOff = false;
       item
+        ..productId = product.id
         ..productName = product.name
         ..quantity = quantity
         ..retailPrice = retailPrice
         ..wholesalePrice = wholesalePrice
         ..minWholesaleQty = minWholesaleQty
         ..updatedAt = DateTime.now().toUtc();
-      await _isar.cartItems.put(item);
+      // putByProductId respeita o índice único (replace) em productId.
+      await _isar.cartItems.putByProductId(item);
     });
   }
 
@@ -62,6 +64,32 @@ class CartRepository {
       }
       item
         ..quantity = quantity
+        ..updatedAt = DateTime.now().toUtc();
+      await _isar.cartItems.put(item);
+    });
+  }
+
+  Future<void> updateItem({
+    required int id,
+    required String productName,
+    required double quantity,
+    required double retailPrice,
+    double? wholesalePrice,
+    double? minWholesaleQty,
+  }) async {
+    await _isar.writeTxn(() async {
+      final item = await _isar.cartItems.get(id);
+      if (item == null) return;
+      if (quantity <= 0) {
+        await _isar.cartItems.delete(id);
+        return;
+      }
+      item
+        ..productName = productName.trim()
+        ..quantity = quantity
+        ..retailPrice = retailPrice
+        ..wholesalePrice = wholesalePrice
+        ..minWholesaleQty = minWholesaleQty
         ..updatedAt = DateTime.now().toUtc();
       await _isar.cartItems.put(item);
     });

@@ -19,6 +19,7 @@ class IsarService {
     PriceVoteSchema,
     UserReputationSchema,
     MarketReviewSchema,
+    ShoppingListSchema,
   ];
 
   static Future<Isar> open() async {

@@ -38,8 +38,38 @@ A partir de 3 un
 ''';
     final item = LabelParser.parse(text);
     expect(item, isNotNull);
-    expect(item!.unitPrice, 24.90);
+    expect(item!.description.toUpperCase(), contains('ARROZ'));
+    expect(item.unitPrice, 24.90);
     expect(item.wholesalePrice, 21.90);
     expect(item.minWholesaleQty, 3);
+  });
+
+  test('LabelParser prefers product name over unit-price header', () {
+    const text = '''
+Preços por unidade em (R\$)
+Salg Pippos Churrasco 75G
+R\$ 5,49
+R\$ 4,99
+A partir de 3 un
+''';
+    final item = LabelParser.parse(text);
+    expect(item, isNotNull);
+    expect(item!.description.toLowerCase(), contains('pippos'));
+    expect(item.description.toLowerCase(), isNot(contains('unidade')));
+    expect(item.unitPrice, 5.49);
+    expect(item.wholesalePrice, 4.99);
+    expect(item.minWholesaleQty, 3);
+  });
+
+  test('LabelParser leaves minWholesaleQty null when not detected', () {
+    const text = '''
+Biscoito Cream Cracker 400G
+Varejo R\$ 8,90
+Atacado R\$ 7,50
+''';
+    final item = LabelParser.parse(text);
+    expect(item, isNotNull);
+    expect(item!.wholesalePrice, 7.50);
+    expect(item.minWholesaleQty, isNull);
   });
 }

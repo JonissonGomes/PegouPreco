@@ -17,6 +17,23 @@ class ProductPriceStats {
   final String? lastMarketName;
 }
 
+/// Contexto de comparação para cards do carrinho (mockup).
+class CartPriceContext {
+  CartPriceContext({
+    this.previousPrice,
+    this.previousAt,
+    this.bestPrice,
+    this.bestMarketName,
+    this.bestMarketId,
+  });
+
+  final double? previousPrice;
+  final DateTime? previousAt;
+  final double? bestPrice;
+  final String? bestMarketName;
+  final int? bestMarketId;
+}
+
 class PriceLogRepository {
   PriceLogRepository(this._isar);
   final Isar _isar;
@@ -59,6 +76,50 @@ class PriceLogRepository {
       lastPrice: last.retailPrice,
       lastCapturedAt: last.capturedAt,
       lastMarketName: marketName,
+    );
+  }
+
+  /// Compra anterior + menor preço conhecido (para UI do carrinho).
+  Future<CartPriceContext> cartContextForProduct({
+    required int productId,
+    required double currentUnitPrice,
+    int? currentMarketId,
+  }) async {
+    final logs = await forProduct(productId);
+    if (logs.isEmpty) return CartPriceContext();
+
+    // Compra anterior: segundo log mais recente, ou o primeiro se o atual
+    // acabou de ser gravado com o mesmo preço.
+    PriceLog? previous;
+    for (final log in logs) {
+      final sameAsCurrent =
+          (log.retailPrice - currentUnitPrice).abs() < 0.009 &&
+              (currentMarketId == null || log.marketId == currentMarketId);
+      if (!sameAsCurrent) {
+        previous = log;
+        break;
+      }
+    }
+    previous ??= logs.length > 1 ? logs[1] : null;
+
+    PriceLog? best;
+    for (final log in logs) {
+      if (best == null || log.retailPrice < best.retailPrice) {
+        best = log;
+      }
+    }
+
+    String? bestMarketName;
+    if (best?.marketId != null) {
+      bestMarketName = (await _isar.markets.get(best!.marketId!))?.name;
+    }
+
+    return CartPriceContext(
+      previousPrice: previous?.retailPrice,
+      previousAt: previous?.capturedAt,
+      bestPrice: best?.retailPrice,
+      bestMarketName: bestMarketName,
+      bestMarketId: best?.marketId,
     );
   }
 

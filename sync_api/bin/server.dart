@@ -204,7 +204,7 @@ Router createRouter(DataStore store, DotEnv env) {
         ? DateTime.tryParse(sinceRaw) ??
             DateTime.fromMillisecondsSinceEpoch(0, isUtc: true)
         : DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
-    final result = await store.pull(since);
+    final result = await store.pull(userId, since);
     return Response.ok(
       jsonEncode(result),
       headers: {'Content-Type': 'application/json'},
@@ -331,6 +331,7 @@ class DataStore {
   final _memProducts = <String, Map<String, dynamic>>{};
   final _memMarkets = <String, Map<String, dynamic>>{};
   final _memLogs = <String, Map<String, dynamic>>{};
+  final _memShoppingLists = <String, Map<String, dynamic>>{};
   final _memVotes = <String, Map<String, dynamic>>{};
   final _memReputation = <String, Map<String, dynamic>>{};
   final _memReviews = <String, Map<String, dynamic>>{};
@@ -712,6 +713,7 @@ class DataStore {
     final productIdMap = <String, String>{};
     final marketIdMap = <String, String>{};
     final priceLogIdMap = <String, String>{};
+    final shoppingListIdMap = <String, String>{};
 
     for (final raw in (body['markets'] as List? ?? const [])) {
       final m = Map<String, dynamic>.from(raw as Map);
@@ -787,10 +789,34 @@ class DataStore {
       priceLogIdMap['${l['localId']}'] = remoteId;
     }
 
+    for (final raw in (body['shoppingLists'] as List? ?? const [])) {
+      final s = Map<String, dynamic>.from(raw as Map);
+      final remoteId = await _upsertLww(
+        collection: 'shopping_lists',
+        mem: _memShoppingLists,
+        incoming: {
+          'id': s['remoteId'] ?? const Uuid().v4(),
+          'ownerId': userId,
+          'name': s['name'],
+          'marketId': s['marketId'],
+          'marketName': s['marketName'],
+          'itemsJson': s['itemsJson'],
+          'subtotal': s['subtotal'],
+          'savings': s['savings'],
+          'itemCount': s['itemCount'],
+          'finishedAt': s['finishedAt'],
+          'updatedAt': s['updatedAt'],
+        },
+        matchKeys: const [],
+      );
+      shoppingListIdMap['${s['localId']}'] = remoteId;
+    }
+
     return {
       'productIdMap': productIdMap,
       'marketIdMap': marketIdMap,
       'priceLogIdMap': priceLogIdMap,
+      'shoppingListIdMap': shoppingListIdMap,
     };
   }
 
@@ -860,7 +886,7 @@ class DataStore {
     return existing['id'] as String;
   }
 
-  Future<Map<String, dynamic>> pull(DateTime since) async {
+  Future<Map<String, dynamic>> pull(String userId, DateTime since) async {
     if (mode == 'memory') {
       bool after(Map<String, dynamic> d) {
         final u = DateTime.tryParse(d['updatedAt'] as String? ?? '');
@@ -871,6 +897,9 @@ class DataStore {
         'products': _memProducts.values.where(after).toList(),
         'markets': _memMarkets.values.where(after).toList(),
         'priceLogs': _memLogs.values.where(after).toList(),
+        'shoppingLists': _memShoppingLists.values
+            .where((d) => d['ownerId'] == userId && after(d))
+            .toList(),
       };
     }
 
@@ -881,10 +910,18 @@ class DataStore {
         await _col('markets').find(where.gt('updatedAt', iso)).toList();
     final logs =
         await _col('price_logs').find(where.gt('updatedAt', iso)).toList();
+    final shoppingLists = await _col('shopping_lists')
+        .find(
+          where
+              .eq('ownerId', userId)
+              .gt('updatedAt', iso),
+        )
+        .toList();
     return {
       'products': products,
       'markets': markets,
       'priceLogs': logs,
+      'shoppingLists': shoppingLists,
     };
   }
 

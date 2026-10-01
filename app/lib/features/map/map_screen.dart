@@ -7,6 +7,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:pegou_preco/core/di/providers.dart';
+import 'package:pegou_preco/core/permissions/permission_gate.dart';
 import 'package:pegou_preco/core/theme/app_theme.dart';
 import 'package:pegou_preco/core/widgets/app_button.dart';
 import 'package:pegou_preco/core/widgets/brand_app_bar.dart';
@@ -27,6 +28,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   LatLng _center = _defaultCenter;
   List<Market> _markets = [];
   var _loading = true;
+  var _locationBlocked = false;
 
   @override
   void initState() {
@@ -74,19 +76,27 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   }
 
   Future<void> _locate() async {
+    final result = await PermissionGate.ensureLocation();
+    if (result != PermissionGateResult.granted) {
+      if (mounted) {
+        setState(() => _locationBlocked = true);
+        await PermissionGate.showBlockedMessage(
+          context,
+          featureName: 'a localização no mapa',
+          permissionName: 'localização',
+          offerSettings: result == PermissionGateResult.permanentlyDenied,
+        );
+      }
+      return;
+    }
     try {
-      var perm = await Geolocator.checkPermission();
-      if (perm == LocationPermission.denied) {
-        perm = await Geolocator.requestPermission();
-      }
-      if (perm == LocationPermission.denied ||
-          perm == LocationPermission.deniedForever) {
-        return;
-      }
       final pos = await Geolocator.getCurrentPosition();
       final ll = LatLng(pos.latitude, pos.longitude);
       if (!mounted) return;
-      setState(() => _center = ll);
+      setState(() {
+        _center = ll;
+        _locationBlocked = false;
+      });
       _mapController.move(ll, 13);
     } catch (_) {}
   }
@@ -310,35 +320,105 @@ class _MapScreenState extends ConsumerState<MapScreen> {
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : FlutterMap(
-              mapController: _mapController,
-              options: MapOptions(
-                initialCenter: _center,
-                initialZoom: 12,
-              ),
+          : Stack(
               children: [
-                TileLayer(
-                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                  userAgentPackageName: 'br.com.pegoupreco.app',
-                ),
-                MarkerLayer(
-                  markers: [
-                    for (final m in withGeo)
-                      Marker(
-                        point: LatLng(m.lat!, m.lng!),
-                        width: 40,
-                        height: 40,
-                        child: GestureDetector(
-                          onTap: () => _openMarket(m),
-                          child: Icon(
-                            LucideIcons.mapPin,
-                            color: _markerColor(m.priceLevel),
-                            size: 36,
-                          ),
+                FlutterMap(
+                  mapController: _mapController,
+                  options: MapOptions(
+                    initialCenter: _center,
+                    initialZoom: 12,
+                  ),
+                  children: [
+                    TileLayer(
+                      urlTemplate:
+                          'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+                      subdomains: const ['a', 'b', 'c', 'd'],
+                      userAgentPackageName: 'br.com.pegoupreco.app',
+                    ),
+                    RichAttributionWidget(
+                      attributions: [
+                        TextSourceAttribution(
+                          '© OpenStreetMap · © CARTO',
+                          onTap: () {},
                         ),
-                      ),
+                      ],
+                    ),
+                    MarkerLayer(
+                      markers: [
+                        for (final m in withGeo)
+                          Marker(
+                            point: LatLng(m.lat!, m.lng!),
+                            width: 56,
+                            height: 64,
+                            alignment: Alignment.topCenter,
+                            child: GestureDetector(
+                              onTap: () => _openMarket(m),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: _markerColor(m.priceLevel),
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black
+                                              .withValues(alpha: 0.12),
+                                          blurRadius: 4,
+                                          offset: const Offset(0, 2),
+                                        ),
+                                      ],
+                                    ),
+                                    child: Text(
+                                      m.avgRating != null
+                                          ? '★ ${m.avgRating!.toStringAsFixed(1)}'
+                                          : '★ —',
+                                      style: GoogleFonts.plusJakartaSans(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w800,
+                                        color: AppTheme.navy,
+                                      ),
+                                    ),
+                                  ),
+                                  Icon(
+                                    LucideIcons.mapPin,
+                                    color: _markerColor(m.priceLevel),
+                                    size: 32,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
                   ],
                 ),
+                if (_locationBlocked)
+                  Positioned(
+                    left: 16,
+                    right: 16,
+                    bottom: 88,
+                    child: Material(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      elevation: 2,
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Text(
+                          'Sem permissão de localização — o mapa continua '
+                          'disponível, mas não centraliza em você.',
+                          style: GoogleFonts.plusJakartaSans(fontSize: 13),
+                        ),
+                      ),
+                    ),
+                  ),
               ],
             ),
       floatingActionButton: withGeo.isEmpty

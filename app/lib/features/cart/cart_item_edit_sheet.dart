@@ -7,30 +7,47 @@ import 'package:pegou_preco/core/theme/app_theme.dart';
 import 'package:pegou_preco/core/utils/money.dart';
 import 'package:pegou_preco/core/widgets/app_button.dart';
 import 'package:pegou_preco/core/widgets/app_text_field.dart';
-import 'package:pegou_preco/features/vision/models/review_item.dart';
+import 'package:pegou_preco/data/local/schemas.dart';
 
-Future<ReviewItem?> showOcrConfirmSheet(
+class CartItemEditResult {
+  const CartItemEditResult({
+    required this.productName,
+    required this.quantity,
+    required this.retailPrice,
+    this.wholesalePrice,
+    this.minWholesaleQty,
+  });
+
+  final String productName;
+  final double quantity;
+  final double retailPrice;
+  final double? wholesalePrice;
+  final double? minWholesaleQty;
+}
+
+Future<CartItemEditResult?> showCartItemEditSheet(
   BuildContext context, {
-  required ReviewItem item,
+  required CartItem item,
 }) {
-  return showModalBottomSheet<ReviewItem>(
+  return showModalBottomSheet<CartItemEditResult>(
     context: context,
     isScrollControlled: true,
     showDragHandle: true,
-    builder: (_) => _OcrConfirmBody(item: item),
+    builder: (_) => _CartItemEditBody(item: item),
   );
 }
 
-class _OcrConfirmBody extends StatefulWidget {
-  const _OcrConfirmBody({required this.item});
-  final ReviewItem item;
+class _CartItemEditBody extends StatefulWidget {
+  const _CartItemEditBody({required this.item});
+  final CartItem item;
 
   @override
-  State<_OcrConfirmBody> createState() => _OcrConfirmBodyState();
+  State<_CartItemEditBody> createState() => _CartItemEditBodyState();
 }
 
-class _OcrConfirmBodyState extends State<_OcrConfirmBody> {
+class _CartItemEditBodyState extends State<_CartItemEditBody> {
   late final TextEditingController _name;
+  late final TextEditingController _qty;
   late final TextEditingController _price;
   late final TextEditingController _wholesale;
   late final TextEditingController _minQty;
@@ -38,9 +55,10 @@ class _OcrConfirmBodyState extends State<_OcrConfirmBody> {
   @override
   void initState() {
     super.initState();
-    _name = TextEditingController(text: widget.item.description);
+    _name = TextEditingController(text: widget.item.productName);
+    _qty = TextEditingController(text: formatQty(widget.item.quantity));
     _price = TextEditingController(
-      text: widget.item.unitPrice.toStringAsFixed(2),
+      text: widget.item.retailPrice.toStringAsFixed(2),
     );
     _wholesale = TextEditingController(
       text: widget.item.wholesalePrice?.toStringAsFixed(2) ?? '',
@@ -55,6 +73,7 @@ class _OcrConfirmBodyState extends State<_OcrConfirmBody> {
   @override
   void dispose() {
     _name.dispose();
+    _qty.dispose();
     _price.dispose();
     _wholesale.dispose();
     _minQty.dispose();
@@ -63,18 +82,24 @@ class _OcrConfirmBodyState extends State<_OcrConfirmBody> {
 
   void _confirm() {
     final price = parseBrl(_price.text);
-    if (_name.text.trim().isEmpty || price == null || price <= 0) {
+    final qty = double.tryParse(_qty.text.replaceAll(',', '.'));
+    if (_name.text.trim().isEmpty ||
+        price == null ||
+        price <= 0 ||
+        qty == null ||
+        qty <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Informe nome e preço válidos')),
+        const SnackBar(content: Text('Informe nome, quantidade e preço válidos')),
       );
       return;
     }
     HapticFeedback.mediumImpact();
     Navigator.pop(
       context,
-      widget.item.copyWith(
-        description: _name.text.trim(),
-        unitPrice: price,
+      CartItemEditResult(
+        productName: _name.text.trim(),
+        quantity: qty,
+        retailPrice: price,
         wholesalePrice: _wholesale.text.trim().isEmpty
             ? null
             : parseBrl(_wholesale.text),
@@ -99,22 +124,24 @@ class _OcrConfirmBodyState extends State<_OcrConfirmBody> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Confirmar etiqueta',
+            'Editar item',
             style: GoogleFonts.plusJakartaSans(
               fontSize: 20,
               fontWeight: FontWeight.w800,
             ),
-          ),
-          const Gap(4),
-          Text(
-            'Ajuste o que o OCR leu antes de salvar.',
-            style: GoogleFonts.plusJakartaSans(color: AppTheme.muted),
           ),
           const Gap(16),
           AppTextField(
             controller: _name,
             label: 'Produto',
             prefixIcon: LucideIcons.package,
+          ),
+          const Gap(12),
+          AppTextField(
+            controller: _qty,
+            label: 'Quantidade',
+            keyboardType: TextInputType.number,
+            prefixIcon: LucideIcons.hash,
           ),
           const Gap(12),
           AppTextField(
@@ -139,7 +166,7 @@ class _OcrConfirmBodyState extends State<_OcrConfirmBody> {
           ),
           const Gap(20),
           AppButton(
-            label: 'Salvar preço',
+            label: 'Salvar',
             icon: LucideIcons.check,
             onPressed: _confirm,
           ),

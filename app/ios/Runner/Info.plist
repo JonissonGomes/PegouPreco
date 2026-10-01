@@ -6,6 +6,10 @@
 	<string>PegouPreço usa a câmera para ler QR Codes de NFC-e e etiquetas de preço.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>PegouPreço pode usar fotos de etiquetas para OCR de preços.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>PegouPreço usa sua localização para sugerir mercados próximos e posicionar o mapa.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>PegouPreço usa sua localização para sugerir mercados próximos e posicionar o mapa.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>

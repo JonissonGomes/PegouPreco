@@ -1,13 +1,28 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:pegou_preco/core/permissions/permission_gate.dart';
 import 'package:pegou_preco/core/routing/app_router.dart';
 import 'package:pegou_preco/core/theme/app_theme.dart';
 
-class PegouPrecoApp extends ConsumerWidget {
+class PegouPrecoApp extends ConsumerStatefulWidget {
   const PegouPrecoApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<PegouPrecoApp> createState() => _PegouPrecoAppState();
+}
+
+class _PegouPrecoAppState extends ConsumerState<PegouPrecoApp> {
+  @override
+  void initState() {
+    super.initState();
+    // Após o 1º frame (Activity pronta) pede permissões se ainda faltarem.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      PermissionGate.requestStartupPermissionsIfNeeded();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final onboarding = ref.watch(onboardingDoneProvider);
 
     if (onboarding.isLoading) {

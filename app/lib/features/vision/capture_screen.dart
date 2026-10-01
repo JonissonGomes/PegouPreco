@@ -11,8 +11,9 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
-import 'package:permission_handler/permission_handler.dart';
+import 'package:isar/isar.dart';
 import 'package:pegou_preco/core/di/providers.dart';
+import 'package:pegou_preco/core/permissions/permission_gate.dart';
 import 'package:pegou_preco/core/routing/app_router.dart';
 import 'package:pegou_preco/core/theme/app_theme.dart';
 import 'package:pegou_preco/core/utils/money.dart';
@@ -20,6 +21,7 @@ import 'package:pegou_preco/core/widgets/app_button.dart';
 import 'package:pegou_preco/core/widgets/brand_app_bar.dart';
 import 'package:pegou_preco/data/local/schemas.dart';
 import 'package:pegou_preco/data/remote/sefaz_client.dart';
+import 'package:pegou_preco/features/cart/list_session_actions.dart';
 import 'package:pegou_preco/features/market/market_picker_sheet.dart';
 import 'package:pegou_preco/features/vision/models/review_item.dart';
 import 'package:pegou_preco/features/vision/ocr_confirm_sheet.dart';
@@ -36,11 +38,13 @@ class CaptureScreen extends ConsumerStatefulWidget {
 }
 
 class _CaptureScreenState extends ConsumerState<CaptureScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   CaptureMode _mode = CaptureMode.qr;
+  /// autoStart: false evita disputa de câmera com o IndexedStack (tela preta).
   final _scannerController = MobileScannerController(
     detectionSpeed: DetectionSpeed.normal,
     facing: CameraFacing.back,
+    autoStart: false,
   );
   final _textRecognizer = TextRecognizer(script: TextRecognitionScript.latin);
 
@@ -50,11 +54,15 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen>
   var _hint = 'Aponte para o QR da NFC-e';
   String? _lastQr;
   var _tabActive = false;
+  var _cameraBlocked = false;
+  var _listGateReady = false;
+  var _cameraBusy = false;
   ProviderSubscription<int>? _tabSub;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _laser = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1600),
@@ -64,10 +72,65 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen>
     }, fireImmediately: true);
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!_tabActive) return;
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused) {
+      _releaseAllCameras();
+    } else if (state == AppLifecycleState.resumed) {
+      _activateCurrentCamera();
+    }
+  }
+
   Future<void> _onTabVisibilityChanged(bool active) async {
     if (_tabActive == active) return;
     _tabActive = active;
     if (!active) {
+      _listGateReady = false;
+      await _releaseAllCameras();
+      if (mounted) setState(() {});
+      return;
+    }
+
+    if (!mounted) return;
+    final listOk = await ensureActiveListForCapture(context, ref);
+    if (!mounted) return;
+    if (!listOk) {
+      setState(() => _listGateReady = false);
+      context.go('/cart');
+      return;
+    }
+    _listGateReady = true;
+    await _activateCurrentCamera();
+  }
+
+  Future<void> _activateCurrentCamera() async {
+    if (!_tabActive || !mounted) return;
+    final camOk = await _ensureCameraPermission();
+    if (!mounted) return;
+    if (!camOk) {
+      setState(() => _cameraBlocked = true);
+      return;
+    }
+    setState(() => _cameraBlocked = false);
+    if (_mode == CaptureMode.qr) {
+      await _startQrCamera();
+    } else {
+      await _initOcrCamera(force: true);
+    }
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _releaseAllCameras() async {
+    if (_cameraBusy) {
+      // Aguarda operação em curso para não deixar handle órfão.
+      for (var i = 0; i < 20 && _cameraBusy; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      }
+    }
+    _cameraBusy = true;
+    try {
       try {
         await _scannerController.stop();
       } catch (_) {}
@@ -78,22 +141,16 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen>
           await cam.dispose();
         } catch (_) {}
       }
-      if (mounted) setState(() {});
-      return;
+      // Pequena folga para o SO liberar o hardware da câmera.
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+    } finally {
+      _cameraBusy = false;
     }
-    if (_mode == CaptureMode.qr) {
-      try {
-        await _scannerController.start();
-      } catch (_) {}
-    } else {
-      final ok = await _ensureCameraPermission();
-      if (ok && mounted) await _initOcrCamera();
-    }
-    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _tabSub?.close();
     _laser?.dispose();
     try {
@@ -105,32 +162,104 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen>
   }
 
   Future<bool> _ensureCameraPermission() async {
-    final status = await Permission.camera.request();
-    return status.isGranted;
+    final result = await PermissionGate.ensureCamera();
+    if (result == PermissionGateResult.granted) {
+      _cameraBlocked = false;
+      return true;
+    }
+    if (mounted) {
+      await PermissionGate.showBlockedMessage(
+        context,
+        featureName: 'a captura de etiquetas e QR',
+        permissionName: 'câmera',
+        offerSettings: result == PermissionGateResult.permanentlyDenied,
+      );
+    }
+    _cameraBlocked = true;
+    return false;
   }
 
-  Future<void> _initOcrCamera() async {
-    if (_cameraController != null) return;
-    final cameras = await availableCameras();
-    if (cameras.isEmpty) return;
-    final back = cameras.firstWhere(
-      (c) => c.lensDirection == CameraLensDirection.back,
-      orElse: () => cameras.first,
-    );
-    final controller = CameraController(
-      back,
-      ResolutionPreset.high,
-      enableAudio: false,
-    );
-    await controller.initialize();
-    if (!mounted) {
-      await controller.dispose();
+  Future<void> _startQrCamera() async {
+    if (!_tabActive || _cameraBusy) return;
+    _cameraBusy = true;
+    try {
+      final cam = _cameraController;
+      _cameraController = null;
+      if (cam != null) {
+        try {
+          await cam.dispose();
+        } catch (_) {}
+        await Future<void>.delayed(const Duration(milliseconds: 120));
+      }
+      try {
+        await _scannerController.stop();
+      } catch (_) {}
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+      if (!_tabActive || !mounted) return;
+      await _scannerController.start();
+    } catch (_) {
+      // Retry único após liberar hardware.
+      try {
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+        if (_tabActive && mounted) await _scannerController.start();
+      } catch (_) {}
+    } finally {
+      _cameraBusy = false;
+    }
+  }
+
+  Future<void> _initOcrCamera({bool force = false}) async {
+    if (!_tabActive) return;
+    if (!force &&
+        _cameraController != null &&
+        _cameraController!.value.isInitialized) {
       return;
     }
-    setState(() => _cameraController = controller);
+    if (_cameraBusy) return;
+    _cameraBusy = true;
+    try {
+      try {
+        await _scannerController.stop();
+      } catch (_) {}
+      final old = _cameraController;
+      _cameraController = null;
+      if (old != null) {
+        try {
+          await old.dispose();
+        } catch (_) {}
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      if (!_tabActive || !mounted) return;
+
+      final cameras = await availableCameras();
+      if (cameras.isEmpty) return;
+      final back = cameras.firstWhere(
+        (c) => c.lensDirection == CameraLensDirection.back,
+        orElse: () => cameras.first,
+      );
+      final controller = CameraController(
+        back,
+        ResolutionPreset.medium,
+        enableAudio: false,
+        imageFormatGroup: ImageFormatGroup.jpeg,
+      );
+      await controller.initialize();
+      if (!mounted || !_tabActive) {
+        await controller.dispose();
+        return;
+      }
+      setState(() => _cameraController = controller);
+    } catch (_) {
+      if (mounted) {
+        setState(() => _hint = 'Falha ao abrir a câmera — toque para tentar');
+      }
+    } finally {
+      _cameraBusy = false;
+    }
   }
 
   Future<void> _switchMode(CaptureMode mode) async {
+    if (_mode == mode && !_cameraBlocked) return;
     HapticFeedback.selectionClick();
     setState(() {
       _mode = mode;
@@ -138,15 +267,20 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen>
           ? 'Aponte para o QR da NFC-e'
           : 'Enquadre a etiqueta e toque em Capturar OCR';
     });
-    if (mode == CaptureMode.ocr) {
-      await _scannerController.stop();
-      final ok = await _ensureCameraPermission();
-      if (ok) await _initOcrCamera();
-    } else {
-      await _cameraController?.dispose();
-      _cameraController = null;
-      await _scannerController.start();
+    if (!_tabActive) return;
+    final ok = await _ensureCameraPermission();
+    if (!ok) {
+      if (mounted) setState(() {});
+      return;
     }
+    await _releaseAllCameras();
+    if (!mounted || !_tabActive) return;
+    if (mode == CaptureMode.ocr) {
+      await _initOcrCamera(force: true);
+    } else {
+      await _startQrCamera();
+    }
+    if (mounted) setState(() {});
   }
 
   Future<void> _onQrDetect(BarcodeCapture capture) async {
@@ -188,15 +322,13 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen>
 
   Future<void> _captureOcr() async {
     if (_busy) return;
-    final ok = await _ensureCameraPermission();
-    if (!ok) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Permissão de câmera negada')),
-        );
-      }
-      return;
+    if (!_listGateReady) {
+      final listOk = await ensureActiveListForCapture(context, ref);
+      if (!listOk || !mounted) return;
+      _listGateReady = true;
     }
+    final ok = await _ensureCameraPermission();
+    if (!ok) return;
 
     HapticFeedback.lightImpact();
     setState(() {
@@ -257,11 +389,25 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen>
     }
   }
 
+  Future<void> _addToCart({
+    required Product product,
+    required ReviewItem item,
+  }) async {
+    await ref.read(cartRepositoryProvider).upsert(
+          product: product,
+          quantity: item.quantity <= 0 ? 1 : item.quantity,
+          retailPrice: item.unitPrice,
+          wholesalePrice: item.wholesalePrice,
+          minWholesaleQty: item.minWholesaleQty,
+        );
+  }
+
   Future<void> _handleOcrItem(ReviewItem parsed) async {
     final confirmed = await showOcrConfirmSheet(context, item: parsed);
     if (confirmed == null || !mounted) return;
 
-    var marketId = ref.read(currentMarketIdProvider).valueOrNull;
+    var marketId = ref.read(activeShoppingListProvider).valueOrNull?.marketId ??
+        ref.read(currentMarketIdProvider).valueOrNull;
     if (marketId == null) {
       final picked = await showMarketPickerSheet(context);
       marketId = picked?.id;
@@ -271,6 +417,14 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen>
     final product = await ref
         .read(productRepositoryProvider)
         .resolveOrCreate(confirmed.description);
+    if (product.id == Isar.autoIncrement) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Falha ao salvar produto — tente de novo')),
+        );
+      }
+      return;
+    }
 
     if (marketId != null) {
       final existing = await ref
@@ -290,6 +444,8 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen>
           marketName: market?.name,
         );
         if (!mounted) return;
+        if (action == null) return;
+
         final userId = await ref.read(localUserIdProvider.future);
         if (action == PriceCheckAction.confirm) {
           await ref.read(crowdRepositoryProvider).castVote(
@@ -297,11 +453,25 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen>
                 voterId: userId,
                 vote: VoteType.confirm,
               );
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Preço confirmado — +10 pts Fiscal')),
-            );
-          }
+          // Confirmar preço da comunidade também adiciona ao carrinho.
+          await _addToCart(
+            product: product,
+            item: ReviewItem(
+              description: confirmed.description,
+              quantity: confirmed.quantity <= 0 ? 1 : confirmed.quantity,
+              unitPrice: existing.retailPrice,
+              wholesalePrice: existing.wholesalePrice,
+              minWholesaleQty: existing.minWholesaleQty,
+            ),
+          );
+          HapticFeedback.mediumImpact();
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Preço confirmado e item adicionado ao carrinho'),
+            ),
+          );
+          context.go('/cart');
           return;
         }
         if (action == PriceCheckAction.reject ||
@@ -313,14 +483,13 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen>
                 withPhoto: action == PriceCheckAction.photo,
               );
         }
-        if (action == null) return;
       }
     }
 
     final stats =
         await ref.read(priceLogRepositoryProvider).statsForProduct(product.id);
     String? alert;
-    if (stats != null) {
+    if (stats != null && stats.avgPrice > 0) {
       final delta =
           ((confirmed.unitPrice - stats.avgPrice) / stats.avgPrice) * 100;
       if (delta.abs() >= 8) {
@@ -346,23 +515,18 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen>
       ..rejectScore = 0;
 
     await ref.read(priceLogRepositoryProvider).put(log);
-    await ref.read(cartRepositoryProvider).upsert(
-          product: product,
-          quantity: confirmed.quantity,
-          retailPrice: confirmed.unitPrice,
-          wholesalePrice: confirmed.wholesalePrice,
-          minWholesaleQty: confirmed.minWholesaleQty,
-        );
+    await _addToCart(product: product, item: confirmed);
 
     HapticFeedback.mediumImpact();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          alert == null ? 'Etiqueta salva' : 'Salvo. $alert',
+          alert == null ? 'Item adicionado ao carrinho' : 'Salvo. $alert',
         ),
       ),
     );
+    context.go('/cart');
   }
 
   Future<String?> _textFallbackDialog(String initial) async {
@@ -501,18 +665,94 @@ class _CaptureScreenState extends ConsumerState<CaptureScreen>
                           ),
                         ),
                       )
+                    else if (_cameraBlocked)
+                      ColoredBox(
+                        color: Colors.black87,
+                        child: Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  LucideIcons.cameraOff,
+                                  color: Colors.white70,
+                                  size: 40,
+                                ),
+                                const Gap(12),
+                                Text(
+                                  'Não é possível acessar a captura sem '
+                                  'permissão de câmera.',
+                                  textAlign: TextAlign.center,
+                                  style: GoogleFonts.plusJakartaSans(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const Gap(16),
+                                FilledButton(
+                                  onPressed: _activateCurrentCamera,
+                                  child: const Text('Permitir câmera'),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      )
                     else if (_mode == CaptureMode.qr)
                       MobileScanner(
                         controller: _scannerController,
                         onDetect: _onQrDetect,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, child) {
+                          return ColoredBox(
+                            color: Colors.black87,
+                            child: Center(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    'Câmera indisponível',
+                                    style: GoogleFonts.plusJakartaSans(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  const Gap(12),
+                                  FilledButton(
+                                    onPressed: _activateCurrentCamera,
+                                    child: const Text('Tentar de novo'),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
                       )
                     else if (_cameraController != null &&
                         _cameraController!.value.isInitialized)
                       CameraPreview(_cameraController!)
                     else
-                      const ColoredBox(
+                      ColoredBox(
                         color: Colors.black87,
-                        child: Center(child: CircularProgressIndicator()),
+                        child: Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const CircularProgressIndicator(),
+                              const Gap(16),
+                              TextButton(
+                                onPressed: () => _initOcrCamera(force: true),
+                                child: Text(
+                                  'Reabrir câmera',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    color: Colors.white70,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
                     IgnorePointer(
                       child: AnimatedBuilder(

@@ -247,3 +247,35 @@ class MarketReview {
   @Index()
   bool synced = false;
 }
+
+/// Snapshot de uma lista de compras finalizada (histórico local + sync).
+@collection
+class ShoppingList {
+  Id id = Isar.autoIncrement;
+
+  @Index(caseSensitive: false)
+  late String name;
+
+  int? marketId;
+
+  String? marketName;
+
+  /// JSON array com snapshot dos itens do carrinho.
+  late String itemsJson;
+
+  late double subtotal;
+
+  late double savings;
+
+  late int itemCount;
+
+  late DateTime finishedAt;
+
+  String? remoteId;
+
+  @Index()
+  late DateTime updatedAt;
+
+  @Index()
+  bool synced = false;
+}

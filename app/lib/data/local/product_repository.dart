@@ -44,6 +44,24 @@ class ProductRepository {
     });
   }
 
+  Future<void> rename(int productId, String newName) async {
+    final name = newName.trim();
+    if (name.isEmpty) return;
+    await _isar.writeTxn(() async {
+      final p = await _isar.products.get(productId);
+      if (p == null) return;
+      if (p.name.toLowerCase() != name.toLowerCase() &&
+          !p.aliases.map((a) => a.toLowerCase()).contains(p.name.toLowerCase())) {
+        p.aliases = [...p.aliases, p.name];
+      }
+      p
+        ..name = name
+        ..updatedAt = DateTime.now().toUtc()
+        ..synced = false;
+      await _isar.products.put(p);
+    });
+  }
+
   Future<List<String>> distinctCategories() async {
     final products = await all();
     final set = <String>{};
@@ -102,7 +120,7 @@ class ProductRepository {
       ..synced = false;
 
     await _isar.writeTxn(() async {
-      await _isar.products.put(product);
+      product.id = await _isar.products.put(product);
     });
     return product;
   }

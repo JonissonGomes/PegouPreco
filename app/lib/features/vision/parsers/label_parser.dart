@@ -11,10 +11,42 @@ class LabelParser {
     r'(?:a\s*partir\s*de|acima\s*de|mín(?:imo)?\.?|apartir|atacado)\s*[:\s]*(\d+(?:[.,]\d+)?)\s*(?:un|kg|g|l)?',
     caseSensitive: false,
   );
-  static final _noise = RegExp(
-    r'^(preço|varejo|atacado|oferta|promoção|economia|unid|kg|r\$)$',
+  static final _noiseExact = RegExp(
+    r'^(preço|precos|preços|varejo|atacado|oferta|promoção|promocao|economia|unid|kg|r\$)$',
     caseSensitive: false,
   );
+  static final _noisePartial = RegExp(
+    r'pre[cç]os?\s*por\s*unidade|por\s*unidade\s*em|unidade\s*em\s*\(?\s*r\s*\$|'
+    r'pre[cç]o\s*unit[aá]rio|valor\s*unit[aá]rio|economia\s*de|'
+    r'pre[cç]o\s*de\s*varejo|pre[cç]o\s*de\s*atacado',
+    caseSensitive: false,
+  );
+  static final _productHint = RegExp(
+    r'[A-Za-zÀ-ÿ].*\d+\s*(?:g|kg|ml|l|un|unid)\b|'
+    r'\d+\s*(?:g|kg|ml|l)\b|'
+    r'[A-Za-zÀ-ÿ]{3,}',
+    caseSensitive: false,
+  );
+
+  static bool _isNoise(String line) {
+    final t = line.trim();
+    if (t.isEmpty) return true;
+    if (_noiseExact.hasMatch(t)) return true;
+    if (_noisePartial.hasMatch(t)) return true;
+    return false;
+  }
+
+  static int _nameScore(String cleaned) {
+    var score = cleaned.length;
+    if (_productHint.hasMatch(cleaned)) score += 20;
+    if (RegExp(r'\d+\s*(?:g|kg|ml|l)\b', caseSensitive: false)
+        .hasMatch(cleaned)) {
+      score += 40;
+    }
+    // Penaliza linhas só com símbolos / preços residuais.
+    if (!RegExp(r'[A-Za-zÀ-ÿ]{3,}').hasMatch(cleaned)) score -= 50;
+    return score;
+  }
 
   static ReviewItem? parse(String rawText) {
     final lines = rawText
@@ -42,19 +74,22 @@ class LabelParser {
       }
     }
 
-    // Nome: maior linha sem preço dominante e sem ruído.
     String? name;
-    var bestLen = 0;
+    var bestScore = -9999;
     for (final line in lines) {
       final cleaned = line.replaceAll(_priceRe, '').trim();
       if (cleaned.length < 3) continue;
-      if (_noise.hasMatch(cleaned)) continue;
-      if (cleaned.length > bestLen) {
-        bestLen = cleaned.length;
+      if (_isNoise(cleaned)) continue;
+      final score = _nameScore(cleaned);
+      if (score > bestScore) {
+        bestScore = score;
         name = cleaned;
       }
     }
-    name ??= lines.first;
+    name ??= lines.firstWhere(
+      (l) => !_isNoise(l.replaceAll(_priceRe, '').trim()),
+      orElse: () => lines.first,
+    );
 
     // Heurística: menor preço = atacado se houver 2+ preços distintos.
     final distinct = prices.toSet().toList()..sort();
@@ -66,7 +101,7 @@ class LabelParser {
       quantity: 1,
       unitPrice: retail,
       wholesalePrice: wholesale,
-      minWholesaleQty: wholesale != null ? (minQty ?? 3) : minQty,
+      minWholesaleQty: minQty,
     );
   }
 }

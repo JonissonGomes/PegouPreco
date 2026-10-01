@@ -7,6 +7,7 @@ import 'package:pegou_preco/data/local/pending_receipt_repository.dart';
 import 'package:pegou_preco/data/local/price_log_repository.dart';
 import 'package:pegou_preco/data/local/product_repository.dart';
 import 'package:pegou_preco/data/local/schemas.dart';
+import 'package:pegou_preco/data/local/shopping_list_repository.dart';
 import 'package:pegou_preco/data/remote/sefaz_client.dart';
 import 'package:pegou_preco/data/remote/sync_api_client.dart';
 
@@ -16,6 +17,7 @@ class SyncWorker {
     required this.priceLogRepo,
     required this.marketRepo,
     required this.pendingRepo,
+    required this.shoppingListRepo,
     required this.sefaz,
     required this.api,
   });
@@ -24,6 +26,7 @@ class SyncWorker {
   final PriceLogRepository priceLogRepo;
   final MarketRepository marketRepo;
   final PendingReceiptRepository pendingRepo;
+  final ShoppingListRepository shoppingListRepo;
   final SefazClient sefaz;
   final SyncApiClient api;
 
@@ -124,6 +127,7 @@ class SyncWorker {
       final products = await productRepo.unsynced();
       final markets = await marketRepo.unsynced();
       final logs = await priceLogRepo.unsynced();
+      final shoppingLists = await shoppingListRepo.unsynced();
 
       final payload = {
         'products': [
@@ -173,6 +177,22 @@ class SyncWorker {
               'updatedAt': l.updatedAt.toIso8601String(),
             },
         ],
+        'shoppingLists': [
+          for (final s in shoppingLists)
+            {
+              'localId': s.id,
+              'remoteId': s.remoteId,
+              'name': s.name,
+              'marketId': s.marketId,
+              'marketName': s.marketName,
+              'itemsJson': s.itemsJson,
+              'subtotal': s.subtotal,
+              'savings': s.savings,
+              'itemCount': s.itemCount,
+              'finishedAt': s.finishedAt.toIso8601String(),
+              'updatedAt': s.updatedAt.toIso8601String(),
+            },
+        ],
       };
 
       final pushResult = await api.pushBatch(token: token, payload: payload);
@@ -182,6 +202,9 @@ class SyncWorker {
           Map<String, String>.from(pushResult['marketIdMap'] as Map? ?? {});
       final logMap =
           Map<String, String>.from(pushResult['priceLogIdMap'] as Map? ?? {});
+      final listMap = Map<String, String>.from(
+        pushResult['shoppingListIdMap'] as Map? ?? {},
+      );
 
       for (final e in productMap.entries) {
         await productRepo.markSynced(int.parse(e.key), e.value);
@@ -191,6 +214,9 @@ class SyncWorker {
       }
       for (final e in logMap.entries) {
         await priceLogRepo.markSynced(int.parse(e.key), e.value);
+      }
+      for (final e in listMap.entries) {
+        await shoppingListRepo.markSynced(int.parse(e.key), e.value);
       }
 
       final pull = await api.pullSince(token: token, since: _lastPull);
@@ -272,8 +298,28 @@ class SyncWorker {
         await priceLogRepo.upsertFromRemote(log);
       }
 
+      for (final s in (pull['shoppingLists'] as List? ?? const [])) {
+        final map = Map<String, dynamic>.from(s as Map);
+        final list = ShoppingList()
+          ..name = map['name'] as String? ?? 'Lista'
+          ..marketId = (map['marketId'] as num?)?.toInt()
+          ..marketName = map['marketName'] as String?
+          ..itemsJson = map['itemsJson'] as String? ?? '[]'
+          ..subtotal = (map['subtotal'] as num?)?.toDouble() ?? 0
+          ..savings = (map['savings'] as num?)?.toDouble() ?? 0
+          ..itemCount = (map['itemCount'] as num?)?.toInt() ?? 0
+          ..finishedAt = DateTime.tryParse(map['finishedAt'] as String? ?? '') ??
+              DateTime.now().toUtc()
+          ..remoteId = map['id'] as String?
+          ..updatedAt = DateTime.tryParse(map['updatedAt'] as String? ?? '') ??
+              DateTime.now().toUtc()
+          ..synced = true;
+        await shoppingListRepo.upsertFromRemote(list);
+      }
+
       _setStatus(
-        'Sync OK · push ${products.length}p/${markets.length}m/${logs.length}l',
+        'Sync OK · push ${products.length}p/${markets.length}m/'
+        '${logs.length}l/${shoppingLists.length}s',
       );
     } catch (e) {
       _setStatus('Sync erro: $e');

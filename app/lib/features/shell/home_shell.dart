@@ -119,27 +119,33 @@ class _ScannerFab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(16),
+          customBorder: const CircleBorder(),
           child: Ink(
-            width: AppTheme.scannerFabSize,
-            height: AppTheme.scannerFabSize,
+            width: 52,
+            height: 52,
             decoration: BoxDecoration(
-              color: AppTheme.navy,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: selected ? AppTheme.yellowBright : AppTheme.yellow,
-                width: 2.5,
-              ),
+              color: AppTheme.yellowBright,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: AppTheme.navy.withValues(alpha: selected ? 0.22 : 0.14),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+              border: selected
+                  ? Border.all(color: AppTheme.navy, width: 2)
+                  : null,
             ),
-            child: Icon(
+            child: const Icon(
               LucideIcons.scanLine,
-              color: selected ? AppTheme.yellow : Colors.white,
-              size: 22,
+              color: AppTheme.navy,
+              size: 24,
             ),
           ),
         ),
