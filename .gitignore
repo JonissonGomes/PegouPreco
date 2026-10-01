@@ -1,0 +1,107 @@
+# --- Secrets / ambiente ---
+**/.env
+**/.env.*
+!**/.env.example
+**/credentials.json
+**/google-services.json
+**/GoogleService-Info.plist
+**/*.pem
+**/*.p12
+**/*.keystore
+**/*.jks
+**/key.properties
+**/secrets/
+**/service-account*.json
+
+# --- Dart / Flutter ---
+**/build/
+**/.dart_tool/
+**/.packages
+**/.pub-cache/
+**/.pub/
+**/pubspec_overrides.yaml
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/doc/api/
+**/coverage/
+**/*.g.dart.bak
+**/flutter_*.png
+**/app.*.symbols
+**/app.*.map.json
+
+# --- Android ---
+**/android/.gradle/
+**/android/captures/
+**/android/local.properties
+**/android/**/GeneratedPluginRegistrant.java
+**/android/**/gradle-wrapper.jar
+**/*.apk
+**/*.aab
+**/*.ap_
+**/*.dex
+**/android/app/release/
+**/android/app/debug/
+**/android/app/profile/
+
+# --- iOS / macOS ---
+**/ios/Pods/
+**/ios/.symlinks/
+**/ios/Flutter/Flutter.framework
+**/ios/Flutter/Flutter.podspec
+**/ios/Flutter/Generated.xcconfig
+**/ios/Flutter/flutter_export_environment.sh
+**/ios/Flutter/ephemeral/
+**/ios/ServiceDefinitions.json
+**/macos/Flutter/ephemeral/
+**/macos/Pods/
+**/DerivedData/
+**/*.xcworkspace
+!**/ios/Runner.xcworkspace
+**/xcuserdata/
+**/Pods/
+
+# --- sync_api (Dart server) ---
+sync_api/.dart_tool/
+sync_api/build/
+sync_api/.packages
+
+# --- IDE / editores ---
+**/.idea/
+**/*.iml
+**/*.ipr
+**/*.iws
+**/.vscode/*
+!**/.vscode/extensions.json
+!**/.vscode/launch.json
+!**/.vscode/settings.json
+**/.cursor/
+**/*.swp
+**/*~
+
+# --- OS ---
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# --- Logs / temporários ---
+**/*.log
+**/logs/
+**/tmp/
+**/temp/
+**/.tmp/
+**/node_modules/
+
+# --- Flutter SDK local (se clonado na pasta) ---
+/flutter/
+
+# --- Testes / dumps ---
+**/test-results/
+**/allure-results/
+**/*.hprof
+**/core
+**/core.*
