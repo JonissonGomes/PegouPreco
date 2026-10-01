@@ -9,7 +9,7 @@ SHELL := powershell.exe
 .SHELLFLAGS := -NoProfile -ExecutionPolicy Bypass -Command
 PS := powershell -NoProfile -ExecutionPolicy Bypass -File
 
-.PHONY: help setup deps apk apk-debug run api doctor all clean install logcat devices
+.PHONY: help setup deps apk apk-debug run seed api doctor all clean install logcat devices
 
 help:
 	@Write-Host "Alvos disponiveis:" -ForegroundColor Cyan
@@ -21,6 +21,7 @@ help:
 	@Write-Host "  make logcat     Captura erros do app no device (abra o app apos iniciar)"
 	@Write-Host "  make devices    Lista aparelhos adb"
 	@Write-Host "  make run        Sobe emulador (se preciso) e roda o app"
+	@Write-Host "  make seed       Roda o app com banco demo (mercados, precos, carrinho, listas)"
 	@Write-Host "  make api        Sobe a sync_api (porta 8080)"
 	@Write-Host "  make doctor     flutter doctor"
 	@Write-Host "  make all        setup + deps + apk"
@@ -50,6 +51,9 @@ apk-debug:
 
 run:
 	$(PS) scripts/run.ps1
+
+seed:
+	$(PS) scripts/seed.ps1
 
 api:
 	$(PS) scripts/api.ps1

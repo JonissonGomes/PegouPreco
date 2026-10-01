@@ -37,6 +37,7 @@ make deps     # dependências do app
 make apk      # gera o APK
 # ou:
 make run      # sobe emulador e abre o app
+make seed     # abre o app com banco demo (mercados, preços, carrinho, listas)
 ```
 
 Se o Flutter não estiver no PATH, o projeto usa `C:\src\flutter\bin`.

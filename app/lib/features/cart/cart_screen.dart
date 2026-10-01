@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
 import 'package:go_router/go_router.dart';
@@ -9,6 +8,7 @@ import 'package:pegou_preco/core/di/providers.dart';
 import 'package:pegou_preco/core/theme/app_theme.dart';
 import 'package:pegou_preco/core/utils/money.dart';
 import 'package:pegou_preco/core/utils/pricing.dart';
+import 'package:pegou_preco/core/widgets/app_screen_chrome.dart';
 import 'package:pegou_preco/core/widgets/empty_state.dart';
 import 'package:pegou_preco/data/local/cart_repository.dart';
 import 'package:pegou_preco/data/local/price_log_repository.dart';
@@ -160,16 +160,55 @@ class CartScreen extends ConsumerWidget {
     );
   }
 
+  List<AppHeaderAction> _headerActions(
+    BuildContext context,
+    WidgetRef ref,
+    CartRepository cartRepo,
+  ) {
+    return [
+      AppHeaderAction(
+        icon: LucideIcons.clipboardList,
+        label: 'Listas salvas',
+        onTap: () => context.push('/shopping-lists'),
+      ),
+      AppHeaderAction(
+        icon: LucideIcons.history,
+        label: 'Histórico de preços',
+        onTap: () => context.push('/history'),
+      ),
+      AppHeaderAction(
+        icon: LucideIcons.refreshCw,
+        label: 'Sincronizar',
+        onTap: () => ref.read(syncWorkerProvider).runFullSync(),
+      ),
+      AppHeaderAction(
+        icon: LucideIcons.trash2,
+        label: 'Limpar carrinho',
+        onTap: () => _confirmClear(context, cartRepo),
+        destructive: true,
+      ),
+    ];
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final itemsAsync = ref.watch(cartItemsProvider);
     final cartRepo = ref.watch(cartRepositoryProvider);
     final active = ref.watch(activeShoppingListProvider).valueOrNull;
     final marketName = ref.watch(_activeMarketNameProvider).valueOrNull;
-    final topPad = MediaQuery.paddingOf(context).top;
+    final actions = _headerActions(context, ref, cartRepo);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF3F4F6),
+      backgroundColor: appScreenBg,
+      floatingActionButton: Padding(
+        // Acima do botão Finalizar + barra inferior.
+        padding: const EdgeInsets.only(bottom: appBottomNavClearance + 44),
+        child: AppActionsFab(
+          heroTag: 'cart_actions_fab',
+          actions: actions,
+        ),
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       body: itemsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('Erro: $e')),
@@ -180,14 +219,9 @@ class CartScreen extends ConsumerWidget {
           if (items.isEmpty) {
             return Column(
               children: [
-                _YellowHeader(
-                  topPad: topPad,
+                _CartHeader(
                   listName: active?.name ?? 'Nova lista',
                   marketName: marketName,
-                  onLists: () => context.push('/shopping-lists'),
-                  onHistory: () => context.push('/history'),
-                  onSync: () => ref.read(syncWorkerProvider).runFullSync(),
-                  onClear: () => _confirmClear(context, cartRepo),
                 ),
                 Expanded(
                   child: EmptyState(
@@ -215,14 +249,9 @@ class CartScreen extends ConsumerWidget {
 
           return Column(
             children: [
-              _YellowHeader(
-                topPad: topPad,
+              _CartHeader(
                 listName: active?.name ?? 'Lista em andamento',
                 marketName: marketName,
-                onLists: () => context.push('/shopping-lists'),
-                onHistory: () => context.push('/history'),
-                onSync: () => ref.read(syncWorkerProvider).runFullSync(),
-                onClear: () => _confirmClear(context, cartRepo),
               ),
               _NavyTotals(
                 subtotal: totals.subtotal,
@@ -233,34 +262,14 @@ class CartScreen extends ConsumerWidget {
               Expanded(
                 child: Column(
                   children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-                      child: Row(
-                        children: [
-                          Text(
-                            'Itens da lista',
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w800,
-                              color: AppTheme.navy,
-                            ),
-                          ),
-                          const Spacer(),
-                          Text(
-                            '$pending pendentes',
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: AppTheme.muted,
-                            ),
-                          ),
-                        ],
-                      ),
+                    AppSectionTitle(
+                      title: 'Itens da lista',
+                      trailing: '$pending pendentes',
                     ),
                     Expanded(
                       child: ListView.separated(
                         physics: const BouncingScrollPhysics(),
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                         itemCount: items.length,
                         separatorBuilder: (_, __) => const Gap(10),
                         itemBuilder: (context, index) =>
@@ -282,105 +291,21 @@ class CartScreen extends ConsumerWidget {
   }
 }
 
-class _YellowHeader extends StatelessWidget {
-  const _YellowHeader({
-    required this.topPad,
+class _CartHeader extends StatelessWidget {
+  const _CartHeader({
     required this.listName,
     required this.marketName,
-    required this.onLists,
-    required this.onHistory,
-    required this.onSync,
-    required this.onClear,
   });
 
-  final double topPad;
   final String listName;
   final String? marketName;
-  final VoidCallback onLists;
-  final VoidCallback onHistory;
-  final VoidCallback onSync;
-  final VoidCallback onClear;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      color: AppTheme.yellowBright,
-      padding: EdgeInsets.fromLTRB(16, topPad + 8, 8, 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: Image.asset(
-                  'assets/branding/logo.png',
-                  height: 36,
-                  fit: BoxFit.contain,
-                  errorBuilder: (_, __, ___) => Image.asset(
-                    'assets/branding/app_icon.png',
-                    width: 36,
-                    height: 36,
-                  ),
-                ),
-              ),
-              const Spacer(),
-              IconButton(
-                tooltip: 'Listas salvas',
-                onPressed: onLists,
-                icon: const Icon(LucideIcons.clipboardList, color: AppTheme.navy),
-              ),
-              IconButton(
-                tooltip: 'Histórico',
-                onPressed: onHistory,
-                icon: const Icon(LucideIcons.history, color: AppTheme.navy),
-              ),
-              IconButton(
-                tooltip: 'Sincronizar',
-                onPressed: onSync,
-                icon: const Icon(LucideIcons.refreshCw, color: AppTheme.navy),
-              ),
-              IconButton(
-                tooltip: 'Limpar',
-                onPressed: onClear,
-                icon: const Icon(LucideIcons.trash2, color: AppTheme.navy),
-              ),
-            ],
-          ),
-          const Gap(10),
-          Text(
-            listName,
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 26,
-              fontWeight: FontWeight.w800,
-              color: AppTheme.navy,
-              height: 1.15,
-              letterSpacing: -0.4,
-            ),
-          ),
-          const Gap(6),
-          Row(
-            children: [
-              const Icon(LucideIcons.mapPin, size: 15, color: AppTheme.navy),
-              const Gap(4),
-              Expanded(
-                child: Text(
-                  (marketName ?? 'Mercado não definido').toUpperCase(),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: AppTheme.navy,
-                    letterSpacing: 0.3,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
+    return AppScreenHeader(
+      title: listName,
+      subtitle: marketName ?? 'Mercado não definido',
+      subtitleIcon: LucideIcons.mapPin,
     );
   }
 }
@@ -400,81 +325,34 @@ class _NavyTotals extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      color: AppTheme.navy,
-      padding: const EdgeInsets.fromLTRB(20, 14, 20, 14),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'TOTAL DA LISTA',
-                  style: GoogleFonts.plusJakartaSans(
-                    color: Colors.white70,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.6,
-                  ),
-                ),
-                Text(
-                  formatBrl(subtotal),
-                  style: GoogleFonts.plusJakartaSans(
-                    color: Colors.white,
-                    fontSize: 28,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.5,
-                    height: 1.15,
-                  ),
-                ),
-              ],
+    return AppScreenNavyBar(
+      label: 'total · $checked/$total itens',
+      value: formatBrl(subtotal),
+      trailing: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: AppTheme.yellowBright,
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              LucideIcons.trendingDown,
+              size: 12,
+              color: AppTheme.navy,
             ),
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                  color: AppTheme.yellowBright,
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(
-                      LucideIcons.trendingDown,
-                      size: 14,
-                      color: AppTheme.navy,
-                    ),
-                    const Gap(4),
-                    Text(
-                      '${formatBrl(savings)} economizados',
-                      style: GoogleFonts.plusJakartaSans(
-                        color: AppTheme.navy,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ],
-                ),
+            const Gap(3),
+            Text(
+              formatBrl(savings),
+              style: GoogleFonts.plusJakartaSans(
+                color: AppTheme.navy,
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
               ),
-              const Gap(6),
-              Text(
-                '$checked / $total ITENS',
-                style: GoogleFonts.plusJakartaSans(
-                  color: Colors.white,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.4,
-                ),
-              ),
-            ],
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -491,30 +369,28 @@ class _FinalizeButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      top: false,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 72),
-        child: SizedBox(
-          width: double.infinity,
-          height: 54,
-          child: FilledButton.icon(
-            onPressed: onPressed,
-            style: FilledButton.styleFrom(
-              backgroundColor: AppTheme.navy,
-              foregroundColor: Colors.white,
-              elevation: 2,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
+    // Colado logo acima da barra flutuante (extendBody no shell).
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, appBottomNavClearance),
+      child: SizedBox(
+        width: double.infinity,
+        height: 48,
+        child: FilledButton.icon(
+          onPressed: onPressed,
+          style: FilledButton.styleFrom(
+            backgroundColor: AppTheme.navy,
+            foregroundColor: Colors.white,
+            elevation: 2,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
             ),
-            icon: const Icon(LucideIcons.check, size: 20),
-            label: Text(
-              'Finalizar compras · ${formatBrl(subtotal)}',
-              style: GoogleFonts.plusJakartaSans(
-                fontWeight: FontWeight.w800,
-                fontSize: 15,
-              ),
+          ),
+          icon: const Icon(LucideIcons.check, size: 18),
+          label: Text(
+            'Finalizar · ${formatBrl(subtotal)}',
+            style: GoogleFonts.plusJakartaSans(
+              fontWeight: FontWeight.w800,
+              fontSize: 14,
             ),
           ),
         ),
@@ -543,23 +419,6 @@ class _CartItemCard extends ConsumerWidget {
           .read(productRepositoryProvider)
           .rename(item.productId, result.productName);
     }
-  }
-
-  Future<void> _applyBetterPrice(
-    WidgetRef ref,
-    CartPriceContext ctx,
-  ) async {
-    final best = ctx.bestPrice;
-    if (best == null) return;
-    HapticFeedback.mediumImpact();
-    await ref.read(cartRepositoryProvider).updateItem(
-          id: item.id,
-          productName: item.productName,
-          quantity: item.quantity,
-          retailPrice: best,
-          wholesalePrice: item.wholesalePrice,
-          minWholesaleQty: item.minWholesaleQty,
-        );
   }
 
   @override
@@ -604,30 +463,24 @@ class _CartItemCard extends ConsumerWidget {
               unit: unit,
               total: total,
               ctx: null,
-              currentMarketId: marketId,
               onToggle: () => repo.toggleChecked(item.id),
               onEdit: () => _edit(context, ref),
-              onSwap: null,
             ),
             error: (_, __) => _ItemBody(
               item: item,
               unit: unit,
               total: total,
               ctx: null,
-              currentMarketId: marketId,
               onToggle: () => repo.toggleChecked(item.id),
               onEdit: () => _edit(context, ref),
-              onSwap: null,
             ),
             data: (ctx) => _ItemBody(
               item: item,
               unit: unit,
               total: total,
               ctx: ctx,
-              currentMarketId: marketId,
               onToggle: () => repo.toggleChecked(item.id),
               onEdit: () => _edit(context, ref),
-              onSwap: () => _applyBetterPrice(ref, ctx),
             ),
           ),
         ),
@@ -653,20 +506,16 @@ class _ItemBody extends StatelessWidget {
     required this.unit,
     required this.total,
     required this.ctx,
-    required this.currentMarketId,
     required this.onToggle,
     required this.onEdit,
-    required this.onSwap,
   });
 
   final CartItem item;
   final double unit;
   final double total;
   final CartPriceContext? ctx;
-  final int? currentMarketId;
   final VoidCallback onToggle;
   final VoidCallback onEdit;
-  final VoidCallback? onSwap;
 
   @override
   Widget build(BuildContext context) {
@@ -674,24 +523,15 @@ class _ItemBody extends StatelessWidget {
     final previousAt = ctx?.previousAt;
     final best = ctx?.bestPrice;
     final bestMarket = ctx?.bestMarketName;
-    final bestMarketId = ctx?.bestMarketId;
 
     final pctBelow = previous != null && previous > 0
         ? ((previous - unit) / previous) * 100
         : null;
     final showBelowBadge = pctBelow != null && pctBelow >= 1;
 
+    // Comparativo só informativo — sem "Trocar" (não faz sentido na compra atual).
     final showCompare =
         (previous != null) || (best != null && best + 0.009 < unit);
-
-    final canSwap = best != null &&
-        bestMarket != null &&
-        best + 0.05 < unit &&
-        (bestMarketId == null || bestMarketId != currentMarketId);
-    final swapPrice = canSwap ? best : null;
-    final swapMarket = canSwap ? bestMarket : null;
-    final swapSave =
-        swapPrice == null ? 0.0 : (unit - swapPrice) * item.quantity;
 
     final qtyLabel = item.quantity == item.quantity.roundToDouble()
         ? '${formatQty(item.quantity)} unidade${item.quantity > 1 ? 's' : ''}'
@@ -788,68 +628,7 @@ class _ItemBody extends StatelessWidget {
             ),
           ],
         ),
-        if (swapPrice != null && swapMarket != null) ...[
-          const Gap(10),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
-            decoration: BoxDecoration(
-              color: AppTheme.yellowBright,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '${formatBrl(swapPrice)} no $swapMarket',
-                        style: GoogleFonts.plusJakartaSans(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 13,
-                          color: AppTheme.navy,
-                        ),
-                      ),
-                      Text(
-                        'Economize ${formatBrl(swapSave)} nesta compra',
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: AppTheme.navy.withValues(alpha: 0.85),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const Gap(8),
-                FilledButton(
-                  onPressed: onSwap,
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppTheme.navy,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 10,
-                    ),
-                    minimumSize: Size.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                  child: Text(
-                    'Trocar',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 13,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ] else if (showCompare) ...[
+        if (showCompare) ...[
           const Gap(10),
           Row(
             children: [

@@ -89,7 +89,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                     ),
                     _NavItem(
                       icon: LucideIcons.lineChart,
-                      label: 'Insights',
+                      label: 'Comparar',
                       selected: index == 3,
                       onTap: () => _onTap(3),
                     ),

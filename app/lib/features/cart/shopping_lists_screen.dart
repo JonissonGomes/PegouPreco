@@ -8,7 +8,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:pegou_preco/core/di/providers.dart';
 import 'package:pegou_preco/core/theme/app_theme.dart';
 import 'package:pegou_preco/core/utils/money.dart';
-import 'package:pegou_preco/core/widgets/brand_app_bar.dart';
+import 'package:pegou_preco/core/widgets/app_screen_chrome.dart';
 import 'package:pegou_preco/core/widgets/empty_state.dart';
 import 'package:pegou_preco/data/local/schemas.dart';
 
@@ -24,87 +24,172 @@ class ShoppingListsScreen extends ConsumerWidget {
     final listsAsync = ref.watch(shoppingListsProvider);
 
     return Scaffold(
-      appBar: const BrandAppBar(title: 'Listas salvas'),
+      backgroundColor: appScreenBg,
       body: listsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('Erro: $e')),
         data: (lists) {
-          if (lists.isEmpty) {
-            return const EmptyState(
-              icon: LucideIcons.listChecks,
-              title: 'Nenhuma lista salva',
-              message:
-                  'Finalize uma lista no carrinho para guardar o histórico.',
-            );
-          }
-          return ListView.separated(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
-            itemCount: lists.length,
-            separatorBuilder: (_, __) => const Gap(10),
-            itemBuilder: (context, i) {
-              final list = lists[i];
-              final date =
-                  '${list.finishedAt.toLocal().day.toString().padLeft(2, '0')}/'
-                  '${list.finishedAt.toLocal().month.toString().padLeft(2, '0')}/'
-                  '${list.finishedAt.toLocal().year}';
-              return Material(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(18),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(18),
-                  onTap: () => _openDetail(context, list),
-                  child: Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(color: AppTheme.border),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                list.name,
-                                style: GoogleFonts.plusJakartaSans(
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 16,
-                                ),
-                              ),
-                            ),
-                            if (!list.synced)
-                              const Icon(
-                                LucideIcons.cloudOff,
-                                size: 16,
-                                color: AppTheme.muted,
-                              ),
-                          ],
-                        ),
-                        const Gap(4),
-                        Text(
-                          '${list.marketName ?? 'Mercado'} · $date · '
-                          '${list.itemCount} itens',
-                          style: GoogleFonts.plusJakartaSans(
-                            color: AppTheme.muted,
-                            fontSize: 13,
-                          ),
-                        ),
-                        const Gap(8),
-                        Text(
-                          formatBrl(list.subtotal),
-                          style: GoogleFonts.plusJakartaSans(
-                            fontWeight: FontWeight.w800,
-                            color: AppTheme.navy,
-                            fontSize: 18,
-                          ),
-                        ),
-                      ],
-                    ),
+          final totalSpent =
+              lists.fold<double>(0, (sum, l) => sum + l.subtotal);
+          final totalSaved =
+              lists.fold<double>(0, (sum, l) => sum + l.savings);
+
+          return Column(
+            children: [
+              AppScreenHeader(
+                title: 'Listas salvas',
+                subtitle: 'Compare compras passadas',
+                subtitleIcon: LucideIcons.clipboardList,
+                actions: [
+                  IconButton(
+                    tooltip: 'Voltar',
+                    onPressed: () => Navigator.of(context).maybePop(),
+                    icon: const Icon(LucideIcons.arrowLeft, color: AppTheme.navy),
                   ),
+                ],
+              ),
+              AppScreenNavyBar(
+                label: 'Total gasto nas listas',
+                value: formatBrl(totalSpent),
+                trailing: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppTheme.yellowBright,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        '${formatBrl(totalSaved)} economizados',
+                        style: GoogleFonts.plusJakartaSans(
+                          color: AppTheme.navy,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    const Gap(6),
+                    Text(
+                      '${lists.length} LISTAS',
+                      style: GoogleFonts.plusJakartaSans(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.4,
+                      ),
+                    ),
+                  ],
                 ),
-              );
-            },
+              ),
+              Expanded(
+                child: lists.isEmpty
+                    ? const EmptyState(
+                        icon: LucideIcons.listChecks,
+                        title: 'Nenhuma lista salva',
+                        message:
+                            'Finalize uma lista no carrinho para guardar o histórico.',
+                      )
+                    : ListView.separated(
+                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+                        itemCount: lists.length,
+                        separatorBuilder: (_, __) => const Gap(10),
+                        itemBuilder: (context, i) {
+                          final list = lists[i];
+                          final date =
+                              '${list.finishedAt.toLocal().day.toString().padLeft(2, '0')}/'
+                              '${list.finishedAt.toLocal().month.toString().padLeft(2, '0')}/'
+                              '${list.finishedAt.toLocal().year}';
+                          return AppListCard(
+                            onTap: () => _openDetail(context, list),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        list.name,
+                                        style: GoogleFonts.plusJakartaSans(
+                                          fontWeight: FontWeight.w800,
+                                          fontSize: 16,
+                                          color: AppTheme.navy,
+                                        ),
+                                      ),
+                                    ),
+                                    if (!list.synced)
+                                      const Icon(
+                                        LucideIcons.cloudOff,
+                                        size: 16,
+                                        color: AppTheme.muted,
+                                      ),
+                                  ],
+                                ),
+                                const Gap(4),
+                                Row(
+                                  children: [
+                                    const Icon(
+                                      LucideIcons.mapPin,
+                                      size: 14,
+                                      color: AppTheme.muted,
+                                    ),
+                                    const Gap(4),
+                                    Expanded(
+                                      child: Text(
+                                        '${list.marketName ?? 'Mercado'} · $date · ${list.itemCount} itens',
+                                        style: GoogleFonts.plusJakartaSans(
+                                          color: AppTheme.muted,
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const Gap(10),
+                                Row(
+                                  children: [
+                                    Text(
+                                      formatBrl(list.subtotal),
+                                      style: GoogleFonts.plusJakartaSans(
+                                        fontWeight: FontWeight.w800,
+                                        color: AppTheme.navy,
+                                        fontSize: 18,
+                                      ),
+                                    ),
+                                    const Spacer(),
+                                    if (list.savings > 0)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 4,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFDCFCE7),
+                                          borderRadius:
+                                              BorderRadius.circular(999),
+                                        ),
+                                        child: Text(
+                                          '− ${formatBrl(list.savings)}',
+                                          style: GoogleFonts.plusJakartaSans(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w800,
+                                            color: const Color(0xFF166534),
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
           );
         },
       ),
@@ -136,13 +221,17 @@ class ShoppingListsScreen extends ConsumerWidget {
                 style: GoogleFonts.plusJakartaSans(
                   fontSize: 20,
                   fontWeight: FontWeight.w800,
+                  color: AppTheme.navy,
                 ),
               ),
               const Gap(4),
               Text(
                 '${list.marketName ?? '—'} · ${formatBrl(list.subtotal)}'
                 ' · economia ${formatBrl(list.savings)}',
-                style: GoogleFonts.plusJakartaSans(color: AppTheme.muted),
+                style: GoogleFonts.plusJakartaSans(
+                  color: AppTheme.muted,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               const Gap(12),
               Expanded(
@@ -161,6 +250,7 @@ class ShoppingListsScreen extends ConsumerWidget {
                         name,
                         style: GoogleFonts.plusJakartaSans(
                           fontWeight: FontWeight.w700,
+                          color: AppTheme.navy,
                         ),
                       ),
                       subtitle: Text('${formatQty(qty)} un.'),
@@ -168,6 +258,7 @@ class ShoppingListsScreen extends ConsumerWidget {
                         formatBrl(total),
                         style: GoogleFonts.plusJakartaSans(
                           fontWeight: FontWeight.w800,
+                          color: AppTheme.navy,
                         ),
                       ),
                     );

@@ -9,8 +9,8 @@ import 'package:pegou_preco/core/crowd/trust_engine.dart';
 import 'package:pegou_preco/core/di/providers.dart';
 import 'package:pegou_preco/core/theme/app_theme.dart';
 import 'package:pegou_preco/core/widgets/app_button.dart';
+import 'package:pegou_preco/core/widgets/app_screen_chrome.dart';
 import 'package:pegou_preco/core/widgets/app_text_field.dart';
-import 'package:pegou_preco/core/widgets/brand_app_bar.dart';
 import 'package:pegou_preco/data/remote/sync_api_client.dart';
 
 final pendingVerifyEmailProvider = StateProvider<String?>((ref) => null);
@@ -23,16 +23,28 @@ class ProfileScreen extends ConsumerWidget {
     final sessionAsync = ref.watch(authSessionProvider);
 
     return Scaffold(
-      appBar: const BrandAppBar(title: 'Perfil'),
-      body: sessionAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Erro: $e')),
-        data: (session) {
-          if (session == null) {
-            return const _AuthGate();
-          }
-          return _ProfileBody(session: session);
-        },
+      backgroundColor: appScreenBg,
+      body: Column(
+        children: [
+          const AppScreenHeader(
+            title: 'Perfil',
+            subtitle: 'Conta e sincronização',
+            subtitleIcon: LucideIcons.user,
+          ),
+          Expanded(
+            child: sessionAsync.when(
+              loading: () =>
+                  const Center(child: CircularProgressIndicator()),
+              error: (e, _) => Center(child: Text('Erro: $e')),
+              data: (session) {
+                if (session == null) {
+                  return const _AuthGate();
+                }
+                return _ProfileBody(session: session);
+              },
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pegou_preco/app.dart';
 import 'package:pegou_preco/core/di/providers.dart';
 import 'package:pegou_preco/core/prefs/app_prefs.dart';
+import 'package:pegou_preco/data/seed/demo_seed.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 Future<void> main() async {
@@ -20,15 +21,18 @@ Future<void> main() async {
     prefs = null;
   }
 
+  final appPrefs = AppPrefs(prefs);
+
   final container = ProviderContainer(
     overrides: [
       sharedPrefsProvider.overrideWith((ref) async => prefs),
-      appPrefsProvider.overrideWith((ref) async => AppPrefs(prefs)),
+      appPrefsProvider.overrideWith((ref) async => appPrefs),
     ],
   );
 
   try {
-    await container.read(isarProvider.future);
+    final isar = await container.read(isarProvider.future);
+    await DemoSeed.runIfRequested(isar, appPrefs);
     container.read(syncBootstrapProvider);
   } catch (e, st) {
     // Ainda sobe a UI; providers que dependem do Isar mostram erro.

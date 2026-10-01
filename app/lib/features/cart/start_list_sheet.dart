@@ -97,7 +97,12 @@ class _StartListBodyState extends ConsumerState<_StartListBody> {
     }
 
     try {
-      final pos = await Geolocator.getCurrentPosition();
+      final pos = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.best,
+          distanceFilter: 0,
+        ),
+      );
       final markets = await ref.read(marketRepositoryProvider).all();
       final withGeo = markets
           .where((m) => m.lat != null && m.lng != null)
