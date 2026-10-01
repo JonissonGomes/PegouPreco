@@ -167,7 +167,7 @@ class _ProductRow extends ConsumerWidget {
               : '${product.category != null ? '${product.category} · ' : ''}'
                   'Menor ${formatBrl(stats.minPrice)} · '
                   'Média ${formatBrl(stats.avgPrice)} · '
-                  'Último ${formatBrl(stats.lastPrice)}',
+                  'Última compra ${formatBrl(stats.lastPrice)}',
           trustLevel: trust,
           onTap: () => context.push('/history/product/${product.id}'),
           trailing: const Icon(LucideIcons.chevronRight, color: AppTheme.muted),

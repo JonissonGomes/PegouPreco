@@ -78,13 +78,29 @@ class ProductDetailScreen extends ConsumerWidget {
             ),
             children: [
               if (stats != null) ...[
-                _StatCard(
-                  title: 'Menor preço',
-                  value: formatBrl(stats.minPrice as double),
-                ),
-                _StatCard(
-                  title: 'Média histórica',
-                  value: formatBrl(stats.avgPrice as double),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _StatCard(
+                        title: 'Menor',
+                        value: formatBrl(stats.minPrice as double),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _StatCard(
+                        title: 'Média',
+                        value: formatBrl(stats.avgPrice as double),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _StatCard(
+                        title: 'Maior',
+                        value: formatBrl(stats.maxPrice as double),
+                      ),
+                    ),
+                  ],
                 ),
                 _StatCard(
                   title: 'Última compra',
@@ -96,7 +112,7 @@ class ProductDetailScreen extends ConsumerWidget {
                 const SizedBox(height: 12),
               ],
               Text(
-                'Registros (${logs.length})',
+                'Histórico de compra (${logs.length})',
                 style: Theme.of(context).textTheme.titleMedium,
               ),
               const SizedBox(height: 8),

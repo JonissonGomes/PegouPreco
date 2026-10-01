@@ -40,13 +40,12 @@ class ShoppingListsScreen extends ConsumerWidget {
                 title: 'Listas salvas',
                 subtitle: 'Compare compras passadas',
                 subtitleIcon: LucideIcons.clipboardList,
-                actions: [
-                  IconButton(
-                    tooltip: 'Voltar',
-                    onPressed: () => Navigator.of(context).maybePop(),
-                    icon: const Icon(LucideIcons.arrowLeft, color: AppTheme.navy),
-                  ),
-                ],
+                leading: IconButton(
+                  tooltip: 'Voltar',
+                  onPressed: () => Navigator.of(context).maybePop(),
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(LucideIcons.arrowLeft, color: AppTheme.navy),
+                ),
               ),
               AppScreenNavyBar(
                 label: 'Total gasto nas listas',

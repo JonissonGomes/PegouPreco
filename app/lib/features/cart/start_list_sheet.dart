@@ -30,10 +30,10 @@ Future<bool> showStartListSheet(
   return result == true;
 }
 
-class _NearbyMarket {
-  _NearbyMarket({required this.market, required this.distanceKm});
+class _MarketOption {
+  _MarketOption({required this.market, this.distanceKm});
   final Market market;
-  final double distanceKm;
+  final double? distanceKm;
 }
 
 class _StartListBody extends ConsumerStatefulWidget {
@@ -45,23 +45,23 @@ class _StartListBody extends ConsumerStatefulWidget {
 
 class _StartListBodyState extends ConsumerState<_StartListBody> {
   final _listNameCtrl = TextEditingController();
-  final _marketNameCtrl = TextEditingController();
-  List<_NearbyMarket> _nearby = [];
+  final _marketCtrl = TextEditingController();
+  List<_MarketOption> _all = [];
   Market? _selected;
   var _loadingGeo = true;
-  var _hasLocation = false;
   var _saving = false;
 
   @override
   void initState() {
     super.initState();
-    _bootstrapGeo();
+    _marketCtrl.addListener(() => setState(() {}));
+    _bootstrap();
   }
 
   @override
   void dispose() {
     _listNameCtrl.dispose();
-    _marketNameCtrl.dispose();
+    _marketCtrl.dispose();
     super.dispose();
   }
 
@@ -84,57 +84,59 @@ class _StartListBodyState extends ConsumerState<_StartListBody> {
 
   double _rad(double deg) => deg * math.pi / 180;
 
-  Future<void> _bootstrapGeo() async {
+  Future<void> _bootstrap() async {
+    final markets = await ref.read(marketRepositoryProvider).all();
+    Position? pos;
     final loc = await PermissionGate.ensureLocation();
-    if (loc != PermissionGateResult.granted) {
-      if (mounted) {
-        setState(() {
-          _hasLocation = false;
-          _loadingGeo = false;
-        });
-      }
-      return;
+    if (loc == PermissionGateResult.granted) {
+      try {
+        pos = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.best,
+            distanceFilter: 0,
+          ),
+        );
+      } catch (_) {}
     }
 
-    try {
-      final pos = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.best,
-          distanceFilter: 0,
-        ),
-      );
-      final markets = await ref.read(marketRepositoryProvider).all();
-      final withGeo = markets
-          .where((m) => m.lat != null && m.lng != null)
-          .map(
-            (m) => _NearbyMarket(
-              market: m,
-              distanceKm: _haversineKm(
-                pos.latitude,
-                pos.longitude,
-                m.lat!,
-                m.lng!,
-              ),
-            ),
-          )
-          .where((n) => n.distanceKm <= 5)
-          .toList()
-        ..sort((a, b) => a.distanceKm.compareTo(b.distanceKm));
-
-      if (!mounted) return;
-      setState(() {
-        _hasLocation = true;
-        _nearby = withGeo;
-        _loadingGeo = false;
+    final options = markets.map((m) {
+      double? dist;
+      if (pos != null && m.lat != null && m.lng != null) {
+        dist = _haversineKm(pos.latitude, pos.longitude, m.lat!, m.lng!);
+      }
+      return _MarketOption(market: m, distanceKm: dist);
+    }).toList()
+      ..sort((a, b) {
+        final da = a.distanceKm ?? 9999;
+        final db = b.distanceKm ?? 9999;
+        return da.compareTo(db);
       });
-    } catch (_) {
-      if (mounted) {
-        setState(() {
-          _hasLocation = false;
-          _loadingGeo = false;
-        });
-      }
+
+    if (!mounted) return;
+    setState(() {
+      _all = options;
+      _loadingGeo = false;
+    });
+  }
+
+  List<_MarketOption> get _filtered {
+    final q = _marketCtrl.text.trim().toLowerCase();
+    if (q.isEmpty) {
+      // Sem busca: próximos (≤5km) ou todos se não houver geo.
+      final near = _all
+          .where((o) => o.distanceKm != null && o.distanceKm! <= 5)
+          .toList();
+      return near.isNotEmpty ? near : _all.take(8).toList();
     }
+    return _all
+        .where((o) => o.market.name.toLowerCase().contains(q))
+        .toList();
+  }
+
+  bool get _canCreate {
+    final q = _marketCtrl.text.trim();
+    if (q.isEmpty) return false;
+    return !_all.any((o) => o.market.name.toLowerCase() == q.toLowerCase());
   }
 
   Future<void> _confirm() async {
@@ -148,7 +150,7 @@ class _StartListBodyState extends ConsumerState<_StartListBody> {
 
     Market? market = _selected;
     if (market == null) {
-      final typed = _marketNameCtrl.text.trim();
+      final typed = _marketCtrl.text.trim();
       if (typed.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Informe o nome do mercado')),
@@ -171,6 +173,9 @@ class _StartListBodyState extends ConsumerState<_StartListBody> {
 
   @override
   Widget build(BuildContext context) {
+    final filtered = _filtered;
+    final query = _marketCtrl.text.trim();
+
     return Padding(
       padding: EdgeInsets.fromLTRB(
         AppTheme.pagePadding,
@@ -192,7 +197,7 @@ class _StartListBodyState extends ConsumerState<_StartListBody> {
             ),
             const Gap(4),
             Text(
-              'Nomeie a lista e informe o mercado antes de ler etiquetas.',
+              'Nomeie a lista e escolha o mercado. Se não existir, será criado.',
               style: GoogleFonts.plusJakartaSans(color: AppTheme.muted),
             ),
             const Gap(16),
@@ -203,34 +208,41 @@ class _StartListBodyState extends ConsumerState<_StartListBody> {
               prefixIcon: LucideIcons.shoppingBasket,
             ),
             const Gap(16),
-            Text(
-              'Mercado',
-              style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w800),
+            AppTextField(
+              controller: _marketCtrl,
+              label: 'Mercado',
+              hint: 'Buscar ou criar mercado…',
+              prefixIcon: LucideIcons.search,
+              onChanged: (_) {
+                if (_selected != null) {
+                  setState(() => _selected = null);
+                }
+              },
             ),
-            const Gap(8),
+            const Gap(10),
             if (_loadingGeo)
               const Padding(
                 padding: EdgeInsets.all(16),
                 child: Center(child: CircularProgressIndicator()),
               )
-            else if (_hasLocation) ...[
-              if (_nearby.isEmpty)
+            else ...[
+              if (filtered.isEmpty && query.isNotEmpty)
                 Text(
-                  'Nenhum mercado cadastrado perto de você. Digite o nome.',
+                  'Nenhum mercado com esse nome — toque em Começar para criar.',
                   style: GoogleFonts.plusJakartaSans(
                     color: AppTheme.muted,
                     fontSize: 13,
                   ),
                 )
-              else
+              else if (filtered.isNotEmpty)
                 ConstrainedBox(
                   constraints: const BoxConstraints(maxHeight: 200),
                   child: ListView.separated(
                     shrinkWrap: true,
-                    itemCount: _nearby.length,
+                    itemCount: filtered.length,
                     separatorBuilder: (_, __) => const Gap(8),
                     itemBuilder: (context, i) {
-                      final n = _nearby[i];
+                      final n = filtered[i];
                       final selected = _selected?.id == n.market.id;
                       return ListTile(
                         selected: selected,
@@ -253,44 +265,33 @@ class _StartListBodyState extends ConsumerState<_StartListBody> {
                             fontWeight: FontWeight.w700,
                           ),
                         ),
-                        subtitle: Text(
-                          '${n.distanceKm.toStringAsFixed(1)} km'
-                          '${n.market.avgRating != null ? ' · ★ ${n.market.avgRating!.toStringAsFixed(1)}' : ''}',
-                        ),
+                        subtitle: n.distanceKm != null
+                            ? Text(
+                                '${n.distanceKm!.toStringAsFixed(1)} km'
+                                '${n.market.avgRating != null ? ' · ★ ${n.market.avgRating!.toStringAsFixed(1)}' : ''}',
+                              )
+                            : null,
                         onTap: () {
                           setState(() {
                             _selected = n.market;
-                            _marketNameCtrl.text = n.market.name;
+                            _marketCtrl.text = n.market.name;
                           });
                         },
                       );
                     },
                   ),
                 ),
-              const Gap(12),
-            ],
-            AppTextField(
-              controller: _marketNameCtrl,
-              label: _hasLocation
-                  ? 'Ou digite o nome do mercado'
-                  : 'Nome do mercado',
-              hint: 'Ex.: Mercado Bom Preço',
-              prefixIcon: LucideIcons.store,
-              onChanged: (_) {
-                if (_selected != null) {
-                  setState(() => _selected = null);
-                }
-              },
-            ),
-            if (!_hasLocation && !_loadingGeo) ...[
-              const Gap(8),
-              Text(
-                'Sem acesso à localização — informe o mercado manualmente.',
-                style: GoogleFonts.plusJakartaSans(
-                  color: AppTheme.muted,
-                  fontSize: 13,
+              if (_canCreate) ...[
+                const Gap(8),
+                Text(
+                  'Será criado: "$query"',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.navy,
+                  ),
                 ),
-              ),
+              ],
             ],
             const Gap(20),
             AppButton(

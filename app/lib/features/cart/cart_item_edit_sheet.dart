@@ -115,68 +115,98 @@ class _CartItemEditBodyState extends State<_CartItemEditBody> {
     return Padding(
       padding: EdgeInsets.fromLTRB(
         AppTheme.pagePadding,
-        8,
+        4,
         AppTheme.pagePadding,
-        MediaQuery.viewInsetsOf(context).bottom + 24,
+        MediaQuery.viewInsetsOf(context).bottom + 16,
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            'Editar item',
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 20,
-              fontWeight: FontWeight.w800,
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Editar item',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                color: AppTheme.navy,
+              ),
             ),
-          ),
-          const Gap(16),
-          AppTextField(
-            controller: _name,
-            label: 'Produto',
-            prefixIcon: LucideIcons.package,
-          ),
-          const Gap(12),
-          AppTextField(
-            controller: _qty,
-            label: 'Quantidade',
-            keyboardType: TextInputType.number,
-            prefixIcon: LucideIcons.hash,
-          ),
-          const Gap(12),
-          AppTextField(
-            controller: _price,
-            label: 'Preço varejo',
-            keyboardType: TextInputType.number,
-            prefixIcon: LucideIcons.badgeDollarSign,
-          ),
-          const Gap(12),
-          AppTextField(
-            controller: _wholesale,
-            label: 'Preço atacado (opcional)',
-            keyboardType: TextInputType.number,
-            prefixIcon: LucideIcons.tags,
-          ),
-          const Gap(12),
-          AppTextField(
-            controller: _minQty,
-            label: 'Qtd mín. atacado',
-            keyboardType: TextInputType.number,
-            prefixIcon: LucideIcons.hash,
-          ),
-          const Gap(20),
-          AppButton(
-            label: 'Salvar',
-            icon: LucideIcons.check,
-            onPressed: _confirm,
-          ),
-          const Gap(8),
-          AppButton(
-            label: 'Cancelar',
-            outlined: true,
-            onPressed: () => Navigator.pop(context),
-          ),
-        ],
+            const Gap(12),
+            AppTextField(
+              controller: _name,
+              label: 'Produto',
+              compact: true,
+              prefixIcon: LucideIcons.package,
+            ),
+            const Gap(10),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: AppTextField(
+                    controller: _qty,
+                    label: 'Qtd',
+                    compact: true,
+                    keyboardType: TextInputType.number,
+                  ),
+                ),
+                const Gap(10),
+                Expanded(
+                  flex: 2,
+                  child: AppTextField(
+                    controller: _price,
+                    label: 'Preço varejo',
+                    compact: true,
+                    keyboardType: TextInputType.number,
+                    prefixIcon: LucideIcons.badgeDollarSign,
+                  ),
+                ),
+              ],
+            ),
+            const Gap(10),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  flex: 2,
+                  child: AppTextField(
+                    controller: _wholesale,
+                    label: 'Atacado (opc.)',
+                    compact: true,
+                    keyboardType: TextInputType.number,
+                    prefixIcon: LucideIcons.tags,
+                  ),
+                ),
+                const Gap(10),
+                Expanded(
+                  child: AppTextField(
+                    controller: _minQty,
+                    label: 'Qtd mín.',
+                    compact: true,
+                    keyboardType: TextInputType.number,
+                  ),
+                ),
+              ],
+            ),
+            const Gap(16),
+            AppButton(
+              label: 'Salvar',
+              icon: LucideIcons.check,
+              onPressed: _confirm,
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(
+                'Cancelar',
+                style: GoogleFonts.plusJakartaSans(
+                  fontWeight: FontWeight.w700,
+                  color: AppTheme.muted,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

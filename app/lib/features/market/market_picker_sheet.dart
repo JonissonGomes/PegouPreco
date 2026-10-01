@@ -27,15 +27,16 @@ class _MarketPickerBody extends ConsumerStatefulWidget {
 }
 
 class _MarketPickerBodyState extends ConsumerState<_MarketPickerBody> {
-  final _nameCtrl = TextEditingController();
-  final _cnpjCtrl = TextEditingController();
+  final _queryCtrl = TextEditingController();
   List<Market> _markets = [];
   var _loading = true;
+  var _saving = false;
 
   @override
   void initState() {
     super.initState();
     _load();
+    _queryCtrl.addListener(() => setState(() {}));
   }
 
   Future<void> _load() async {
@@ -47,16 +48,20 @@ class _MarketPickerBodyState extends ConsumerState<_MarketPickerBody> {
     });
   }
 
-  Future<void> _create() async {
-    final name = _nameCtrl.text.trim();
-    if (name.isEmpty) return;
-    HapticFeedback.lightImpact();
-    final market = await ref.read(marketRepositoryProvider).resolveOrCreate(
-          name: name,
-          cnpj: _cnpjCtrl.text.trim().isEmpty ? null : _cnpjCtrl.text,
-        );
-    await ref.read(currentMarketIdProvider.notifier).setMarketId(market.id);
-    if (mounted) Navigator.pop(context, market);
+  List<Market> get _filtered {
+    final q = _queryCtrl.text.trim().toLowerCase();
+    if (q.isEmpty) return _markets;
+    return _markets
+        .where((m) => m.name.toLowerCase().contains(q))
+        .toList();
+  }
+
+  bool get _canCreate {
+    final q = _queryCtrl.text.trim();
+    if (q.isEmpty) return false;
+    return !_markets.any(
+      (m) => m.name.toLowerCase() == q.toLowerCase(),
+    );
   }
 
   Future<void> _select(Market m) async {
@@ -65,15 +70,29 @@ class _MarketPickerBodyState extends ConsumerState<_MarketPickerBody> {
     if (mounted) Navigator.pop(context, m);
   }
 
+  Future<void> _createFromQuery() async {
+    final name = _queryCtrl.text.trim();
+    if (name.isEmpty) return;
+    setState(() => _saving = true);
+    HapticFeedback.lightImpact();
+    final market = await ref
+        .read(marketRepositoryProvider)
+        .resolveOrCreate(name: name);
+    await ref.read(currentMarketIdProvider.notifier).setMarketId(market.id);
+    if (mounted) Navigator.pop(context, market);
+  }
+
   @override
   void dispose() {
-    _nameCtrl.dispose();
-    _cnpjCtrl.dispose();
+    _queryCtrl.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final filtered = _filtered;
+    final query = _queryCtrl.text.trim();
+
     return Padding(
       padding: EdgeInsets.fromLTRB(
         AppTheme.pagePadding,
@@ -94,74 +113,89 @@ class _MarketPickerBodyState extends ConsumerState<_MarketPickerBody> {
           ),
           const Gap(4),
           Text(
-            'Escolha ou crie o estabelecimento onde você está.',
+            'Busque e selecione. Se não existir, será criado.',
             style: GoogleFonts.plusJakartaSans(color: AppTheme.muted),
           ),
           const Gap(16),
+          AppTextField(
+            controller: _queryCtrl,
+            label: 'Mercado',
+            hint: 'Ex.: Atacadão, Carrefour…',
+            prefixIcon: LucideIcons.search,
+          ),
+          const Gap(12),
           if (_loading)
             const Padding(
               padding: EdgeInsets.all(24),
               child: Center(child: CircularProgressIndicator()),
             )
-          else if (_markets.isEmpty)
-            Text(
-              'Nenhum mercado salvo ainda.',
-              style: GoogleFonts.plusJakartaSans(color: AppTheme.muted),
-            )
-          else
+          else ...[
             ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 220),
-              child: ListView.separated(
-                shrinkWrap: true,
-                itemCount: _markets.length,
-                separatorBuilder: (_, __) => const Gap(8),
-                itemBuilder: (context, i) {
-                  final m = _markets[i];
-                  return ListTile(
-                    shape: RoundedRectangleBorder(
-                      borderRadius:
-                          BorderRadius.circular(AppTheme.controlRadius),
-                      side: const BorderSide(color: AppTheme.border),
-                    ),
-                    leading: const Icon(LucideIcons.store, color: AppTheme.navy),
-                    title: Text(
-                      m.name,
-                      style: GoogleFonts.plusJakartaSans(
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    subtitle: m.cnpj != null ? Text('CNPJ ${m.cnpj}') : null,
-                    onTap: () => _select(m),
-                  );
-                },
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(context).height * 0.35,
               ),
+              child: filtered.isEmpty && query.isNotEmpty
+                  ? Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      child: Text(
+                        'Nenhum mercado com esse nome. Toque em criar abaixo.',
+                        style: GoogleFonts.plusJakartaSans(
+                          color: AppTheme.muted,
+                          fontSize: 13,
+                        ),
+                      ),
+                    )
+                  : filtered.isEmpty
+                      ? Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          child: Text(
+                            'Digite o nome do mercado para buscar ou criar.',
+                            style: GoogleFonts.plusJakartaSans(
+                              color: AppTheme.muted,
+                              fontSize: 13,
+                            ),
+                          ),
+                        )
+                      : ListView.separated(
+                          shrinkWrap: true,
+                          itemCount: filtered.length,
+                          separatorBuilder: (_, __) => const Gap(8),
+                          itemBuilder: (context, i) {
+                            final m = filtered[i];
+                            return ListTile(
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(
+                                  AppTheme.controlRadius,
+                                ),
+                                side: const BorderSide(color: AppTheme.border),
+                              ),
+                              leading: const Icon(
+                                LucideIcons.store,
+                                color: AppTheme.navy,
+                              ),
+                              title: Text(
+                                m.name,
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              subtitle: m.cnpj != null
+                                  ? Text('CNPJ ${m.cnpj}')
+                                  : null,
+                              onTap: () => _select(m),
+                            );
+                          },
+                        ),
             ),
-          const Gap(20),
-          Text(
-            'Novo mercado',
-            style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w800),
-          ),
-          const Gap(10),
-          AppTextField(
-            controller: _nameCtrl,
-            label: 'Nome',
-            hint: 'Ex.: Mercado Bom Preço',
-            prefixIcon: LucideIcons.store,
-          ),
-          const Gap(12),
-          AppTextField(
-            controller: _cnpjCtrl,
-            label: 'CNPJ (opcional)',
-            hint: '00.000.000/0000-00',
-            keyboardType: TextInputType.number,
-            prefixIcon: LucideIcons.badgeInfo,
-          ),
-          const Gap(16),
-          AppButton(
-            label: 'Usar este mercado',
-            icon: LucideIcons.check,
-            onPressed: _create,
-          ),
+            if (_canCreate) ...[
+              const Gap(12),
+              AppButton(
+                label: _saving ? 'Criando…' : 'Usar "$query" (novo)',
+                icon: LucideIcons.plus,
+                onPressed: _saving ? null : _createFromQuery,
+              ),
+            ],
+          ],
         ],
       ),
     );

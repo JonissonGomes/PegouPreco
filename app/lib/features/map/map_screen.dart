@@ -8,6 +8,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:pegou_preco/core/di/providers.dart';
 import 'package:pegou_preco/core/permissions/permission_gate.dart';
+import 'package:pegou_preco/core/routing/app_router.dart';
 import 'package:pegou_preco/core/theme/app_theme.dart';
 import 'package:pegou_preco/core/widgets/app_button.dart';
 import 'package:pegou_preco/core/widgets/app_screen_chrome.dart';
@@ -338,11 +339,13 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     final withGeo =
         _markets.where((m) => m.lat != null && m.lng != null).toList();
     final rated = withGeo.where((m) => (m.avgRating ?? 0) > 0).length;
+    final navVisible = ref.watch(bottomNavVisibleProvider);
+    final fabPad = navVisible ? appBottomNavClearance : 16.0;
 
     return Scaffold(
       backgroundColor: appScreenBg,
       floatingActionButton: Padding(
-        padding: const EdgeInsets.only(bottom: appBottomNavClearance),
+        padding: EdgeInsets.only(bottom: fabPad),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [

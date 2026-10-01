@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:pegou_preco/core/di/providers.dart';
+import 'package:pegou_preco/core/routing/app_router.dart';
 import 'package:pegou_preco/core/theme/app_theme.dart';
 import 'package:pegou_preco/core/utils/money.dart';
 import 'package:pegou_preco/core/utils/pricing.dart';
@@ -197,12 +198,14 @@ class CartScreen extends ConsumerWidget {
     final active = ref.watch(activeShoppingListProvider).valueOrNull;
     final marketName = ref.watch(_activeMarketNameProvider).valueOrNull;
     final actions = _headerActions(context, ref, cartRepo);
+    final navVisible = ref.watch(bottomNavVisibleProvider);
+    final bottomClearance = navVisible ? appBottomNavClearance : 16.0;
 
     return Scaffold(
       backgroundColor: appScreenBg,
       floatingActionButton: Padding(
-        // Acima do botão Finalizar + barra inferior.
-        padding: const EdgeInsets.only(bottom: appBottomNavClearance + 44),
+        // Acima do botão Finalizar (+ barra inferior quando visível).
+        padding: EdgeInsets.only(bottom: bottomClearance + 44),
         child: AppActionsFab(
           heroTag: 'cart_actions_fab',
           actions: actions,
@@ -281,6 +284,7 @@ class CartScreen extends ConsumerWidget {
               ),
               _FinalizeButton(
                 subtotal: totals.subtotal,
+                bottomClearance: bottomClearance,
                 onPressed: () => _finalize(context, ref),
               ),
             ],
@@ -361,17 +365,19 @@ class _NavyTotals extends StatelessWidget {
 class _FinalizeButton extends StatelessWidget {
   const _FinalizeButton({
     required this.subtotal,
+    required this.bottomClearance,
     required this.onPressed,
   });
 
   final double subtotal;
+  final double bottomClearance;
   final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
     // Colado logo acima da barra flutuante (extendBody no shell).
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, appBottomNavClearance),
+      padding: EdgeInsets.fromLTRB(16, 4, 16, bottomClearance),
       child: SizedBox(
         width: double.infinity,
         height: 48,
@@ -589,23 +595,39 @@ class _ItemBody extends StatelessWidget {
                 ],
               ),
             ),
-            const Gap(8),
+            const Gap(4),
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                GestureDetector(
-                  onTap: onEdit,
-                  child: Text(
-                    formatBrl(total),
-                    style: GoogleFonts.plusJakartaSans(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 16,
-                      color: AppTheme.navy,
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      formatBrl(total),
+                      style: GoogleFonts.plusJakartaSans(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16,
+                        color: AppTheme.navy,
+                      ),
                     ),
-                  ),
+                    IconButton(
+                      tooltip: 'Editar item',
+                      onPressed: onEdit,
+                      visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(
+                        minWidth: 32,
+                        minHeight: 32,
+                      ),
+                      icon: const Icon(
+                        LucideIcons.pencil,
+                        size: 16,
+                        color: AppTheme.navy,
+                      ),
+                    ),
+                  ],
                 ),
-                if (showBelowBadge) ...[
-                  const Gap(4),
+                if (showBelowBadge)
                   Container(
                     padding:
                         const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
@@ -623,7 +645,6 @@ class _ItemBody extends StatelessWidget {
                       ),
                     ),
                   ),
-                ],
               ],
             ),
           ],

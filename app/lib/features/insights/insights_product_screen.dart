@@ -83,19 +83,74 @@ class InsightsProductScreen extends ConsumerWidget {
             ),
             children: [
               if (stats != null) ...[
-                _Metric(
-                  label: 'Menor histórico',
-                  value: formatBrl(stats.minPrice),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _InlineStat(
+                        label: 'Menor',
+                        value: formatBrl(stats.minPrice),
+                        accent: AppTheme.trustGreen,
+                      ),
+                    ),
+                    const Gap(8),
+                    Expanded(
+                      child: _InlineStat(
+                        label: 'Média',
+                        value: formatBrl(stats.avgPrice),
+                      ),
+                    ),
+                    const Gap(8),
+                    Expanded(
+                      child: _InlineStat(
+                        label: 'Maior',
+                        value: formatBrl(stats.maxPrice),
+                        accent: const Color(0xFFDC2626),
+                      ),
+                    ),
+                  ],
                 ),
-                _Metric(
-                  label: 'Média',
-                  value: formatBrl(stats.avgPrice),
-                ),
-                _Metric(
-                  label: 'Último',
-                  value:
-                      '${formatBrl(stats.lastPrice)}'
-                      '${stats.lastMarketName != null ? ' · ${stats.lastMarketName}' : ''}',
+                const Gap(10),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(AppTheme.cardRadius),
+                    border: Border.all(color: AppTheme.border),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Última compra',
+                        style: GoogleFonts.plusJakartaSans(
+                          color: AppTheme.muted,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const Gap(4),
+                      Text(
+                        formatBrl(stats.lastPrice),
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                          color: AppTheme.navy,
+                        ),
+                      ),
+                      if (stats.lastMarketName != null) ...[
+                        const Gap(2),
+                        Text(
+                          stats.lastMarketName!,
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: AppTheme.muted,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
                 ),
               ],
               if (best != null) ...[
@@ -148,7 +203,7 @@ class InsightsProductScreen extends ConsumerWidget {
               const Gap(12),
               if (spots.length < 2)
                 Text(
-                  'Precisa de pelo menos 2 registros para o gráfico.',
+                  'Precisa de pelo menos 2 compras no histórico para o gráfico.',
                   style: GoogleFonts.plusJakartaSans(color: AppTheme.muted),
                 )
               else
@@ -177,7 +232,7 @@ class InsightsProductScreen extends ConsumerWidget {
                 ),
               const Gap(20),
               Text(
-                'Registros',
+                'Histórico de compra',
                 style: GoogleFonts.plusJakartaSans(
                   fontWeight: FontWeight.w800,
                   fontSize: 16,
@@ -211,35 +266,45 @@ class InsightsProductScreen extends ConsumerWidget {
   }
 }
 
-class _Metric extends StatelessWidget {
-  const _Metric({required this.label, required this.value});
+class _InlineStat extends StatelessWidget {
+  const _InlineStat({
+    required this.label,
+    required this.value,
+    this.accent,
+  });
+
   final String label;
   final String value;
+  final Color? accent;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(AppTheme.cardRadius),
         border: Border.all(color: AppTheme.border),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             label,
-            style: GoogleFonts.plusJakartaSans(color: AppTheme.muted),
+            style: GoogleFonts.plusJakartaSans(
+              color: AppTheme.muted,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+            ),
           ),
           const Gap(4),
           Text(
             value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: GoogleFonts.plusJakartaSans(
-              fontSize: 18,
+              fontSize: 14,
               fontWeight: FontWeight.w800,
+              color: accent ?? AppTheme.navy,
             ),
           ),
         ],

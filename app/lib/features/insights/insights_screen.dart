@@ -7,12 +7,14 @@ import 'package:intl/intl.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:pegou_preco/core/crowd/trust_engine.dart';
 import 'package:pegou_preco/core/di/providers.dart';
+import 'package:pegou_preco/core/routing/app_router.dart';
 import 'package:pegou_preco/core/theme/app_theme.dart';
 import 'package:pegou_preco/core/utils/money.dart';
 import 'package:pegou_preco/core/widgets/app_screen_chrome.dart';
 import 'package:pegou_preco/core/widgets/empty_state.dart';
 import 'package:pegou_preco/core/widgets/skeleton_list.dart';
 import 'package:pegou_preco/data/local/insights_repository.dart';
+import 'package:pegou_preco/data/local/price_log_repository.dart';
 import 'package:pegou_preco/data/local/schemas.dart';
 import 'package:pegou_preco/features/market/market_picker_sheet.dart';
 
@@ -35,6 +37,13 @@ final _insightsBundleProvider =
   );
 });
 
+final _marketTodayProvider =
+    FutureProvider.autoDispose<List<MarketDayItem>>((ref) async {
+  final market = await ref.watch(currentMarketProvider.future);
+  if (market == null) return const [];
+  return ref.watch(priceLogRepositoryProvider).forMarketToday(market.id);
+});
+
 class _InsightsBundle {
   _InsightsBundle({
     required this.cheap,
@@ -53,52 +62,122 @@ class _InsightsBundle {
   final int points;
 }
 
-class InsightsScreen extends ConsumerWidget {
+class InsightsScreen extends ConsumerStatefulWidget {
   const InsightsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<InsightsScreen> createState() => _InsightsScreenState();
+}
+
+class _InsightsScreenState extends ConsumerState<InsightsScreen> {
+  final _searchCtrl = TextEditingController();
+  String _query = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _searchCtrl.addListener(() {
+      setState(() => _query = _searchCtrl.text.trim().toLowerCase());
+    });
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  bool _match(String text) {
+    if (_query.isEmpty) return true;
+    return text.toLowerCase().contains(_query);
+  }
+
+  String _miniDate(DateTime dt) {
+    final local = dt.toLocal();
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final day = DateTime(local.year, local.month, local.day);
+    final time = DateFormat('HH:mm').format(local);
+    if (day == today) return 'hoje · $time';
+    return '${DateFormat('dd/MM').format(local)} · $time';
+  }
+
+  Future<void> _pickMarket() async {
+    final market = await showMarketPickerSheet(context);
+    if (market == null) return;
+    ref.invalidate(_marketTodayProvider);
+    ref.invalidate(_insightsBundleProvider);
+  }
+
+  List<Widget> _headerActions() => [
+        IconButton(
+          tooltip: 'Listas salvas',
+          onPressed: () => context.push('/shopping-lists'),
+          visualDensity: VisualDensity.compact,
+          icon: const Icon(LucideIcons.clipboardList, color: AppTheme.navy),
+        ),
+        IconButton(
+          tooltip: 'Mercado atual',
+          onPressed: _pickMarket,
+          visualDensity: VisualDensity.compact,
+          icon: const Icon(LucideIcons.store, color: AppTheme.navy),
+        ),
+      ];
+
+  @override
+  Widget build(BuildContext context) {
     final bundle = ref.watch(_insightsBundleProvider);
     final market = ref.watch(currentMarketProvider);
-
-    final actions = [
-      AppHeaderAction(
-        icon: LucideIcons.clipboardList,
-        label: 'Listas salvas',
-        onTap: () => context.push('/shopping-lists'),
-      ),
-      AppHeaderAction(
-        icon: LucideIcons.store,
-        label: 'Mercado atual',
-        onTap: () => showMarketPickerSheet(context),
-      ),
-    ];
+    final todayAsync = ref.watch(_marketTodayProvider);
+    final navVisible = ref.watch(bottomNavVisibleProvider);
+    final headerActions = _headerActions();
 
     return Scaffold(
       backgroundColor: appScreenBg,
-      floatingActionButton: Padding(
-        padding: const EdgeInsets.only(bottom: appBottomNavClearance),
-        child: AppActionsFab(
-          heroTag: 'insights_actions_fab',
-          actions: actions,
-        ),
-      ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       body: bundle.when(
-        loading: () => const Column(
+        loading: () => Column(
           children: [
             AppScreenHeader(
               title: 'Comparar',
               subtitle: 'Alertas e oportunidades',
               subtitleIcon: LucideIcons.lineChart,
+              actions: headerActions,
             ),
-            Expanded(child: SkeletonList()),
+            const Expanded(child: SkeletonList()),
           ],
         ),
         error: (e, _) => Center(child: Text('Erro: $e')),
         data: (data) {
-          final alerts = data.cheap.length + data.opportunities.length;
           final marketName = market.valueOrNull?.name;
+          final todayItems = todayAsync.valueOrNull ?? const <MarketDayItem>[];
+          final cheap = data.cheap
+              .where(
+                (r) =>
+                    _match(r.product.name) ||
+                    _match(r.marketName ?? ''),
+              )
+              .toList();
+          final opps = data.opportunities
+              .where((o) => _match(o.product.name))
+              .toList();
+          final lists = data.lists
+              .where(
+                (l) =>
+                    _match(l.name) || _match(l.marketName ?? ''),
+              )
+              .toList();
+          final markets = data.markets
+              .where((m) => _match(m.market.name))
+              .toList();
+          final todayFiltered = todayItems
+              .where((i) => _match(i.productName))
+              .toList();
+          final alerts = cheap.length + opps.length;
+          final empty = cheap.isEmpty &&
+              opps.isEmpty &&
+              lists.isEmpty &&
+              markets.isEmpty &&
+              todayFiltered.isEmpty;
 
           return Column(
             children: [
@@ -108,6 +187,7 @@ class InsightsScreen extends ConsumerWidget {
                 subtitleIcon: marketName != null
                     ? LucideIcons.mapPin
                     : LucideIcons.lineChart,
+                actions: headerActions,
               ),
               AppScreenNavyBar(
                 label: 'alertas',
@@ -131,28 +211,162 @@ class InsightsScreen extends ConsumerWidget {
                   ),
                 ),
               ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                child: TextField(
+                  controller: _searchCtrl,
+                  decoration: InputDecoration(
+                    hintText: 'Buscar item, mercado ou lista…',
+                    prefixIcon: const Icon(LucideIcons.search, size: 20),
+                    suffixIcon: _query.isEmpty
+                        ? null
+                        : IconButton(
+                            onPressed: () {
+                              _searchCtrl.clear();
+                            },
+                            icon: const Icon(LucideIcons.x, size: 18),
+                          ),
+                    filled: true,
+                    fillColor: Colors.white,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 12,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+                    ),
+                  ),
+                ),
+              ),
               Expanded(
-                child: data.cheap.isEmpty &&
-                        data.opportunities.isEmpty &&
-                        data.lists.isEmpty
+                child: empty
                     ? EmptyState(
-                        icon: LucideIcons.lineChart,
-                        title: 'Sem comparações ainda',
-                        message:
-                            'Capture preços ou finalize listas para ver alertas '
-                            'de preço mais baixo e histórico de compras.',
-                        actionLabel: 'Capturar',
-                        onAction: () => context.go('/capture'),
+                        icon: LucideIcons.search,
+                        title: _query.isEmpty
+                            ? 'Sem comparações ainda'
+                            : 'Nada encontrado',
+                        message: _query.isEmpty
+                            ? 'Capture preços ou finalize listas para ver alertas '
+                                'de preço mais baixo e histórico de compras.'
+                            : 'Tente outro termo de busca.',
+                        actionLabel:
+                            _query.isEmpty ? 'Capturar' : 'Limpar busca',
+                        onAction: () {
+                          if (_query.isEmpty) {
+                            context.go('/capture');
+                          } else {
+                            _searchCtrl.clear();
+                          }
+                        },
                       )
                     : ListView(
                         physics: const BouncingScrollPhysics(),
-                        padding: const EdgeInsets.only(bottom: 110),
+                        padding: EdgeInsets.only(
+                          bottom: navVisible ? 110 : 32,
+                        ),
                         children: [
+                          if (marketName != null) ...[
+                            AppSectionTitle(
+                              title: 'Hoje neste mercado',
+                              trailing: '${todayFiltered.length}',
+                            ),
+                            if (todayFiltered.isEmpty)
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 20,
+                                ),
+                                child: Text(
+                                  'Nenhum item catalogado hoje em $marketName.',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    color: AppTheme.muted,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              )
+                            else
+                              ...todayFiltered.map(
+                                (item) => Padding(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    16,
+                                    0,
+                                    16,
+                                    10,
+                                  ),
+                                  child: AppListCard(
+                                    onTap: () => context.push(
+                                      '/insights/product/${item.log.productId}',
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Container(
+                                          width: 42,
+                                          height: 42,
+                                          decoration: BoxDecoration(
+                                            color: AppTheme.yellow
+                                                .withValues(alpha: 0.35),
+                                            borderRadius:
+                                                BorderRadius.circular(12),
+                                          ),
+                                          child: const Icon(
+                                            LucideIcons.tag,
+                                            color: AppTheme.navy,
+                                            size: 20,
+                                          ),
+                                        ),
+                                        const Gap(12),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                item.productName,
+                                                maxLines: 2,
+                                                overflow: TextOverflow.ellipsis,
+                                                style:
+                                                    GoogleFonts.plusJakartaSans(
+                                                  fontWeight: FontWeight.w800,
+                                                  fontSize: 14,
+                                                  color: AppTheme.navy,
+                                                ),
+                                              ),
+                                              const Gap(2),
+                                              Text(
+                                                _miniDate(item.log.capturedAt),
+                                                style:
+                                                    GoogleFonts.plusJakartaSans(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: AppTheme.muted,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        Text(
+                                          formatBrl(item.log.retailPrice),
+                                          style: GoogleFonts.plusJakartaSans(
+                                            fontWeight: FontWeight.w800,
+                                            fontSize: 15,
+                                            color: AppTheme.navy,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
                           AppSectionTitle(
                             title: 'Preço mais baixo',
-                            trailing: '${data.cheap.length} itens',
+                            trailing: '${cheap.length} itens',
                           ),
-                          if (data.cheap.isEmpty)
+                          if (cheap.isEmpty)
                             Padding(
                               padding:
                                   const EdgeInsets.symmetric(horizontal: 20),
@@ -165,90 +379,88 @@ class InsightsScreen extends ConsumerWidget {
                               ),
                             )
                           else
-                            ...data.cheap.take(8).map(
-                                  (row) => Padding(
-                                    padding: const EdgeInsets.fromLTRB(
-                                      16,
-                                      0,
-                                      16,
-                                      10,
-                                    ),
-                                    child: AppListCard(
-                                      onTap: () => context.push(
-                                        '/insights/product/${row.product.id}',
+                            ...cheap.map(
+                              (row) => Padding(
+                                padding: const EdgeInsets.fromLTRB(
+                                  16,
+                                  0,
+                                  16,
+                                  10,
+                                ),
+                                child: AppListCard(
+                                  onTap: () => context.push(
+                                    '/insights/product/${row.product.id}',
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Container(
+                                        width: 42,
+                                        height: 42,
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFDCFCE7),
+                                          borderRadius:
+                                              BorderRadius.circular(12),
+                                        ),
+                                        child: const Icon(
+                                          LucideIcons.trendingDown,
+                                          color: Color(0xFF166534),
+                                          size: 20,
+                                        ),
                                       ),
-                                      child: Row(
-                                        children: [
-                                          Container(
-                                            width: 42,
-                                            height: 42,
-                                            decoration: BoxDecoration(
-                                              color: const Color(0xFFDCFCE7),
-                                              borderRadius:
-                                                  BorderRadius.circular(12),
+                                      const Gap(12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              row.product.name,
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                              style:
+                                                  GoogleFonts.plusJakartaSans(
+                                                fontWeight: FontWeight.w800,
+                                                fontSize: 14,
+                                                color: AppTheme.navy,
+                                              ),
                                             ),
-                                            child: const Icon(
-                                              LucideIcons.trendingDown,
-                                              color: Color(0xFF166534),
-                                              size: 20,
+                                            const Gap(2),
+                                            Text(
+                                              '${row.marketName ?? 'Mercado não informado'}'
+                                              ' · ${_miniDate(row.log.capturedAt)}',
+                                              style:
+                                                  GoogleFonts.plusJakartaSans(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w600,
+                                                color: AppTheme.muted,
+                                              ),
                                             ),
-                                          ),
-                                          const Gap(12),
-                                          Expanded(
-                                            child: Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                Text(
-                                                  row.product.name,
-                                                  maxLines: 2,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                  style: GoogleFonts
-                                                      .plusJakartaSans(
-                                                    fontWeight: FontWeight.w800,
-                                                    fontSize: 14,
-                                                    color: AppTheme.navy,
-                                                  ),
-                                                ),
-                                                const Gap(2),
-                                                Text(
-                                                  row.marketName ??
-                                                      'Mercado não informado',
-                                                  style: GoogleFonts
-                                                      .plusJakartaSans(
-                                                    fontSize: 12,
-                                                    fontWeight: FontWeight.w600,
-                                                    color: AppTheme.muted,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                          Text(
-                                            formatBrl(row.log.retailPrice),
-                                            style:
-                                                GoogleFonts.plusJakartaSans(
-                                              fontWeight: FontWeight.w800,
-                                              fontSize: 15,
-                                              color: AppTheme.trustGreen,
-                                            ),
-                                          ),
-                                        ],
+                                          ],
+                                        ),
                                       ),
-                                    ),
+                                      Text(
+                                        formatBrl(row.log.retailPrice),
+                                        style: GoogleFonts.plusJakartaSans(
+                                          fontWeight: FontWeight.w800,
+                                          fontSize: 15,
+                                          color: AppTheme.trustGreen,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
+                              ),
+                            ),
                           AppSectionTitle(
                             title: 'Acima da sua média',
-                            trailing: '${data.opportunities.length}',
+                            trailing: '${opps.length}',
                           ),
-                          if (data.opportunities.isEmpty)
+                          if (opps.isEmpty)
                             Padding(
                               padding:
                                   const EdgeInsets.symmetric(horizontal: 20),
                               child: Text(
-                                'Nenhuma oportunidade de troca agora.',
+                                'Nenhuma oportunidade agora.',
                                 style: GoogleFonts.plusJakartaSans(
                                   color: AppTheme.muted,
                                   fontWeight: FontWeight.w600,
@@ -256,84 +468,82 @@ class InsightsScreen extends ConsumerWidget {
                               ),
                             )
                           else
-                            ...data.opportunities.take(6).map(
-                                  (o) => Padding(
-                                    padding: const EdgeInsets.fromLTRB(
-                                      16,
-                                      0,
-                                      16,
-                                      10,
-                                    ),
-                                    child: AppListCard(
-                                      onTap: () => context.push(
-                                        '/insights/product/${o.product.id}',
+                            ...opps.map(
+                              (o) => Padding(
+                                padding: const EdgeInsets.fromLTRB(
+                                  16,
+                                  0,
+                                  16,
+                                  10,
+                                ),
+                                child: AppListCard(
+                                  onTap: () => context.push(
+                                    '/insights/product/${o.product.id}',
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Container(
+                                        width: 42,
+                                        height: 42,
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFFEE2E2),
+                                          borderRadius:
+                                              BorderRadius.circular(12),
+                                        ),
+                                        child: const Icon(
+                                          LucideIcons.trendingUp,
+                                          color: Color(0xFFDC2626),
+                                          size: 20,
+                                        ),
                                       ),
-                                      child: Row(
-                                        children: [
-                                          Container(
-                                            width: 42,
-                                            height: 42,
-                                            decoration: BoxDecoration(
-                                              color: const Color(0xFFFEE2E2),
-                                              borderRadius:
-                                                  BorderRadius.circular(12),
+                                      const Gap(12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              o.product.name,
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                              style:
+                                                  GoogleFonts.plusJakartaSans(
+                                                fontWeight: FontWeight.w800,
+                                                fontSize: 14,
+                                                color: AppTheme.navy,
+                                              ),
                                             ),
-                                            child: const Icon(
-                                              LucideIcons.trendingUp,
-                                              color: Color(0xFFDC2626),
-                                              size: 20,
+                                            const Gap(2),
+                                            Text(
+                                              '+${o.pctAbove.toStringAsFixed(0)}% vs média ${formatBrl(o.avgPrice)}',
+                                              style:
+                                                  GoogleFonts.plusJakartaSans(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w600,
+                                                color: AppTheme.muted,
+                                              ),
                                             ),
-                                          ),
-                                          const Gap(12),
-                                          Expanded(
-                                            child: Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                Text(
-                                                  o.product.name,
-                                                  maxLines: 2,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                  style: GoogleFonts
-                                                      .plusJakartaSans(
-                                                    fontWeight: FontWeight.w800,
-                                                    fontSize: 14,
-                                                    color: AppTheme.navy,
-                                                  ),
-                                                ),
-                                                const Gap(2),
-                                                Text(
-                                                  '+${o.pctAbove.toStringAsFixed(0)}% vs média ${formatBrl(o.avgPrice)}',
-                                                  style: GoogleFonts
-                                                      .plusJakartaSans(
-                                                    fontSize: 12,
-                                                    fontWeight: FontWeight.w600,
-                                                    color: AppTheme.muted,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                          Text(
-                                            formatBrl(o.lastPrice),
-                                            style:
-                                                GoogleFonts.plusJakartaSans(
-                                              fontWeight: FontWeight.w800,
-                                              fontSize: 15,
-                                              color: AppTheme.navy,
-                                            ),
-                                          ),
-                                        ],
+                                          ],
+                                        ),
                                       ),
-                                    ),
+                                      Text(
+                                        formatBrl(o.lastPrice),
+                                        style: GoogleFonts.plusJakartaSans(
+                                          fontWeight: FontWeight.w800,
+                                          fontSize: 15,
+                                          color: AppTheme.navy,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
+                              ),
+                            ),
                           AppSectionTitle(
                             title: 'Listas passadas',
-                            trailing: '${data.lists.length}',
+                            trailing: '${lists.length}',
                           ),
-                          if (data.lists.isEmpty)
+                          if (lists.isEmpty)
                             Padding(
                               padding:
                                   const EdgeInsets.symmetric(horizontal: 20),
@@ -346,9 +556,8 @@ class InsightsScreen extends ConsumerWidget {
                               ),
                             )
                           else
-                            ...data.lists.take(5).map((list) {
-                              final date =
-                                  DateFormat('dd/MM/yyyy').format(
+                            ...lists.map((list) {
+                              final date = DateFormat('dd/MM/yyyy').format(
                                 list.finishedAt.toLocal(),
                               );
                               return Padding(
@@ -386,8 +595,8 @@ class InsightsScreen extends ConsumerWidget {
                                           children: [
                                             Text(
                                               list.name,
-                                              style: GoogleFonts
-                                                  .plusJakartaSans(
+                                              style:
+                                                  GoogleFonts.plusJakartaSans(
                                                 fontWeight: FontWeight.w800,
                                                 fontSize: 14,
                                                 color: AppTheme.navy,
@@ -396,8 +605,8 @@ class InsightsScreen extends ConsumerWidget {
                                             const Gap(2),
                                             Text(
                                               '${list.marketName ?? 'Mercado'} · $date · ${list.itemCount} itens',
-                                              style: GoogleFonts
-                                                  .plusJakartaSans(
+                                              style:
+                                                  GoogleFonts.plusJakartaSans(
                                                 fontSize: 12,
                                                 fontWeight: FontWeight.w600,
                                                 color: AppTheme.muted,
@@ -421,9 +630,9 @@ class InsightsScreen extends ConsumerWidget {
                             }),
                           AppSectionTitle(
                             title: 'Estabelecimentos',
-                            trailing: '${data.markets.length}',
+                            trailing: '${markets.length}',
                           ),
-                          ...data.markets.take(8).map((m) {
+                          ...markets.map((m) {
                             final dateFmt = DateFormat('dd/MM/yyyy');
                             return Padding(
                               padding: const EdgeInsets.fromLTRB(

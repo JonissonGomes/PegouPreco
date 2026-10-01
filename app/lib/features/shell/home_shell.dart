@@ -19,6 +19,8 @@ class HomeShell extends ConsumerStatefulWidget {
 }
 
 class _HomeShellState extends ConsumerState<HomeShell> {
+  double _scrollAcc = 0;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -27,6 +29,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         ref.read(shellTabIndexProvider.notifier).state = index;
+        ref.read(bottomNavVisibleProvider.notifier).state = true;
       });
     }
   }
@@ -34,72 +37,111 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   void _onTap(int index) {
     HapticFeedback.selectionClick();
     ref.read(shellTabIndexProvider.notifier).state = index;
+    ref.read(bottomNavVisibleProvider.notifier).state = true;
     widget.navigationShell.goBranch(
       index,
       initialLocation: index == widget.navigationShell.currentIndex,
     );
   }
 
+  bool _onScroll(ScrollNotification n) {
+    if (n.metrics.axis != Axis.vertical) return false;
+    if (n is ScrollUpdateNotification) {
+      final delta = n.scrollDelta ?? 0;
+      _scrollAcc += delta;
+      if (_scrollAcc > 12) {
+        _scrollAcc = 0;
+        if (ref.read(bottomNavVisibleProvider)) {
+          ref.read(bottomNavVisibleProvider.notifier).state = false;
+        }
+      } else if (_scrollAcc < -8) {
+        _scrollAcc = 0;
+        if (!ref.read(bottomNavVisibleProvider)) {
+          ref.read(bottomNavVisibleProvider.notifier).state = true;
+        }
+      }
+    } else if (n is ScrollEndNotification) {
+      _scrollAcc = 0;
+      if (n.metrics.pixels <= 8) {
+        ref.read(bottomNavVisibleProvider.notifier).state = true;
+      }
+    }
+    return false;
+  }
+
   @override
   Widget build(BuildContext context) {
     final index = widget.navigationShell.currentIndex;
+    final navVisible = ref.watch(bottomNavVisibleProvider);
 
     return Scaffold(
       extendBody: true,
-      body: widget.navigationShell,
-      bottomNavigationBar: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(28),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-              child: Container(
-                height: AppTheme.bottomBarHeight,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.92),
-                  borderRadius: BorderRadius.circular(28),
-                  border: Border.all(color: AppTheme.border),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppTheme.navy.withValues(alpha: 0.08),
-                      blurRadius: 24,
-                      offset: const Offset(0, 10),
+      body: NotificationListener<ScrollNotification>(
+        onNotification: _onScroll,
+        child: widget.navigationShell,
+      ),
+      bottomNavigationBar: AnimatedSlide(
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+        offset: navVisible ? Offset.zero : const Offset(0, 1.4),
+        child: AnimatedOpacity(
+          duration: const Duration(milliseconds: 180),
+          opacity: navVisible ? 1 : 0,
+          child: SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(28),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                  child: Container(
+                    height: AppTheme.bottomBarHeight,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.92),
+                      borderRadius: BorderRadius.circular(28),
+                      border: Border.all(color: AppTheme.border),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppTheme.navy.withValues(alpha: 0.08),
+                          blurRadius: 24,
+                          offset: const Offset(0, 10),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-                child: Row(
-                  children: [
-                    _NavItem(
-                      icon: LucideIcons.shoppingCart,
-                      label: 'Carrinho',
-                      selected: index == 0,
-                      onTap: () => _onTap(0),
+                    child: Row(
+                      children: [
+                        _NavItem(
+                          icon: LucideIcons.shoppingCart,
+                          label: 'Carrinho',
+                          selected: index == 0,
+                          onTap: () => _onTap(0),
+                        ),
+                        _NavItem(
+                          icon: LucideIcons.map,
+                          label: 'Mapa',
+                          selected: index == 1,
+                          onTap: () => _onTap(1),
+                        ),
+                        _ScannerFab(
+                          selected: index == 2,
+                          onTap: () => _onTap(2),
+                        ),
+                        _NavItem(
+                          icon: LucideIcons.lineChart,
+                          label: 'Comparar',
+                          selected: index == 3,
+                          onTap: () => _onTap(3),
+                        ),
+                        _NavItem(
+                          icon: LucideIcons.user,
+                          label: 'Perfil',
+                          selected: index == 4,
+                          onTap: () => _onTap(4),
+                        ),
+                      ],
                     ),
-                    _NavItem(
-                      icon: LucideIcons.map,
-                      label: 'Mapa',
-                      selected: index == 1,
-                      onTap: () => _onTap(1),
-                    ),
-                    _ScannerFab(
-                      selected: index == 2,
-                      onTap: () => _onTap(2),
-                    ),
-                    _NavItem(
-                      icon: LucideIcons.lineChart,
-                      label: 'Comparar',
-                      selected: index == 3,
-                      onTap: () => _onTap(3),
-                    ),
-                    _NavItem(
-                      icon: LucideIcons.user,
-                      label: 'Perfil',
-                      selected: index == 4,
-                      onTap: () => _onTap(4),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),

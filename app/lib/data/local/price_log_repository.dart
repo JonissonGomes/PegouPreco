@@ -4,6 +4,7 @@ import 'package:pegou_preco/data/local/schemas.dart';
 class ProductPriceStats {
   ProductPriceStats({
     required this.minPrice,
+    required this.maxPrice,
     required this.avgPrice,
     required this.lastPrice,
     required this.lastCapturedAt,
@@ -11,10 +12,22 @@ class ProductPriceStats {
   });
 
   final double minPrice;
+  final double maxPrice;
   final double avgPrice;
   final double lastPrice;
   final DateTime lastCapturedAt;
   final String? lastMarketName;
+}
+
+/// Item catalogado em um mercado (com nome do produto).
+class MarketDayItem {
+  MarketDayItem({
+    required this.log,
+    required this.productName,
+  });
+
+  final PriceLog log;
+  final String productName;
 }
 
 /// Contexto de comparação para cards do carrinho (mockup).
@@ -64,6 +77,7 @@ class PriceLogRepository {
 
     final prices = logs.map((l) => l.retailPrice).toList();
     final min = prices.reduce((a, b) => a < b ? a : b);
+    final max = prices.reduce((a, b) => a > b ? a : b);
     final avg = prices.reduce((a, b) => a + b) / prices.length;
     final last = logs.first;
     String? marketName;
@@ -72,11 +86,39 @@ class PriceLogRepository {
     }
     return ProductPriceStats(
       minPrice: min,
+      maxPrice: max,
       avgPrice: avg,
       lastPrice: last.retailPrice,
       lastCapturedAt: last.capturedAt,
       lastMarketName: marketName,
     );
+  }
+
+  /// Preços capturados hoje (dia local) em um mercado.
+  Future<List<MarketDayItem>> forMarketToday(int marketId) async {
+    final now = DateTime.now();
+    final start = DateTime(now.year, now.month, now.day);
+    final end = start.add(const Duration(days: 1));
+    final logs = await _isar.priceLogs
+        .filter()
+        .marketIdEqualTo(marketId)
+        .sortByCapturedAtDesc()
+        .findAll();
+    final today = logs.where((l) {
+      final t = l.capturedAt.toLocal();
+      return !t.isBefore(start) && t.isBefore(end);
+    });
+    final out = <MarketDayItem>[];
+    for (final log in today) {
+      final product = await _isar.products.get(log.productId);
+      out.add(
+        MarketDayItem(
+          log: log,
+          productName: product?.name ?? 'Produto #${log.productId}',
+        ),
+      );
+    }
+    return out;
   }
 
   /// Compra anterior + menor preço conhecido (para UI do carrinho).
