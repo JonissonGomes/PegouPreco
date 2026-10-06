@@ -2,6 +2,10 @@ apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 
+// dotenv.gradle resolve mal o path no Windows; força mobile/.env (raiz do RN).
+def rnEnvFile = file("${rootProject.projectDir}/../.env")
+System.setProperty("ENVFILE", rnEnvFile.absolutePath)
+
 apply from: "../../node_modules/react-native-config/android/dotenv.gradle"
 
 /**
