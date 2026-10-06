@@ -34,11 +34,24 @@ function initialCenter(): GeoPoint {
   return RECIFE;
 }
 
-function tileUrl(token: string) {
+function tileLayerJs(token: string) {
   if (token) {
-    return `https://api.mapbox.com/styles/v1/mapbox/light-v11/tiles/256/{z}/{x}/{y}@2x?access_token=${token}`;
+    // Tiles 512 do Mapbox exigem zoomOffset -1 no Leaflet — senão o basemap
+    // fica deslocado e os pins parecem "no lugar errado".
+    const url = `https://api.mapbox.com/styles/v1/mapbox/light-v11/tiles/{z}/{x}/{y}?access_token=${token}`;
+    return `L.tileLayer(${JSON.stringify(url)}, {
+      tileSize: 512,
+      zoomOffset: -1,
+      maxZoom: 19,
+      attribution: ${JSON.stringify('© Mapbox © OpenStreetMap')}
+    })`;
   }
-  return 'https://cartodb-basemaps-a.global.ssl.fastly.net/light_all/{z}/{x}/{y}.png';
+  const url =
+    'https://cartodb-basemaps-a.global.ssl.fastly.net/light_all/{z}/{x}/{y}.png';
+  return `L.tileLayer(${JSON.stringify(url)}, {
+    maxZoom: 19,
+    attribution: ${JSON.stringify('© CARTO © OpenStreetMap')}
+  })`;
 }
 
 function buildMapHtml(
@@ -52,9 +65,6 @@ function buildMapHtml(
   }>,
   token: string,
 ) {
-  const attribution = token
-    ? '© Mapbox © OpenStreetMap'
-    : '© CARTO © OpenStreetMap';
   const markersJson = JSON.stringify(markets);
 
   return `<!DOCTYPE html>
@@ -83,12 +93,16 @@ function buildMapHtml(
       line-height: 32px !important;
       font-size: 16px !important;
     }
-    .pin {
-      width: 28px; height: 36px;
-      margin-left: -14px; margin-top: -36px;
+    .mkt-pin, .user-dot {
+      background: transparent !important;
+      border: none !important;
+    }
+    .mkt-pin svg {
+      display: block;
+      width: 28px;
+      height: 36px;
       filter: drop-shadow(0 2px 3px rgba(0,0,0,0.28));
     }
-    .pin svg { display: block; width: 28px; height: 36px; }
     .dot-user {
       width: 14px; height: 14px; border-radius: 50%;
       background: #00C2FF; border: 2px solid #fff;
@@ -107,15 +121,12 @@ function buildMapHtml(
       attributionControl: true,
     }).setView(center, 12);
 
-    L.tileLayer(${JSON.stringify(tileUrl(token))}, {
-      maxZoom: 19,
-      attribution: ${JSON.stringify(attribution)},
-    }).addTo(map);
+    ${tileLayerJs(token)}.addTo(map);
     L.control.zoom({ position: 'bottomright' }).addTo(map);
 
     function makeUserIcon() {
       return L.divIcon({
-        className: '',
+        className: 'user-dot',
         html: '<div class="dot-user"></div>',
         iconSize: [14, 14],
         iconAnchor: [7, 7],
@@ -130,12 +141,13 @@ function buildMapHtml(
         + '<path d="M14 1C7.4 1 2 6.4 2 13c0 8.4 12 21 12 21s12-12.6 12-21C26 6.4 20.6 1 14 1z" fill="' + fill + '" stroke="' + stroke + '" stroke-width="2"/>'
         + '<circle cx="14" cy="13" r="4.5" fill="' + (brand ? '#0B2A6B' : '#fff') + '"/>'
         + '</svg>';
+      // Sem margin CSS: o iconAnchor já posiciona a ponta do pin na lat/lng.
       return L.divIcon({
-        className: '',
-        html: '<div class="pin">' + svg + '</div>',
+        className: 'mkt-pin',
+        html: svg,
         iconSize: [28, 36],
         iconAnchor: [14, 36],
-        popupAnchor: [0, -32],
+        popupAnchor: [0, -36],
       });
     }
 
@@ -187,7 +199,7 @@ function ingestHits(
   }>,
 ) {
   for (const h of hits) {
-    const m = marketRepo.resolveOrCreate(h.name);
+    const m = marketRepo.resolveOrCreateNear(h.name, h.lat, h.lng);
     marketRepo.upsertGeo(m.id, {
       lat: h.lat,
       lng: h.lng,
@@ -324,7 +336,12 @@ export function MapScreen() {
         const lng = r.lng != null ? Number(r.lng) : null;
         if (lat == null || lng == null) continue;
         if (haversineKm(originPt, {lat, lng}) > NEARBY_RADIUS_KM) continue;
-        const m = marketRepo.resolveOrCreate(name, (r.cnpj as string) ?? null);
+        const m = marketRepo.resolveOrCreateNear(
+          name,
+          lat,
+          lng,
+          (r.cnpj as string) ?? null,
+        );
         marketRepo.upsertGeo(m.id, {
           lat,
           lng,

@@ -1,5 +1,6 @@
 import {similarity} from '@/domain/levenshtein';
 import {lineSavings, lineTotal} from '@/domain/pricing';
+import {haversineKm} from '@/data/remote/nearbyMarkets';
 import {
   getState,
   metaGet,
@@ -81,9 +82,34 @@ export const marketRepo = {
       m => m.name.toLowerCase() === trimmed.toLowerCase(),
     );
     if (existing) return existing;
+    return marketRepo.create(trimmed, cnpj);
+  },
+  /**
+   * Evita fundir filiais homônimas distantes (ex.: Atacadão em Recife vs outra cidade).
+   * Sem coordenadas, cai no match só por nome.
+   */
+  resolveOrCreateNear(
+    name: string,
+    lat: number,
+    lng: number,
+    cnpj?: string | null,
+    maxKm = 0.35,
+  ): Market {
+    const trimmed = name.trim();
+    const sameName = getState().markets.filter(
+      m => m.name.toLowerCase() === trimmed.toLowerCase(),
+    );
+    const near = sameName.find(m => {
+      if (m.lat == null || m.lng == null) return true;
+      return haversineKm({lat: m.lat, lng: m.lng}, {lat, lng}) <= maxKm;
+    });
+    if (near) return near;
+    return marketRepo.create(trimmed, cnpj);
+  },
+  create(name: string, cnpj?: string | null): Market {
     const market: Market = {
       id: nextId('markets'),
-      name: trimmed,
+      name: name.trim(),
       cnpj: cnpj ?? null,
       uf: null,
       lat: null,

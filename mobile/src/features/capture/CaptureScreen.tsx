@@ -1,5 +1,6 @@
-import React, {useCallback, useState} from 'react';
+import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Pressable,
   StyleSheet,
@@ -7,12 +8,13 @@ import {
   View,
 } from 'react-native';
 import {Camera, useCameraDevice} from 'react-native-vision-camera';
-import {FileText, QrCode, ScanLine} from 'lucide-react-native';
+import {ChevronRight, FileText, QrCode, ScanLine, X} from 'lucide-react-native';
 import {AppButton, AppField, AppScreenHeader} from '@/ui/chrome';
 import {KeyboardSafeSheet} from '@/ui/keyboardSheet';
 import {colors} from '@/ui/theme';
 import {parseLabel, type LabelFields} from '@/domain/labelParser';
 import {formatBrl, parseBrl} from '@/domain/money';
+import {recognizeLabelFromPhoto} from '@/data/ocr/labelOcr';
 import {refreshPermissionFlags} from '@/app/permissions';
 import {
   cartRepo,
@@ -27,6 +29,51 @@ import {fetchAndParseNfce} from '@/data/remote/sefazClient';
 
 type ExtraMode = 'none' | 'text' | 'nfce';
 
+const LIVE_SCAN_MS = 1800;
+
+function fingerprint(f: LabelFields) {
+  return `${(f.productName ?? '').toLowerCase()}|${f.retailPrice ?? ''}`;
+}
+
+function LabelHitPreview({
+  fields,
+  onPress,
+  onDismiss,
+}: {
+  fields: LabelFields;
+  onPress: () => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <View style={styles.hitWrap} pointerEvents="box-none">
+      <Pressable style={styles.hitCard} onPress={onPress}>
+        <View style={styles.hitDot} />
+        <View style={{flex: 1, minWidth: 0}}>
+          <Text style={styles.hitName} numberOfLines={1}>
+            {fields.productName || 'Etiqueta detectada'}
+          </Text>
+          <Text style={styles.hitPrice}>
+            {fields.retailPrice != null
+              ? formatBrl(fields.retailPrice)
+              : 'Preço ?'}
+            {fields.wholesalePrice != null
+              ? ` · atac. ${formatBrl(fields.wholesalePrice)}`
+              : ''}
+          </Text>
+        </View>
+        <ChevronRight size={20} color={colors.navy} />
+      </Pressable>
+      <Pressable
+        style={styles.hitClose}
+        onPress={onDismiss}
+        hitSlop={10}
+        accessibilityLabel="Dispensar">
+        <X size={14} color="#fff" />
+      </Pressable>
+    </View>
+  );
+}
+
 export function CaptureScreen() {
   const activeListName = useAppStore(s => s.activeListName);
   const activeMarketId = useAppStore(s => s.activeMarketId);
@@ -34,11 +81,18 @@ export function CaptureScreen() {
   const cameraGranted = useAppStore(s => s.permissions.camera);
   const marketName = useMarketName(activeMarketId);
   const device = useCameraDevice('back');
+  const cameraRef = useRef<Camera>(null);
+  const busyRef = useRef(false);
+  const lastFpRef = useRef<string | null>(null);
+
   const [cameraOn, setCameraOn] = useState(false);
   const [fields, setFields] = useState<LabelFields | null>(null);
+  const [hit, setHit] = useState<LabelFields | null>(null);
   const [raw, setRaw] = useState('');
   const [qrUrl, setQrUrl] = useState('');
   const [extra, setExtra] = useState<ExtraMode>('none');
+  const [scanning, setScanning] = useState(false);
+  const [status, setStatus] = useState('Aponte para a etiqueta');
 
   const ensureList = () => {
     if (!activeListName || !activeMarketId) {
@@ -51,7 +105,8 @@ export function CaptureScreen() {
     return true;
   };
 
-  const applyFields = (f: LabelFields) => {
+  const openConfirm = (f: LabelFields) => {
+    setHit(null);
     setFields({...f});
     setRaw(f.rawText);
   };
@@ -59,39 +114,69 @@ export function CaptureScreen() {
   const runOcrFromText = (text: string) => {
     const parsed = parseLabel(text);
     if (!parsed) {
-      Alert.alert('Etiqueta', 'Não foi possível ler o preço. Ajuste e tente de novo.');
+      Alert.alert(
+        'Etiqueta',
+        'Não foi possível ler o preço. Ajuste o enquadramento.',
+      );
       return;
     }
-    applyFields(parsed);
+    openConfirm(parsed);
   };
 
-  const onCapturePhoto = useCallback(async () => {
-    if (!ensureList()) return;
-    try {
-      if (!device) {
-        runOcrFromText(
-          'Cerveja Spaten 350ml c/12\nVarejo R$ 47,90\nAtacado a partir de 2 R$ 42,90',
-        );
-        return;
+  const scanFrame = useCallback(
+    async (opts?: {manual?: boolean}) => {
+      if (busyRef.current) return null;
+      if (!cameraRef.current || !device) {
+        if (opts?.manual) {
+          Alert.alert('Câmera', 'Câmera indisponível neste aparelho.');
+        }
+        return null;
       }
-      Alert.alert('Ler etiqueta', 'Como deseja continuar?', [
-        {
-          text: 'Usar exemplo',
-          onPress: () =>
-            runOcrFromText(
-              'Arroz Tipo 1 Camil 5kg\nPreço varejo R$ 24,90\nAtacado a partir de 3 R$ 21,90',
-            ),
-        },
-        {
-          text: 'Colar texto',
-          onPress: () => setExtra('text'),
-        },
-        {text: 'Cancelar', style: 'cancel'},
-      ]);
-    } catch (e) {
-      Alert.alert('Erro', e instanceof Error ? e.message : String(e));
-    }
-  }, [device, activeListName, activeMarketId]);
+      busyRef.current = true;
+      if (opts?.manual) setScanning(true);
+      try {
+        const photo = await cameraRef.current.takePhoto({
+          flash: 'off',
+          enableShutterSound: false,
+        });
+        const {fields: parsed, rawText} = await recognizeLabelFromPhoto(
+          photo.path,
+        );
+        if (rawText) setRaw(rawText);
+        if (parsed?.retailPrice != null) {
+          const fp = fingerprint(parsed);
+          if (fp !== lastFpRef.current || opts?.manual) {
+            lastFpRef.current = fp;
+            setHit(parsed);
+            setStatus('Etiqueta encontrada — toque para adicionar');
+          }
+          return parsed;
+        }
+        if (opts?.manual) {
+          setStatus('Nenhum preço legível');
+          Alert.alert(
+            'Não li a etiqueta',
+            rawText
+              ? 'Vi texto, mas não achei um preço claro. Aproxime e tente de novo.'
+              : 'Não reconheci texto. Melhore a luz e enquadre nome + preço.',
+          );
+        }
+        return null;
+      } catch (e) {
+        if (opts?.manual) {
+          Alert.alert(
+            'OCR',
+            e instanceof Error ? e.message : 'Falha ao ler a foto',
+          );
+        }
+        return null;
+      } finally {
+        busyRef.current = false;
+        if (opts?.manual) setScanning(false);
+      }
+    },
+    [device],
+  );
 
   const ensureCamera = async () => {
     const flags = await refreshPermissionFlags();
@@ -100,8 +185,8 @@ export function CaptureScreen() {
       setCameraOn(true);
       return true;
     }
-    const status = await Camera.requestCameraPermission();
-    const granted = status === 'granted';
+    const statusPerm = await Camera.requestCameraPermission();
+    const granted = statusPerm === 'granted';
     useAppStore.setState({permissions: {...flags, camera: granted}});
     if (!granted) {
       Alert.alert(
@@ -113,6 +198,30 @@ export function CaptureScreen() {
     setCameraOn(true);
     return true;
   };
+
+  const liveScanActive =
+    cameraOn &&
+    cameraGranted &&
+    !!device &&
+    !fields &&
+    !hit &&
+    extra === 'none';
+
+  useEffect(() => {
+    if (!liveScanActive) return;
+    setStatus('Buscando etiqueta…');
+    const id = setInterval(() => {
+      void scanFrame();
+    }, LIVE_SCAN_MS);
+    // primeira tentativa um pouco depois do preview estabilizar
+    const first = setTimeout(() => {
+      void scanFrame();
+    }, 700);
+    return () => {
+      clearInterval(id);
+      clearTimeout(first);
+    };
+  }, [liveScanActive, scanFrame]);
 
   const saveToCart = () => {
     if (!fields?.productName || fields.retailPrice == null) {
@@ -150,7 +259,8 @@ export function CaptureScreen() {
     });
     refresh();
     setFields(null);
-    Alert.alert('Salvo', 'Item adicionado ao carrinho');
+    lastFpRef.current = null;
+    setStatus('Item salvo — aponte para a próxima etiqueta');
   };
 
   const fetchNfce = async () => {
@@ -205,44 +315,90 @@ export function CaptureScreen() {
     }
   };
 
+  const onShutter = async () => {
+    if (!ensureList()) return;
+    if (!cameraOn) {
+      const ok = await ensureCamera();
+      if (!ok) return;
+      return;
+    }
+    await scanFrame({manual: true});
+  };
+
   return (
     <View style={styles.root}>
       <AppScreenHeader
         title="Capturar"
-        subtitle={marketName || activeListName || 'Aponte para a etiqueta'}
+        subtitle={marketName || activeListName || status}
       />
 
       <View style={styles.stage}>
         {cameraOn && cameraGranted && device ? (
-          <Camera style={StyleSheet.absoluteFill} device={device} isActive />
+          <Camera
+            ref={cameraRef}
+            style={StyleSheet.absoluteFill}
+            device={device}
+            isActive={cameraOn && !fields}
+            photo
+            enableZoomGesture
+          />
         ) : (
           <View style={styles.stageIdle}>
             <ScanLine size={36} color={colors.yellowBright} strokeWidth={2} />
             <Text style={styles.stageTitle}>Enquadre a etiqueta</Text>
             <Text style={styles.stageHint}>
-              Centralize o nome do produto e o preço no quadro
+              A câmera lê sozinha — toque no preview para adicionar
             </Text>
           </View>
         )}
+
         <View style={styles.frame} pointerEvents="none">
           <View style={[styles.corner, styles.tl]} />
           <View style={[styles.corner, styles.tr]} />
           <View style={[styles.corner, styles.bl]} />
           <View style={[styles.corner, styles.br]} />
         </View>
+
+        {scanning ? (
+          <View style={styles.scanBadge} pointerEvents="none">
+            <ActivityIndicator color={colors.navy} size="small" />
+            <Text style={styles.scanBadgeText}>Lendo…</Text>
+          </View>
+        ) : null}
+
+        {hit && !fields ? (
+          <LabelHitPreview
+            fields={hit}
+            onPress={() => {
+              if (!ensureList()) return;
+              openConfirm(hit);
+            }}
+            onDismiss={() => {
+              setHit(null);
+              lastFpRef.current = null;
+              setStatus('Buscando etiqueta…');
+            }}
+          />
+        ) : null}
       </View>
 
       <View style={styles.dock}>
         <AppButton
-          icon={<ScanLine size={20} color="#fff" />}
-          label={cameraOn ? 'Ler etiqueta' : 'Abrir câmera'}
-          onPress={async () => {
-            if (!cameraOn) {
-              const ok = await ensureCamera();
-              if (!ok) return;
-            }
-            onCapturePhoto();
-          }}
+          icon={
+            scanning ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <ScanLine size={20} color="#fff" />
+            )
+          }
+          label={
+            !cameraOn
+              ? 'Abrir câmera'
+              : scanning
+                ? 'Lendo etiqueta…'
+                : 'Capturar agora'
+          }
+          onPress={onShutter}
         />
         <View style={styles.altRow}>
           <Pressable
@@ -314,7 +470,12 @@ export function CaptureScreen() {
         <AppButton label="Buscar na SEFAZ" onPress={fetchNfce} />
       </KeyboardSafeSheet>
 
-      <KeyboardSafeSheet visible={!!fields} onClose={() => setFields(null)}>
+      <KeyboardSafeSheet
+        visible={!!fields}
+        onClose={() => {
+          setFields(null);
+          setStatus('Buscando etiqueta…');
+        }}>
         <Text style={styles.modalTitle}>Confirmar leitura</Text>
         <Text style={styles.hint}>Revise antes de salvar no carrinho</Text>
         <AppField
@@ -391,7 +552,10 @@ export function CaptureScreen() {
         <AppButton
           label="Cancelar"
           outlined
-          onPress={() => setFields(null)}
+          onPress={() => {
+            setFields(null);
+            setStatus('Buscando etiqueta…');
+          }}
         />
       </KeyboardSafeSheet>
     </View>
@@ -426,7 +590,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontSize: 13,
     textAlign: 'center',
-    maxWidth: 260,
+    maxWidth: 280,
   },
   frame: {
     ...StyleSheet.absoluteFillObject,
@@ -438,10 +602,92 @@ const styles = StyleSheet.create({
     height: 28,
     borderColor: colors.yellowBright,
   },
-  tl: {top: 0, left: 0, borderTopWidth: 3, borderLeftWidth: 3, borderTopLeftRadius: 10},
-  tr: {top: 0, right: 0, borderTopWidth: 3, borderRightWidth: 3, borderTopRightRadius: 10},
-  bl: {bottom: 0, left: 0, borderBottomWidth: 3, borderLeftWidth: 3, borderBottomLeftRadius: 10},
-  br: {bottom: 0, right: 0, borderBottomWidth: 3, borderRightWidth: 3, borderBottomRightRadius: 10},
+  tl: {
+    top: 0,
+    left: 0,
+    borderTopWidth: 3,
+    borderLeftWidth: 3,
+    borderTopLeftRadius: 10,
+  },
+  tr: {
+    top: 0,
+    right: 0,
+    borderTopWidth: 3,
+    borderRightWidth: 3,
+    borderTopRightRadius: 10,
+  },
+  bl: {
+    bottom: 0,
+    left: 0,
+    borderBottomWidth: 3,
+    borderLeftWidth: 3,
+    borderBottomLeftRadius: 10,
+  },
+  br: {
+    bottom: 0,
+    right: 0,
+    borderBottomWidth: 3,
+    borderRightWidth: 3,
+    borderBottomRightRadius: 10,
+  },
+  scanBadge: {
+    position: 'absolute',
+    top: 14,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: colors.yellowBright,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+  scanBadgeText: {fontWeight: '800', color: colors.navy, fontSize: 12},
+  hitWrap: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    bottom: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  hitCard: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: colors.yellowBright,
+    borderRadius: 18,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    shadowOffset: {width: 0, height: 4},
+    elevation: 6,
+  },
+  hitDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: colors.navy,
+  },
+  hitName: {fontWeight: '800', color: colors.navy, fontSize: 14},
+  hitPrice: {
+    marginTop: 2,
+    fontWeight: '700',
+    color: 'rgba(11,42,107,0.75)',
+    fontSize: 12,
+  },
+  hitClose: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   dock: {
     paddingHorizontal: 16,
     paddingTop: 14,
