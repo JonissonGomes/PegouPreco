@@ -1,7 +1,6 @@
 import React, {useEffect, useMemo, useRef, useState} from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   StyleSheet,
   Text,
@@ -11,15 +10,30 @@ import {WebView, type WebViewMessageEvent} from 'react-native-webview';
 import Geolocation from 'react-native-geolocation-service';
 import {LocateFixed, RefreshCw} from 'lucide-react-native';
 import {MAPBOX_ACCESS_TOKEN} from '@/config/env';
+import {refreshPermissionFlags} from '@/app/permissions';
 import {AppScreenHeader, AppScreenNavyBar} from '@/ui/chrome';
+import {MarketPinSheet} from '@/ui/MarketPinSheet';
 import {colors} from '@/ui/theme';
 import {marketRepo, prefs, useAppStore} from '@/store/appStore';
 import {syncApi} from '@/data/remote/syncApi';
+import {
+  discoverNearbyMarkets,
+  filterMarketsInRadius,
+  haversineKm,
+  NEARBY_RADIUS_KM,
+} from '@/data/remote/nearbyMarkets';
 import type {Market} from '@/data/types';
 
 type GeoPoint = {latitude: number; longitude: number};
 
-/** Estilo claro/minimalista do Mapbox; OSM Carto Positron como fallback. */
+const RECIFE: GeoPoint = {latitude: -8.0476, longitude: -34.8813};
+
+function initialCenter(): GeoPoint {
+  const last = prefs.getLastLocation();
+  if (last) return {latitude: last.lat, longitude: last.lng};
+  return RECIFE;
+}
+
 function tileUrl(token: string) {
   if (token) {
     return `https://api.mapbox.com/styles/v1/mapbox/light-v11/tiles/256/{z}/{x}/{y}@2x?access_token=${token}`;
@@ -29,7 +43,13 @@ function tileUrl(token: string) {
 
 function buildMapHtml(
   center: GeoPoint,
-  markets: Array<{id: string; name: string; lat: number; lng: number; rating: number}>,
+  markets: Array<{
+    id: string;
+    name: string;
+    lat: number;
+    lng: number;
+    rating: number;
+  }>,
   token: string,
 ) {
   const attribution = token
@@ -63,11 +83,12 @@ function buildMapHtml(
       line-height: 32px !important;
       font-size: 16px !important;
     }
-    .dot {
-      width: 12px; height: 12px; border-radius: 50%;
-      background: #0B2A6B; border: 2px solid #fff;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+    .pin {
+      width: 28px; height: 36px;
+      margin-left: -14px; margin-top: -36px;
+      filter: drop-shadow(0 2px 3px rgba(0,0,0,0.28));
     }
+    .pin svg { display: block; width: 28px; height: 36px; }
     .dot-user {
       width: 14px; height: 14px; border-radius: 50%;
       background: #00C2FF; border: 2px solid #fff;
@@ -80,10 +101,11 @@ function buildMapHtml(
   <script>
     const center = [${center.latitude}, ${center.longitude}];
     const markets = ${markersJson};
+    const brandRe = /atacad|atacarejo|assa[ií]|carrefour|extra|bompre|sam/i;
     const map = L.map('map', {
       zoomControl: false,
       attributionControl: true,
-    }).setView(center, 13);
+    }).setView(center, 12);
 
     L.tileLayer(${JSON.stringify(tileUrl(token))}, {
       maxZoom: 19,
@@ -91,102 +113,221 @@ function buildMapHtml(
     }).addTo(map);
     L.control.zoom({ position: 'bottomright' }).addTo(map);
 
-    function makeIcon(cls) {
+    function makeUserIcon() {
       return L.divIcon({
         className: '',
-        html: '<div class="' + cls + '"></div>',
+        html: '<div class="dot-user"></div>',
         iconSize: [14, 14],
         iconAnchor: [7, 7],
       });
     }
 
-    const user = L.marker(center, { icon: makeIcon('dot-user'), interactive: false }).addTo(map);
-
-    markets.forEach((m) => {
-      const marker = L.marker([m.lat, m.lng], { icon: makeIcon('dot') }).addTo(map);
-      marker.on('click', () => {
-        window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({
-          type: 'market',
-          id: m.id,
-        }));
+    function makeMarketIcon(name) {
+      const brand = brandRe.test(name || '');
+      const fill = brand ? '#FFD400' : '#0B2A6B';
+      const stroke = brand ? '#0B2A6B' : '#ffffff';
+      const svg = '<svg viewBox="0 0 28 36" xmlns="http://www.w3.org/2000/svg">'
+        + '<path d="M14 1C7.4 1 2 6.4 2 13c0 8.4 12 21 12 21s12-12.6 12-21C26 6.4 20.6 1 14 1z" fill="' + fill + '" stroke="' + stroke + '" stroke-width="2"/>'
+        + '<circle cx="14" cy="13" r="4.5" fill="' + (brand ? '#0B2A6B' : '#fff') + '"/>'
+        + '</svg>';
+      return L.divIcon({
+        className: '',
+        html: '<div class="pin">' + svg + '</div>',
+        iconSize: [28, 36],
+        iconAnchor: [14, 36],
+        popupAnchor: [0, -32],
       });
-    });
+    }
+
+    const user = L.marker(center, { icon: makeUserIcon(), interactive: false }).addTo(map);
+    const layer = L.layerGroup().addTo(map);
+
+    function renderMarkets(list) {
+      layer.clearLayers();
+      const pts = [[center[0], center[1]]];
+      (list || []).forEach((m) => {
+        pts.push([m.lat, m.lng]);
+        const marker = L.marker([m.lat, m.lng], { icon: makeMarketIcon(m.name) }).addTo(layer);
+        marker.on('click', () => {
+          window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({
+            type: 'market',
+            id: String(m.id),
+          }));
+        });
+      });
+      if (pts.length > 1) {
+        map.fitBounds(pts, { padding: [48, 48], maxZoom: 14 });
+      }
+    }
+
+    renderMarkets(markets);
 
     window.setCenter = function(lat, lng, zoom) {
       const next = [lat, lng];
       map.setView(next, zoom || map.getZoom(), { animate: true });
       user.setLatLng(next);
+      center[0] = lat;
+      center[1] = lng;
+    };
+
+    window.setMarkets = function(list) {
+      renderMarkets(list || []);
     };
   </script>
 </body>
 </html>`;
 }
 
+function ingestHits(
+  hits: Array<{
+    name: string;
+    lat: number;
+    lng: number;
+    address?: string | null;
+  }>,
+) {
+  for (const h of hits) {
+    const m = marketRepo.resolveOrCreate(h.name);
+    marketRepo.upsertGeo(m.id, {
+      lat: h.lat,
+      lng: h.lng,
+      address: h.address ?? m.address,
+    });
+  }
+}
+
 export function MapScreen() {
   const markets = useAppStore(s => s.markets);
   const refresh = useAppStore(s => s.refresh);
+  const locationGranted = useAppStore(s => s.permissions.location);
   const webRef = useRef<WebView>(null);
-  const [center, setCenter] = useState<GeoPoint>({
-    latitude: -8.0476,
-    longitude: -34.8813,
-  });
+  const [center, setCenter] = useState<GeoPoint>(initialCenter);
   const [loading, setLoading] = useState(true);
-  const [blocked, setBlocked] = useState(false);
+  const [discovering, setDiscovering] = useState(false);
+  const [blocked, setBlocked] = useState(!locationGranted);
   const [mapReady, setMapReady] = useState(false);
+  const [status, setStatus] = useState('Buscando mercados próximos…');
+  const [selected, setSelected] = useState<Market | null>(null);
 
-  const withGeo = markets.filter(m => m.lat != null && m.lng != null);
-  const rated = withGeo.filter(m => (m.avgRating ?? 0) > 0).length;
+  const nearby = useMemo(
+    () =>
+      filterMarketsInRadius(
+        markets,
+        {lat: center.latitude, lng: center.longitude},
+        NEARBY_RADIUS_KM,
+      ),
+    [markets, center.latitude, center.longitude],
+  );
+  const rated = nearby.filter(m => (m.avgRating ?? 0) > 0).length;
 
   const markerData = useMemo(
     () =>
-      withGeo.map(m => ({
-        id: m.id,
+      nearby.map(m => ({
+        id: String(m.id),
         name: m.name,
         lat: m.lat!,
         lng: m.lng!,
         rating: m.avgRating ?? 0,
       })),
-    // ids+coords estáveis
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [markets],
+    [nearby],
   );
+
+  const selectedDistance =
+    selected?.lat != null && selected?.lng != null
+      ? haversineKm(
+          {lat: center.latitude, lng: center.longitude},
+          {lat: selected.lat, lng: selected.lng},
+        )
+      : null;
 
   const html = useMemo(
     () => buildMapHtml(center, markerData, MAPBOX_ACCESS_TOKEN),
+    // center só no primeiro paint; depois usamos inject
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [markerData, MAPBOX_ACCESS_TOKEN],
   );
 
-  const locate = () => {
+  const pushMarkersToWeb = (list = markerData) => {
+    webRef.current?.injectJavaScript(
+      `window.setMarkets && window.setMarkets(${JSON.stringify(list)}); true;`,
+    );
+  };
+
+  const discoverAround = async (point: GeoPoint) => {
+    setDiscovering(true);
+    setStatus('Buscando mercados próximos…');
+    try {
+      await loadRemote(point);
+      const hits = await discoverNearbyMarkets(
+        point.latitude,
+        point.longitude,
+        NEARBY_RADIUS_KM,
+        MAPBOX_ACCESS_TOKEN,
+      );
+      ingestHits(hits);
+      refresh();
+      setStatus(
+        hits.length
+          ? `${hits.length} mercados próximos`
+          : 'Nenhum mercado próximo encontrado',
+      );
+    } catch {
+      setStatus('Falha ao buscar mercados próximos');
+    } finally {
+      setDiscovering(false);
+    }
+  };
+
+  const locate = async () => {
+    const flags = await refreshPermissionFlags();
+    useAppStore.setState({permissions: flags});
+    if (!flags.location) {
+      setBlocked(true);
+      setStatus('Localização desativada');
+      await discoverAround(center);
+      return;
+    }
+    setStatus('Buscando mercados próximos…');
     Geolocation.getCurrentPosition(
-      pos => {
+      async pos => {
         const next = {
           latitude: pos.coords.latitude,
           longitude: pos.coords.longitude,
         };
+        prefs.setLastLocation(next.latitude, next.longitude);
         setCenter(next);
         setBlocked(false);
         webRef.current?.injectJavaScript(
           `window.setCenter && window.setCenter(${next.latitude}, ${next.longitude}, 14); true;`,
         );
+        await discoverAround(next);
       },
-      () => setBlocked(true),
+      async () => {
+        setBlocked(true);
+        setStatus('GPS indisponível · usando última posição');
+        await discoverAround(center);
+      },
       {enableHighAccuracy: true, timeout: 15000, maximumAge: 5000},
     );
   };
 
-  const loadRemote = async () => {
+  const loadRemote = async (origin: GeoPoint = center) => {
     try {
       const raw = prefs.getAuthJson();
       const token = raw ? (JSON.parse(raw) as {token: string}).token : null;
       const remote = await syncApi.marketsMap(token);
+      const originPt = {lat: origin.latitude, lng: origin.longitude};
       for (const r of remote) {
         const name = String(r.name ?? '');
         if (!name) continue;
+        const lat = r.lat != null ? Number(r.lat) : null;
+        const lng = r.lng != null ? Number(r.lng) : null;
+        if (lat == null || lng == null) continue;
+        if (haversineKm(originPt, {lat, lng}) > NEARBY_RADIUS_KM) continue;
         const m = marketRepo.resolveOrCreate(name, (r.cnpj as string) ?? null);
         marketRepo.upsertGeo(m.id, {
-          lat: r.lat != null ? Number(r.lat) : null,
-          lng: r.lng != null ? Number(r.lng) : null,
+          lat,
+          lng,
           address: (r.address as string) ?? null,
           avgRating: r.avgRating != null ? Number(r.avgRating) : null,
           ratingsCount: r.ratingsCount != null ? Number(r.ratingsCount) : 0,
@@ -202,25 +343,23 @@ export function MapScreen() {
 
   useEffect(() => {
     (async () => {
-      await loadRemote();
-      locate();
+      await locate();
       setLoading(false);
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const openMarket = (m: Market) => {
-    Alert.alert(
-      m.name,
-      `Nota ${(m.avgRating ?? 0).toFixed(1)} (${m.ratingsCount} avaliações)\n${m.address ?? ''}`,
-    );
-  };
+  useEffect(() => {
+    if (mapReady) pushMarkersToWeb(markerData);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [markerData, mapReady]);
 
   const onMessage = (e: WebViewMessageEvent) => {
     try {
       const msg = JSON.parse(e.nativeEvent.data) as {type?: string; id?: string};
       if (msg.type === 'market' && msg.id) {
-        const m = markets.find(x => x.id === msg.id);
-        if (m) openMarket(m);
+        const m = markets.find(x => String(x.id) === String(msg.id));
+        if (m) setSelected(m);
       }
     } catch {
       // ignore
@@ -233,28 +372,35 @@ export function MapScreen() {
         title="Mapa"
         subtitle={
           blocked
-            ? 'Localização desativada'
-            : MAPBOX_ACCESS_TOKEN
-              ? 'Perto de você'
-              : 'Mapa básico · configure o token'
+            ? 'Localização desativada · usando área salva'
+            : discovering
+              ? 'Buscando mercados próximos…'
+              : status
         }
         actions={
           <View style={{flexDirection: 'row'}}>
             <Pressable onPress={locate} style={styles.iconBtn}>
               <LocateFixed color={colors.navy} size={20} />
             </Pressable>
-            <Pressable onPress={() => loadRemote()} style={styles.iconBtn}>
+            <Pressable
+              onPress={async () => {
+                await loadRemote(center);
+                await discoverAround(center);
+              }}
+              style={styles.iconBtn}>
               <RefreshCw color={colors.navy} size={20} />
             </Pressable>
           </View>
         }
       />
       <AppScreenNavyBar
-        value={String(withGeo.length)}
-        label="mercados"
+        value={String(nearby.length)}
+        label={`próximos · ${NEARBY_RADIUS_KM} km`}
         trailing={
           <View style={styles.pill}>
-            <Text style={styles.pillText}>{rated} com nota</Text>
+            <Text style={styles.pillText}>
+              {discovering ? 'buscando…' : `${rated} com nota`}
+            </Text>
           </View>
         }
       />
@@ -276,12 +422,25 @@ export function MapScreen() {
             allowFileAccess
           />
         )}
-        {!mapReady && !loading ? (
+        {(!mapReady && !loading) || discovering ? (
           <View style={styles.overlayLoader} pointerEvents="none">
             <ActivityIndicator color={colors.navy} />
+            {discovering ? (
+              <Text style={styles.overlayText}>Buscando mercados próximos…</Text>
+            ) : null}
           </View>
         ) : null}
       </View>
+
+      <MarketPinSheet
+        market={selected}
+        distanceKm={selectedDistance}
+        onClose={() => setSelected(null)}
+        onUse={m => {
+          prefs.setCurrentMarketId(m.id);
+          setSelected(null);
+        }}
+      />
     </View>
   );
 }
@@ -300,5 +459,16 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'center',
     alignItems: 'center',
+    gap: 8,
+  },
+  overlayText: {
+    marginTop: 8,
+    fontWeight: '700',
+    color: colors.navy,
+    backgroundColor: 'rgba(255,255,255,0.9)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    overflow: 'hidden',
   },
 });

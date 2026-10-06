@@ -15,8 +15,8 @@ export const colors = {
 
 export const spacing = {
   page: 16,
-  cardRadius: 16,
+  cardRadius: 12,
   controlRadius: 12,
-  bottomBarHeight: 58,
-  bottomNavClearance: 78,
+  bottomBarHeight: 72,
+  bottomNavClearance: 96,
 };

@@ -1,14 +1,14 @@
 import React from 'react';
-import {StyleSheet, Text, View} from 'react-native';
+import {ActivityIndicator, StyleSheet, Text, View} from 'react-native';
 import {NavigationContainer} from '@react-navigation/native';
 import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
 import {
-  LineChart,
+  ChartNoAxesColumnIncreasing,
   Map as MapIcon,
   ScanLine,
   ShoppingCart,
-  User,
+  UserRound,
 } from 'lucide-react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {CartScreen} from '@/features/cart/CartScreen';
@@ -20,6 +20,7 @@ import {ProductDetailScreen} from '@/features/insights/ProductDetailScreen';
 import {ProfileScreen} from '@/features/profile/ProfileScreen';
 import {HistoryScreen} from '@/features/history/HistoryScreen';
 import {OnboardingScreen} from '@/features/onboarding/OnboardingScreen';
+import {BrandLogo} from '@/ui/chrome';
 import {colors, spacing} from '@/ui/theme';
 import {useAppStore} from '@/store/appStore';
 
@@ -29,6 +30,7 @@ const Stack = createNativeStackNavigator();
 function Tabs() {
   const insets = useSafeAreaInsets();
   const visible = useAppStore(s => s.bottomNavVisible);
+  const bottom = visible ? 0 : -140;
 
   return (
     <Tab.Navigator
@@ -36,19 +38,22 @@ function Tabs() {
         headerShown: false,
         tabBarStyle: {
           position: 'absolute',
-          left: 12,
-          right: 12,
-          bottom: visible ? Math.max(insets.bottom, 10) : -120,
-          height: spacing.bottomBarHeight,
-          borderRadius: 28,
-          backgroundColor: 'rgba(255,255,255,0.95)',
-          borderTopWidth: 0,
-          elevation: 8,
+          left: 0,
+          right: 0,
+          bottom,
+          height: spacing.bottomBarHeight + Math.max(insets.bottom, 0),
+          paddingBottom: Math.max(insets.bottom, 8),
+          paddingTop: 10,
+          backgroundColor: '#fff',
+          borderTopWidth: 1,
+          borderTopColor: colors.border,
+          elevation: 0,
           opacity: visible ? 1 : 0,
         },
         tabBarActiveTintColor: colors.navy,
         tabBarInactiveTintColor: colors.muted,
         tabBarLabelStyle: {fontSize: 10, fontWeight: '700'},
+        tabBarItemStyle: {paddingTop: 2},
       }}>
       <Tab.Screen
         name="Cart"
@@ -73,7 +78,7 @@ function Tabs() {
           title: '',
           tabBarIcon: () => (
             <View style={styles.scanFab}>
-              <ScanLine size={24} color={colors.navy} />
+              <ScanLine size={28} color={colors.navy} />
             </View>
           ),
         }}
@@ -82,8 +87,10 @@ function Tabs() {
         name="Insights"
         component={InsightsScreen}
         options={{
-          title: 'Comparar',
-          tabBarIcon: ({color}) => <LineChart size={20} color={color} />,
+          title: 'Insights',
+          tabBarIcon: ({color}) => (
+            <ChartNoAxesColumnIncreasing size={20} color={color} />
+          ),
         }}
       />
       <Tab.Screen
@@ -91,7 +98,7 @@ function Tabs() {
         component={ProfileScreen}
         options={{
           title: 'Perfil',
-          tabBarIcon: ({color}) => <User size={20} color={color} />,
+          tabBarIcon: ({color}) => <UserRound size={20} color={color} />,
         }}
       />
     </Tab.Navigator>
@@ -100,12 +107,16 @@ function Tabs() {
 
 export function RootNavigation() {
   const ready = useAppStore(s => s.ready);
+  const bootStatus = useAppStore(s => s.bootStatus);
   const onboardingDone = useAppStore(s => s.onboardingDone);
 
   if (!ready) {
     return (
       <View style={styles.boot}>
+        <BrandLogo size={72} />
         <Text style={styles.bootText}>PegouPreço</Text>
+        <ActivityIndicator color={colors.navy} style={{marginTop: 20}} />
+        <Text style={styles.bootHint}>{bootStatus}</Text>
       </View>
     );
   }
@@ -130,19 +141,40 @@ export function RootNavigation() {
 
 const styles = StyleSheet.create({
   scanFab: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     backgroundColor: colors.yellowBright,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 18,
+    marginBottom: 28,
+    borderWidth: 4,
+    borderColor: '#fff',
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    shadowOffset: {width: 0, height: 4},
+    elevation: 6,
   },
   boot: {
     flex: 1,
     backgroundColor: colors.yellowBright,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 24,
   },
-  bootText: {fontSize: 28, fontWeight: '900', color: colors.navy},
+  bootText: {
+    marginTop: 14,
+    fontSize: 28,
+    fontWeight: '900',
+    color: colors.navy,
+  },
+  bootHint: {
+    marginTop: 12,
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.navy,
+    opacity: 0.75,
+    textAlign: 'center',
+  },
 });

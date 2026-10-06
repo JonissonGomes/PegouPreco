@@ -1,7 +1,6 @@
 import React, {useMemo, useState} from 'react';
 import {
   FlatList,
-  Modal,
   Pressable,
   StyleSheet,
   Text,
@@ -17,6 +16,7 @@ import {
   AppScreenHeader,
   AppScreenNavyBar,
 } from '@/ui/chrome';
+import {KeyboardSafeSheet} from '@/ui/keyboardSheet';
 import {colors} from '@/ui/theme';
 import {formatBrl} from '@/domain/money';
 import {TrustEngine} from '@/domain/trust';
@@ -103,7 +103,7 @@ export function InsightsScreen() {
   return (
     <View style={styles.root}>
       <AppScreenHeader
-        title="Comparar"
+        title="Insights"
         subtitle={marketName || 'Preços e alertas'}
         actions={
           <View style={{flexDirection: 'row'}}>
@@ -230,51 +230,49 @@ export function InsightsScreen() {
         }}
       />
 
-      <Modal visible={pickerOpen} transparent animationType="slide">
-        <View style={styles.modalRoot}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Mercado atual</Text>
-            <Text style={styles.muted}>
-              Busque e selecione. Se não existir, será criado.
-            </Text>
-            <AppField
-              label="Mercado"
-              placeholder="Ex.: Atacadão…"
-              value={marketQuery}
-              onChangeText={setMarketQuery}
-              compact
-            />
-            {filteredMarkets.slice(0, 8).map(m => (
-              <Pressable
-                key={m.id}
-                style={styles.marketRow}
-                onPress={() => {
-                  setCurrentMarket(m.id);
-                  setPickerOpen(false);
-                  refresh();
-                }}>
-                <Text style={styles.name}>{m.name}</Text>
-              </Pressable>
-            ))}
-            {canCreate ? (
-              <AppButton
-                label={`Usar "${marketQuery.trim()}" (novo)`}
-                onPress={() => {
-                  const m = marketRepo.resolveOrCreate(marketQuery.trim());
-                  setCurrentMarket(m.id);
-                  setPickerOpen(false);
-                  refresh();
-                }}
-              />
-            ) : null}
-            <AppButton
-              label="Fechar"
-              outlined
-              onPress={() => setPickerOpen(false)}
-            />
-          </View>
-        </View>
-      </Modal>
+      <KeyboardSafeSheet
+        visible={pickerOpen}
+        onClose={() => setPickerOpen(false)}>
+        <Text style={styles.modalTitle}>Mercado atual</Text>
+        <Text style={styles.muted}>
+          Busque e selecione. Se não existir, será criado.
+        </Text>
+        <AppField
+          label="Mercado"
+          placeholder="Ex.: Atacadão…"
+          value={marketQuery}
+          onChangeText={setMarketQuery}
+          compact
+        />
+        {filteredMarkets.slice(0, 8).map(m => (
+          <Pressable
+            key={m.id}
+            style={styles.marketRow}
+            onPress={() => {
+              setCurrentMarket(m.id);
+              setPickerOpen(false);
+              refresh();
+            }}>
+            <Text style={styles.name}>{m.name}</Text>
+          </Pressable>
+        ))}
+        {canCreate ? (
+          <AppButton
+            label={`Usar "${marketQuery.trim()}" (novo)`}
+            onPress={() => {
+              const m = marketRepo.resolveOrCreate(marketQuery.trim());
+              setCurrentMarket(m.id);
+              setPickerOpen(false);
+              refresh();
+            }}
+          />
+        ) : null}
+        <AppButton
+          label="Fechar"
+          outlined
+          onPress={() => setPickerOpen(false)}
+        />
+      </KeyboardSafeSheet>
     </View>
   );
 }
@@ -312,19 +310,6 @@ const styles = StyleSheet.create({
   row: {flexDirection: 'row', alignItems: 'center', gap: 8},
   name: {fontWeight: '800', color: colors.navy, fontSize: 14},
   price: {fontWeight: '800', color: colors.navy, fontSize: 15},
-  modalRoot: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.35)',
-    justifyContent: 'flex-end',
-  },
-  modalCard: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    padding: 16,
-    gap: 8,
-    maxHeight: '80%',
-  },
   modalTitle: {fontSize: 18, fontWeight: '800', color: colors.navy},
   marketRow: {
     borderWidth: 1,

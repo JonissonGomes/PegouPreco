@@ -19,7 +19,7 @@ PegouPreço/
 | Estado | Zustand |
 | Persistência | AsyncStorage (store tipado offline) |
 | OCR | Vision Camera + ML Kit Text Recognition |
-| Mapa | react-native-maps + tiles Mapbox (token ResenhaFC) ou OSM |
+| Mapa | WebView + Leaflet (tiles Mapbox ResenhaFC ou OSM) |
 | GPS | react-native-geolocation-service |
 | Rede | axios + react-native-config |
 | Nuvem | MongoDB Atlas **M0** (free) |
@@ -29,11 +29,15 @@ PegouPreço/
 
 ```powershell
 make deps     # npm install em mobile/
-make run      # emulador/device Android
-make seed     # banco demo (mercados, preços, carrinho, listas)
-make api      # sync_api na porta 8080
-make test     # testes de domínio
+make run      # emulador/device Android (New Architecture)
+make apk      # APK release (arm64-v8a)
+make seed        # banco demo (mercados com geo, preços, carrinho, listas)
+make seed-clear  # remove dados do seed (preserva login)
+make api         # sync_api na porta 8080
+make test        # testes de domínio
 ```
+
+No Windows, o primeiro build New Arch pode exigir Ninja ≥ 1.12 (o `make run` / `make apk` atualizam automaticamente). Se o Gradle cair por falta de memória, feche outros processos Java e rode de novo.
 
 ### Variáveis (`mobile/.env`)
 
@@ -42,7 +46,10 @@ make test     # testes de domínio
 MAPBOX_ACCESS_TOKEN=
 SYNC_API_BASE=http://10.0.2.2:8080
 SEED_DEMO=false
+CLEAR_SEED_DEMO=false
 ```
+
+`react-native-config` embute o `.env` no build nativo: depois de alterar o token, rode `make run` (ou reinstale o APK). Só reiniciar o Metro não atualiza.
 
 Em dispositivo físico na mesma rede:
 

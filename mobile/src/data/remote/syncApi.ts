@@ -11,21 +11,47 @@ function auth(token: string) {
   return {Authorization: `Bearer ${token}`};
 }
 
+export type AuthResponse = {
+  token?: string;
+  userId?: string;
+  id?: string;
+  email?: string;
+  phone?: string;
+  displayName?: string;
+  emailVerified?: boolean;
+  phoneVerified?: boolean;
+  needsVerification?: boolean;
+  otpChannel?: 'email' | 'phone';
+  devCode?: string;
+  hint?: string;
+  ok?: boolean;
+};
+
 export const syncApi = {
   health: () => client.get('/health').then(r => r.data),
   register: (body: {
     email: string;
     password: string;
     displayName: string;
+    phone: string;
     uf?: string;
     city?: string;
-  }) => client.post('/auth/register', body).then(r => r.data),
-  verify: (email: string, code: string) =>
-    client.post('/auth/verify', {email, code}).then(r => r.data),
-  resendCode: (email: string) =>
-    client.post('/auth/resend-code', {email}).then(r => r.data),
+  }) => client.post<AuthResponse>('/auth/register', body).then(r => r.data),
+  verify: (body: {email?: string; phone?: string; code: string}) =>
+    client.post<AuthResponse>('/auth/verify', body).then(r => r.data),
+  resendCode: (body: {
+    email?: string;
+    phone?: string;
+    channel?: 'email' | 'phone';
+  }) => client.post<AuthResponse>('/auth/resend-code', body).then(r => r.data),
+  requestOtp: (body: {phone?: string; email?: string}) =>
+    client.post<AuthResponse>('/auth/otp/request', body).then(r => r.data),
+  verifyOtp: (body: {phone?: string; email?: string; code: string}) =>
+    client.post<AuthResponse>('/auth/otp/verify', body).then(r => r.data),
   login: (email: string, password: string) =>
-    client.post('/auth/login', {email, password}).then(r => r.data),
+    client
+      .post<AuthResponse>('/auth/login', {email, password})
+      .then(r => r.data),
   me: (token: string) =>
     client.get('/auth/me', {headers: auth(token)}).then(r => r.data),
   pushBatch: (token: string, payload: Record<string, unknown>) =>
@@ -39,7 +65,13 @@ export const syncApi = {
   marketsMap: (token?: string | null) =>
     client
       .get('/markets/map', token ? {headers: auth(token)} : undefined)
-      .then(r => r.data as Array<Record<string, unknown>>),
+      .then(r => {
+        const data = r.data as
+          | Array<Record<string, unknown>>
+          | {markets?: Array<Record<string, unknown>>};
+        if (Array.isArray(data)) return data;
+        return data.markets ?? [];
+      }),
   marketReviews: (marketId: string) =>
     client
       .get(`/markets/${marketId}/reviews`)

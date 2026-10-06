@@ -9,22 +9,30 @@ import {
   finalizeActiveList,
 } from '@/data/repositories';
 import type {CartItem, Market, Product, ShoppingList} from '@/data/types';
-import {runDemoSeed} from '@/data/seed/demoSeed';
-import {SEED_DEMO} from '@/config/env';
+import {clearDemoSeed, runDemoSeed} from '@/data/seed/demoSeed';
+import {CLEAR_SEED_DEMO, SEED_DEMO} from '@/config/env';
 import {initDb} from '@/data/db';
+import {
+  ensureStartupPermissions,
+  type AppPermissionFlags,
+} from '@/app/permissions';
 
 type AuthSession = {
   token: string;
   email: string;
+  phone?: string | null;
   displayName: string;
   emailVerified: boolean;
+  phoneVerified?: boolean;
   userId: string;
 };
 
 type AppState = {
   ready: boolean;
+  bootStatus: string;
   onboardingDone: boolean;
   bottomNavVisible: boolean;
+  permissions: AppPermissionFlags;
   cart: CartItem[];
   markets: Market[];
   lists: ShoppingList[];
@@ -45,8 +53,10 @@ type AppState = {
 
 export const useAppStore = create<AppState>((set, get) => ({
   ready: false,
+  bootStatus: 'Carregando…',
   onboardingDone: false,
   bottomNavVisible: true,
+  permissions: {location: false, camera: false},
   cart: [],
   markets: [],
   lists: [],
@@ -56,14 +66,25 @@ export const useAppStore = create<AppState>((set, get) => ({
   currentMarketId: null,
   auth: null,
   bootstrap: async () => {
+    set({bootStatus: 'Preparando dados…'});
     await initDb();
-    if (SEED_DEMO) {
+    if (CLEAR_SEED_DEMO) {
+      set({bootStatus: 'Limpando seed…'});
+      clearDemoSeed();
+    } else if (SEED_DEMO) {
+      set({bootStatus: 'Populando seed demo…'});
       runDemoSeed();
     }
+
+    set({bootStatus: 'Verificando permissões…'});
+    const permissions = await ensureStartupPermissions();
+
     const raw = prefs.getAuthJson();
     const auth = raw ? (JSON.parse(raw) as AuthSession) : null;
     set({
       ready: true,
+      bootStatus: 'Pronto',
+      permissions,
       onboardingDone: prefs.getOnboardingDone(),
       auth,
     });
@@ -112,4 +133,4 @@ export function useMarketName(id: number | null | undefined) {
   return markets.find(m => m.id === id)?.name ?? null;
 }
 
-export {priceLogRepo, productRepo, cartRepo, marketRepo};
+export {priceLogRepo, productRepo, cartRepo, marketRepo, prefs};

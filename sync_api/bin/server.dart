@@ -10,6 +10,7 @@ import 'package:shelf_cors_headers/shelf_cors_headers.dart';
 import 'package:shelf_router/shelf_router.dart';
 import 'package:uuid/uuid.dart';
 import 'package:pegou_preco_sync_api/email_sender.dart';
+import 'package:pegou_preco_sync_api/sms_sender.dart';
 
 /// Sync API mínima: auth + push/pull LWW para Atlas (ou memória se sem URI).
 Future<void> main(List<String> args) async {
@@ -36,9 +37,115 @@ Future<void> main(List<String> args) async {
 Router createRouter(DataStore store, DotEnv env) {
   final router = Router();
   final skipEmailVerification = _flag(env['SKIP_EMAIL_VERIFICATION']);
+  final skipSmsVerification = _flag(env['SKIP_SMS_VERIFICATION']);
+  final exposeOtp = _flag(env['EXPOSE_OTP_IN_RESPONSE']) || store.mode == 'memory';
   final emailUser = env['EMAIL_USER'] ?? '';
   final emailPass = env['EMAIL_PASS'] ?? '';
   final emailLogo = env['EMAIL_LOGO_URL'];
+  final twilioSid = env['TWILIO_ACCOUNT_SID'] ?? '';
+  final twilioToken = env['TWILIO_AUTH_TOKEN'] ?? '';
+  final twilioFrom = env['TWILIO_FROM_NUMBER'] ?? '';
+
+  Future<Map<String, dynamic>> _sendOtp({
+    required String channel,
+    required String target,
+    required String code,
+  }) async {
+    if (channel == 'email') {
+      if (skipEmailVerification) {
+        return {
+          'ok': true,
+          'channel': 'email',
+          'skipped': true,
+          if (exposeOtp) 'devCode': code,
+        };
+      }
+      if (emailUser.isEmpty || emailPass.isEmpty) {
+        if (!exposeOtp) {
+          return {
+            'error': 'EMAIL_USER/EMAIL_PASS não configurados',
+            'status': 500,
+          };
+        }
+        stdout.writeln('[EMAIL] SMTP ausente — código para $target: $code');
+        return {
+          'ok': true,
+          'channel': 'email',
+          'devCode': code,
+          'hint': 'SMTP não configurado; use devCode em dev',
+        };
+      }
+      try {
+        await sendVerificationEmail(
+          user: emailUser,
+          pass: emailPass,
+          to: target,
+          code: code,
+          logoUrl: emailLogo,
+        );
+      } catch (e) {
+        return {'error': 'falha ao enviar e-mail: $e', 'status': 500};
+      }
+    } else {
+      if (skipSmsVerification) {
+        return {
+          'ok': true,
+          'channel': 'phone',
+          'skipped': true,
+          if (exposeOtp) 'devCode': code,
+        };
+      }
+      try {
+        await sendVerificationSms(
+          toE164: target,
+          code: code,
+          accountSid: twilioSid,
+          authToken: twilioToken,
+          fromNumber: twilioFrom,
+        );
+      } catch (e) {
+        return {'error': 'falha ao enviar SMS: $e', 'status': 500};
+      }
+      if (exposeOtp &&
+          (twilioSid.isEmpty || twilioToken.isEmpty || twilioFrom.isEmpty)) {
+        return {
+          'ok': true,
+          'channel': 'phone',
+          'devCode': code,
+          'hint': 'Twilio não configurado; use devCode em dev',
+        };
+      }
+    }
+    return {
+      'ok': true,
+      'channel': channel,
+      if (exposeOtp) 'devCode': code,
+    };
+  }
+
+  Response _otpResponse(Map<String, dynamic> payload) {
+    if (payload['error'] != null) {
+      return _error(payload['status'] as int? ?? 400, payload['error'] as String);
+    }
+    return Response.ok(
+      jsonEncode(payload),
+      headers: {'Content-Type': 'application/json'},
+    );
+  }
+
+  Map<String, dynamic> _publicUser(Map<String, dynamic> user, {String? token}) {
+    return {
+      if (token != null) 'token': token,
+      'userId': user['id'],
+      'email': user['email'],
+      'phone': user['phone'],
+      'displayName': user['displayName'] ?? 'Fiscal',
+      'emailVerified': user['emailVerified'] == true,
+      'phoneVerified': user['phoneVerified'] == true,
+      'uf': user['uf'],
+      'city': user['city'],
+    };
+  }
 
   router.get('/health', (Request req) {
     return Response.ok(jsonEncode({'ok': true, 'store': store.mode}));
@@ -50,47 +157,59 @@ Router createRouter(DataStore store, DotEnv env) {
     final password = body['password'] as String? ?? '';
     final displayName =
         (body['displayName'] as String? ?? 'Fiscal').trim();
+    final phone = normalizePhone(body['phone'] as String?);
     final uf = (body['uf'] as String?)?.trim();
     final city = (body['city'] as String?)?.trim();
     if (email.isEmpty || password.length < 6) {
       return _error(400, 'email/password inválidos');
     }
+    if (phone == null || phone.length < 12) {
+      return _error(400, 'telefone inválido (use DDD + número)');
+    }
     if (await store.findUser(email) != null) {
       return _error(409, 'usuário já existe');
+    }
+    if (await store.findUserByPhone(phone) != null) {
+      return _error(409, 'telefone já cadastrado');
     }
     final code = _sixDigitCode();
     final user = await store.createUser(
       email: email,
+      phone: phone,
       passwordHash: _hash(password),
       displayName: displayName.isEmpty ? 'Fiscal' : displayName,
       uf: uf,
       city: city,
       emailVerified: skipEmailVerification,
+      phoneVerified: skipSmsVerification,
       verificationCodeHash: _hash(code),
     );
-    if (!skipEmailVerification) {
-      if (emailUser.isEmpty || emailPass.isEmpty) {
-        return _error(500, 'EMAIL_USER/EMAIL_PASS não configurados');
-      }
-      try {
-        await sendVerificationEmail(
-          user: emailUser,
-          pass: emailPass,
-          to: email,
-          code: code,
-          logoUrl: emailLogo,
-        );
-      } catch (e) {
-        return _error(500, 'falha ao enviar e-mail: $e');
-      }
+    final needsVerification =
+        (!skipEmailVerification && user['emailVerified'] != true) ||
+            (!skipSmsVerification && user['phoneVerified'] != true);
+
+    Map<String, dynamic> delivery = {'ok': true};
+    if (!skipSmsVerification) {
+      delivery = await _sendOtp(channel: 'phone', target: phone, code: code);
+      if (delivery['error'] != null) return _otpResponse(delivery);
+    } else if (!skipEmailVerification) {
+      delivery = await _sendOtp(channel: 'email', target: email, code: code);
+      if (delivery['error'] != null) return _otpResponse(delivery);
+    } else if (exposeOtp) {
+      delivery = {'ok': true, 'devCode': code, 'skipped': true};
     }
+
     return Response.ok(
       jsonEncode({
         'ok': true,
         'userId': user['id'],
         'email': email,
-        'needsVerification': !skipEmailVerification,
-        if (skipEmailVerification) 'token': user['token'],
+        'phone': phone,
+        'needsVerification': needsVerification,
+        if (!needsVerification) 'token': user['token'],
+        if (delivery['devCode'] != null) 'devCode': delivery['devCode'],
+        if (delivery['hint'] != null) 'hint': delivery['hint'],
+        'otpChannel': skipSmsVerification ? 'email' : 'phone',
       }),
       headers: {'Content-Type': 'application/json'},
     );
@@ -99,8 +218,16 @@ Router createRouter(DataStore store, DotEnv env) {
   router.post('/auth/verify', (Request req) async {
     final body = jsonDecode(await req.readAsString()) as Map<String, dynamic>;
     final email = (body['email'] as String? ?? '').trim().toLowerCase();
+    final phone = normalizePhone(body['phone'] as String?);
     final code = (body['code'] as String? ?? '').trim();
-    final result = await store.verifyEmail(email: email, codeHash: _hash(code));
+    if (code.isEmpty) return _error(400, 'código obrigatório');
+    final result = await store.verifyOtp(
+      email: email.isEmpty ? null : email,
+      phone: phone,
+      codeHash: _hash(code),
+      markEmail: email.isNotEmpty,
+      markPhone: phone != null,
+    );
     if (result['error'] != null) {
       return _error(result['status'] as int? ?? 400, result['error'] as String);
     }
@@ -113,30 +240,89 @@ Router createRouter(DataStore store, DotEnv env) {
   router.post('/auth/resend-code', (Request req) async {
     final body = jsonDecode(await req.readAsString()) as Map<String, dynamic>;
     final email = (body['email'] as String? ?? '').trim().toLowerCase();
+    final phone = normalizePhone(body['phone'] as String?);
+    final channel = (body['channel'] as String? ??
+            (phone != null ? 'phone' : 'email'))
+        .toLowerCase();
     final code = _sixDigitCode();
-    final setResult = await store.setVerificationCode(email, _hash(code));
+    final setResult = await store.setVerificationCodeFor(
+      email: email.isEmpty ? null : email,
+      phone: phone,
+      codeHash: _hash(code),
+    );
     if (setResult['error'] != null) {
       return _error(
         setResult['status'] as int? ?? 400,
         setResult['error'] as String,
       );
     }
-    if (emailUser.isEmpty || emailPass.isEmpty) {
-      return _error(500, 'EMAIL_USER/EMAIL_PASS não configurados');
+    final target = channel == 'phone'
+        ? (phone ?? setResult['phone'] as String? ?? '')
+        : (email.isEmpty ? setResult['email'] as String? ?? '' : email);
+    if (target.isEmpty) {
+      return _error(400, 'informe email ou telefone');
     }
-    try {
-      await sendVerificationEmail(
-        user: emailUser,
-        pass: emailPass,
-        to: email,
-        code: code,
-        logoUrl: emailLogo,
+    return _otpResponse(
+      await _sendOtp(channel: channel, target: target, code: code),
+    );
+  });
+
+  router.post('/auth/otp/request', (Request req) async {
+    final body = jsonDecode(await req.readAsString()) as Map<String, dynamic>;
+    final phone = normalizePhone(body['phone'] as String?);
+    final email = (body['email'] as String? ?? '').trim().toLowerCase();
+    if (phone == null && email.isEmpty) {
+      return _error(400, 'informe telefone ou e-mail');
+    }
+    Map<String, dynamic>? user;
+    if (phone != null) {
+      user = await store.findUserByPhone(phone);
+      if (user == null) {
+        return _error(404, 'telefone não cadastrado — crie uma conta');
+      }
+    } else {
+      user = await store.findUser(email);
+      if (user == null) {
+        return _error(404, 'e-mail não cadastrado — crie uma conta');
+      }
+    }
+    final code = _sixDigitCode();
+    final setResult = await store.setVerificationCodeFor(
+      email: user['email'] as String?,
+      phone: user['phone'] as String?,
+      codeHash: _hash(code),
+    );
+    if (setResult['error'] != null) {
+      return _error(
+        setResult['status'] as int? ?? 400,
+        setResult['error'] as String,
       );
-    } catch (e) {
-      return _error(500, 'falha ao enviar e-mail: $e');
+    }
+    final channel = phone != null ? 'phone' : 'email';
+    final target = phone ?? email;
+    return _otpResponse(
+      await _sendOtp(channel: channel, target: target, code: code),
+    );
+  });
+
+  router.post('/auth/otp/verify', (Request req) async {
+    final body = jsonDecode(await req.readAsString()) as Map<String, dynamic>;
+    final phone = normalizePhone(body['phone'] as String?);
+    final email = (body['email'] as String? ?? '').trim().toLowerCase();
+    final code = (body['code'] as String? ?? '').trim();
+    if (code.isEmpty) return _error(400, 'código obrigatório');
+    final result = await store.verifyOtp(
+      email: email.isEmpty ? null : email,
+      phone: phone,
+      codeHash: _hash(code),
+      markEmail: email.isNotEmpty || phone == null,
+      markPhone: phone != null,
+    );
+    if (result['error'] != null) {
+      return _error(result['status'] as int? ?? 400, result['error'] as String);
     }
     return Response.ok(
-      jsonEncode({'ok': true}),
+      jsonEncode(result),
       headers: {'Content-Type': 'application/json'},
     );
   });
@@ -149,20 +335,16 @@ Router createRouter(DataStore store, DotEnv env) {
     if (user == null || user['passwordHash'] != _hash(password)) {
       return _error(401, 'credenciais inválidas');
     }
-    if (user['emailVerified'] != true && !skipEmailVerification) {
-      return _error(403, 'e-mail não confirmado');
+    final verified = user['emailVerified'] == true ||
+        user['phoneVerified'] == true ||
+        skipEmailVerification ||
+        skipSmsVerification;
+    if (!verified) {
+      return _error(403, 'conta não confirmada — use o código OTP');
     }
     final token = await store.issueToken(user['id'] as String);
     return Response.ok(
-      jsonEncode({
-        'token': token,
-        'userId': user['id'],
-        'email': user['email'],
-        'displayName': user['displayName'] ?? 'Fiscal',
-        'emailVerified': user['emailVerified'] == true,
-        'uf': user['uf'],
-        'city': user['city'],
-      }),
+      jsonEncode(_publicUser(user, token: token)),
       headers: {'Content-Type': 'application/json'},
     );
   });
@@ -173,14 +355,7 @@ Router createRouter(DataStore store, DotEnv env) {
     final user = await store.findUserById(userId);
     if (user == null) return _error(404, 'usuário não encontrado');
     return Response.ok(
-      jsonEncode({
-        'userId': user['id'],
-        'email': user['email'],
-        'displayName': user['displayName'] ?? 'Fiscal',
-        'emailVerified': user['emailVerified'] == true,
-        'uf': user['uf'],
-        'city': user['city'],
-      }),
+      jsonEncode(_publicUser(user)),
       headers: {'Content-Type': 'application/json'},
     );
   });
@@ -302,6 +477,16 @@ String _sixDigitCode() {
   return n.toString();
 }
 
+/// Normaliza telefone BR para dígitos com país 55 (ex: 5511999998888).
+String? normalizePhone(String? raw) {
+  if (raw == null) return null;
+  final d = raw.replaceAll(RegExp(r'\D'), '');
+  if (d.isEmpty) return null;
+  if (d.startsWith('55') && d.length >= 12) return d;
+  if (d.length == 10 || d.length == 11) return '55$d';
+  return d.length >= 10 ? d : null;
+}
+
 Future<String?> _auth(Request req, DataStore store) async {
   final header = req.headers['authorization'];
   if (header == null || !header.startsWith('Bearer ')) return null;
@@ -364,13 +549,25 @@ class DataStore {
     return _col('users').findOne(where.eq('email', email));
   }
 
+  Future<Map<String, dynamic>?> findUserByPhone(String phone) async {
+    if (mode == 'memory') {
+      return _memUsers.values.cast<Map<String, dynamic>?>().firstWhere(
+            (u) => u?['phone'] == phone,
+            orElse: () => null,
+          );
+    }
+    return _col('users').findOne(where.eq('phone', phone));
+  }
+
   Future<Map<String, dynamic>> createUser({
     required String email,
+    String? phone,
     required String passwordHash,
     required String displayName,
     String? uf,
     String? city,
     required bool emailVerified,
+    bool phoneVerified = false,
     required String verificationCodeHash,
   }) async {
     final id = const Uuid().v4();
@@ -379,11 +576,13 @@ class DataStore {
     final doc = {
       'id': id,
       'email': email,
+      'phone': phone,
       'passwordHash': passwordHash,
       'displayName': displayName,
       'uf': uf,
       'city': city,
       'emailVerified': emailVerified,
+      'phoneVerified': phoneVerified,
       'verificationCodeHash': verificationCodeHash,
       'verificationExpiresAt':
           now.add(const Duration(minutes: 15)).toIso8601String(),
@@ -404,11 +603,18 @@ class DataStore {
     return _col('users').findOne(where.eq('id', id));
   }
 
-  Future<Map<String, dynamic>> verifyEmail({
-    required String email,
+  Future<Map<String, dynamic>> verifyOtp({
+    String? email,
+    String? phone,
     required String codeHash,
+    bool markEmail = false,
+    bool markPhone = false,
   }) async {
-    final user = await findUser(email);
+    Map<String, dynamic>? user;
+    if (phone != null) {
+      user = await findUserByPhone(phone);
+    }
+    user ??= email != null && email.isNotEmpty ? await findUser(email) : null;
     if (user == null) return {'error': 'usuário não encontrado', 'status': 404};
     final attempts = (user['verifyAttempts'] as num?)?.toInt() ?? 0;
     if (attempts >= 5) {
@@ -429,7 +635,11 @@ class DataStore {
       }
       return {'error': 'código inválido', 'status': 400};
     }
-    user['emailVerified'] = true;
+    if (markEmail) user['emailVerified'] = true;
+    if (markPhone) user['phoneVerified'] = true;
+    // Confirmar OTP valida o canal usado e libera a conta.
+    if (markPhone) user['emailVerified'] = true;
+    if (markEmail) user['phoneVerified'] = user['phoneVerified'] == true;
     user['verificationCodeHash'] = null;
     user['verifyAttempts'] = 0;
     final token = await issueToken(user['id'] as String);
@@ -442,18 +652,23 @@ class DataStore {
       'token': token,
       'userId': user['id'],
       'email': user['email'],
+      'phone': user['phone'],
       'displayName': user['displayName'] ?? 'Fiscal',
-      'emailVerified': true,
+      'emailVerified': user['emailVerified'] == true,
+      'phoneVerified': user['phoneVerified'] == true,
       'uf': user['uf'],
       'city': user['city'],
     };
   }
 
-  Future<Map<String, dynamic>> setVerificationCode(
-    String email,
-    String codeHash,
-  ) async {
-    final user = await findUser(email);
+  Future<Map<String, dynamic>> setVerificationCodeFor({
+    String? email,
+    String? phone,
+    required String codeHash,
+  }) async {
+    Map<String, dynamic>? user;
+    if (phone != null) user = await findUserByPhone(phone);
+    user ??= email != null && email.isNotEmpty ? await findUser(email) : null;
     if (user == null) {
       return {'error': 'usuário não encontrado', 'status': 404};
     }
@@ -474,7 +689,11 @@ class DataStore {
     } else {
       await _col('users').replaceOne(where.eq('id', user['id']), user);
     }
-    return {'ok': true};
+    return {
+      'ok': true,
+      'email': user['email'],
+      'phone': user['phone'],
+    };
   }
 
   Future<List<Map<String, dynamic>>> listMarketReviews(String marketId) async {
@@ -505,32 +724,52 @@ class DataStore {
     final demos = [
       {
         'id': const Uuid().v4(),
-        'name': 'Mercado Central',
-        'uf': 'SP',
-        'lat': -23.5505,
-        'lng': -46.6333,
-        'address': 'Centro, São Paulo',
-        'priceLevel': 'fair',
-        'updatedAt': now,
-      },
-      {
-        'id': const Uuid().v4(),
-        'name': 'Atacado Bom Preço',
-        'uf': 'SP',
-        'lat': -23.5614,
-        'lng': -46.6559,
-        'address': 'Pinheiros, São Paulo',
+        'name': 'Atacadão Cruz de Rebouças',
+        'uf': 'PE',
+        'lat': -8.0284,
+        'lng': -34.9352,
+        'address': 'Av. Dr. José Rufino, Recife - PE',
         'priceLevel': 'low',
         'updatedAt': now,
       },
       {
         'id': const Uuid().v4(),
-        'name': 'Supermercado Premium',
-        'uf': 'SP',
-        'lat': -23.5489,
-        'lng': -46.6388,
-        'address': 'Consolação, São Paulo',
-        'priceLevel': 'high',
+        'name': 'Novo Atacarejo Imbiribeira',
+        'uf': 'PE',
+        'lat': -8.1145,
+        'lng': -34.9188,
+        'address': 'Imbiribeira, Recife - PE',
+        'priceLevel': 'low',
+        'updatedAt': now,
+      },
+      {
+        'id': const Uuid().v4(),
+        'name': 'Assaí Atacadista Imbiribeira',
+        'uf': 'PE',
+        'lat': -8.1015,
+        'lng': -34.9255,
+        'address': 'Av. Marechal Mascarenhas, Recife - PE',
+        'priceLevel': 'low',
+        'updatedAt': now,
+      },
+      {
+        'id': const Uuid().v4(),
+        'name': 'Carrefour Dourados',
+        'uf': 'PE',
+        'lat': -8.0476,
+        'lng': -34.877,
+        'address': 'Av. Mal. Mascarenhas de Morais, Recife - PE',
+        'priceLevel': 'fair',
+        'updatedAt': now,
+      },
+      {
+        'id': const Uuid().v4(),
+        'name': "Sam's Club Recife",
+        'uf': 'PE',
+        'lat': -8.1121,
+        'lng': -34.9148,
+        'address': 'Av. Eng. Domingos Ferreira, Recife - PE',
+        'priceLevel': 'fair',
         'updatedAt': now,
       },
     ];

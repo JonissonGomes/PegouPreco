@@ -38,6 +38,19 @@ export const prefs = {
   },
   setCurrentMarketId: (id: number | null) =>
     metaSet('currentMarketId', id == null ? '' : String(id)),
+  getLastLocation: (): {lat: number; lng: number} | null => {
+    const lat = metaGet('lastLat');
+    const lng = metaGet('lastLng');
+    if (!lat || !lng) return null;
+    const a = Number(lat);
+    const b = Number(lng);
+    if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+    return {lat: a, lng: b};
+  },
+  setLastLocation: (lat: number, lng: number) => {
+    metaSet('lastLat', String(lat));
+    metaSet('lastLng', String(lng));
+  },
   getAuthJson: () => {
     const v = metaGet('authSession');
     return v && v.length ? v : null;
@@ -217,6 +230,7 @@ export const priceLogRepo = {
         previousPrice: null as number | null,
         previousAt: null as string | null,
         bestPrice: null as number | null,
+        bestMarketId: null as number | null,
         bestMarketName: null as string | null,
       };
     }
@@ -238,6 +252,7 @@ export const priceLogRepo = {
       previousPrice: previous?.retailPrice ?? null,
       previousAt: previous?.capturedAt ?? null,
       bestPrice: best.retailPrice,
+      bestMarketId: best.marketId ?? null,
       bestMarketName: best.marketId
         ? marketRepo.getById(best.marketId)?.name ?? null
         : null,

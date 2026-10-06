@@ -1,19 +1,19 @@
 import React, {useCallback, useState} from 'react';
 import {
   Alert,
-  Modal,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 import {Camera, useCameraDevice} from 'react-native-vision-camera';
-import TextRecognition from '@react-native-ml-kit/text-recognition';
+import {FileText, QrCode, ScanLine} from 'lucide-react-native';
 import {AppButton, AppField, AppScreenHeader} from '@/ui/chrome';
+import {KeyboardSafeSheet} from '@/ui/keyboardSheet';
 import {colors} from '@/ui/theme';
 import {parseLabel, type LabelFields} from '@/domain/labelParser';
 import {formatBrl, parseBrl} from '@/domain/money';
+import {refreshPermissionFlags} from '@/app/permissions';
 import {
   cartRepo,
   marketRepo,
@@ -25,16 +25,20 @@ import {
 } from '@/store/appStore';
 import {fetchAndParseNfce} from '@/data/remote/sefazClient';
 
+type ExtraMode = 'none' | 'text' | 'nfce';
+
 export function CaptureScreen() {
   const activeListName = useAppStore(s => s.activeListName);
   const activeMarketId = useAppStore(s => s.activeMarketId);
   const refresh = useAppStore(s => s.refresh);
+  const cameraGranted = useAppStore(s => s.permissions.camera);
   const marketName = useMarketName(activeMarketId);
   const device = useCameraDevice('back');
   const [cameraOn, setCameraOn] = useState(false);
   const [fields, setFields] = useState<LabelFields | null>(null);
   const [raw, setRaw] = useState('');
   const [qrUrl, setQrUrl] = useState('');
+  const [extra, setExtra] = useState<ExtraMode>('none');
 
   const ensureList = () => {
     if (!activeListName || !activeMarketId) {
@@ -55,7 +59,7 @@ export function CaptureScreen() {
   const runOcrFromText = (text: string) => {
     const parsed = parseLabel(text);
     if (!parsed) {
-      Alert.alert('OCR', 'Não foi possível mapear preço na etiqueta.');
+      Alert.alert('Etiqueta', 'Não foi possível ler o preço. Ajuste e tente de novo.');
       return;
     }
     applyFields(parsed);
@@ -64,31 +68,51 @@ export function CaptureScreen() {
   const onCapturePhoto = useCallback(async () => {
     if (!ensureList()) return;
     try {
-      // Atalho de demo: se câmera indisponível, usa texto simulado
       if (!device) {
         runOcrFromText(
           'Cerveja Spaten 350ml c/12\nVarejo R$ 47,90\nAtacado a partir de 2 R$ 42,90',
         );
         return;
       }
-      Alert.alert(
-        'OCR',
-        'Cole o texto da etiqueta ou use o exemplo demo.',
-        [
-          {
-            text: 'Usar exemplo',
-            onPress: () =>
-              runOcrFromText(
-                'Arroz Tipo 1 Camil 5kg\nPreço varejo R$ 24,90\nAtacado a partir de 3 R$ 21,90',
-              ),
-          },
-          {text: 'Cancelar', style: 'cancel'},
-        ],
-      );
+      Alert.alert('Ler etiqueta', 'Como deseja continuar?', [
+        {
+          text: 'Usar exemplo',
+          onPress: () =>
+            runOcrFromText(
+              'Arroz Tipo 1 Camil 5kg\nPreço varejo R$ 24,90\nAtacado a partir de 3 R$ 21,90',
+            ),
+        },
+        {
+          text: 'Colar texto',
+          onPress: () => setExtra('text'),
+        },
+        {text: 'Cancelar', style: 'cancel'},
+      ]);
     } catch (e) {
-      Alert.alert('Erro OCR', e instanceof Error ? e.message : String(e));
+      Alert.alert('Erro', e instanceof Error ? e.message : String(e));
     }
   }, [device, activeListName, activeMarketId]);
+
+  const ensureCamera = async () => {
+    const flags = await refreshPermissionFlags();
+    useAppStore.setState({permissions: flags});
+    if (flags.camera) {
+      setCameraOn(true);
+      return true;
+    }
+    const status = await Camera.requestCameraPermission();
+    const granted = status === 'granted';
+    useAppStore.setState({permissions: {...flags, camera: granted}});
+    if (!granted) {
+      Alert.alert(
+        'Câmera necessária',
+        'Ative a permissão de câmera nas configurações para ler etiquetas.',
+      );
+      return false;
+    }
+    setCameraOn(true);
+    return true;
+  };
 
   const saveToCart = () => {
     if (!fields?.productName || fields.retailPrice == null) {
@@ -141,7 +165,7 @@ export function CaptureScreen() {
         prefs.setCurrentMarketId(m.id);
       }
       if (!parsed.items.length) {
-        Alert.alert('NFC-e', 'Nenhum item encontrado no HTML');
+        Alert.alert('NFC-e', 'Nenhum item encontrado');
         return;
       }
       for (const it of parsed.items) {
@@ -173,6 +197,8 @@ export function CaptureScreen() {
         });
       }
       refresh();
+      setExtra('none');
+      setQrUrl('');
       Alert.alert('NFC-e', `${parsed.items.length} itens adicionados`);
     } catch (e) {
       Alert.alert('SEFAZ', e instanceof Error ? e.message : String(e));
@@ -183,189 +209,267 @@ export function CaptureScreen() {
     <View style={styles.root}>
       <AppScreenHeader
         title="Capturar"
-        subtitle={marketName || activeListName || 'Leia etiqueta ou QR NFC-e'}
+        subtitle={marketName || activeListName || 'Aponte para a etiqueta'}
       />
-      <ScrollView contentContainerStyle={styles.body}>
-        <View style={styles.cameraBox}>
-          {cameraOn && device ? (
-            <Camera style={StyleSheet.absoluteFill} device={device} isActive />
-          ) : (
-            <View style={styles.cameraPlaceholder}>
-              <Text style={styles.camText}>
-                Guia de etiqueta — alinhe o preço no quadro
-              </Text>
-            </View>
-          )}
+
+      <View style={styles.stage}>
+        {cameraOn && cameraGranted && device ? (
+          <Camera style={StyleSheet.absoluteFill} device={device} isActive />
+        ) : (
+          <View style={styles.stageIdle}>
+            <ScanLine size={36} color={colors.yellowBright} strokeWidth={2} />
+            <Text style={styles.stageTitle}>Enquadre a etiqueta</Text>
+            <Text style={styles.stageHint}>
+              Centralize o nome do produto e o preço no quadro
+            </Text>
+          </View>
+        )}
+        <View style={styles.frame} pointerEvents="none">
+          <View style={[styles.corner, styles.tl]} />
+          <View style={[styles.corner, styles.tr]} />
+          <View style={[styles.corner, styles.bl]} />
+          <View style={[styles.corner, styles.br]} />
         </View>
+      </View>
+
+      <View style={styles.dock}>
         <AppButton
-          label={cameraOn ? 'Capturar / OCR' : 'Abrir câmera / OCR'}
-          onPress={() => {
+          icon={<ScanLine size={20} color="#fff" />}
+          label={cameraOn ? 'Ler etiqueta' : 'Abrir câmera'}
+          onPress={async () => {
             if (!cameraOn) {
-              setCameraOn(true);
-              Camera.requestCameraPermission().catch(() => undefined);
+              const ok = await ensureCamera();
+              if (!ok) return;
             }
             onCapturePhoto();
           }}
         />
-        <Text style={styles.section}>Ou cole texto da etiqueta</Text>
+        <View style={styles.altRow}>
+          <Pressable
+            style={[styles.altBtn, extra === 'text' && styles.altOn]}
+            onPress={() => setExtra(e => (e === 'text' ? 'none' : 'text'))}>
+            <FileText
+              size={16}
+              color={extra === 'text' ? colors.navy : '#E5E7EB'}
+            />
+            <Text
+              style={[
+                styles.altText,
+                extra === 'text' ? styles.altTextOn : null,
+              ]}>
+              Texto
+            </Text>
+          </Pressable>
+          <Pressable
+            style={[styles.altBtn, extra === 'nfce' && styles.altOn]}
+            onPress={() => setExtra(e => (e === 'nfce' ? 'none' : 'nfce'))}>
+            <QrCode
+              size={16}
+              color={extra === 'nfce' ? colors.navy : '#E5E7EB'}
+            />
+            <Text
+              style={[
+                styles.altText,
+                extra === 'nfce' ? styles.altTextOn : null,
+              ]}>
+              NFC-e
+            </Text>
+          </Pressable>
+        </View>
+      </View>
+
+      <KeyboardSafeSheet
+        visible={extra === 'text'}
+        onClose={() => setExtra('none')}>
+        <Text style={styles.modalTitle}>Colar texto da etiqueta</Text>
         <AppField
           multiline
-          numberOfLines={4}
+          numberOfLines={5}
           value={raw}
           onChangeText={setRaw}
-          placeholder="Texto OCR…"
-          style={{height: 100, textAlignVertical: 'top'}}
+          placeholder="Cole o texto lido da etiqueta…"
+          style={{height: 120, textAlignVertical: 'top'}}
         />
-        <AppButton label="Mapear campos" onPress={() => runOcrFromText(raw)} />
+        <AppButton
+          label="Mapear preço"
+          onPress={() => {
+            runOcrFromText(raw);
+            setExtra('none');
+          }}
+        />
+      </KeyboardSafeSheet>
 
-        <Text style={styles.section}>QR NFC-e (URL)</Text>
+      <KeyboardSafeSheet
+        visible={extra === 'nfce'}
+        onClose={() => setExtra('none')}>
+        <Text style={styles.modalTitle}>QR NFC-e</Text>
+        <Text style={styles.hint}>Cole a URL do cupom fiscal</Text>
         <AppField
           value={qrUrl}
           onChangeText={setQrUrl}
           placeholder="https://…nfce…"
           autoCapitalize="none"
+          compact
         />
-        <AppButton label="Buscar NFC-e na SEFAZ" onPress={fetchNfce} />
-      </ScrollView>
+        <AppButton label="Buscar na SEFAZ" onPress={fetchNfce} />
+      </KeyboardSafeSheet>
 
-      <Modal visible={!!fields} transparent animationType="slide">
-        <View style={styles.modalRoot}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Campos detectados</Text>
-            <Text style={styles.hint}>
-              Confira varejo / atacado antes de salvar
-            </Text>
+      <KeyboardSafeSheet visible={!!fields} onClose={() => setFields(null)}>
+        <Text style={styles.modalTitle}>Confirmar leitura</Text>
+        <Text style={styles.hint}>Revise antes de salvar no carrinho</Text>
+        <AppField
+          label="Produto"
+          compact
+          value={fields?.productName ?? ''}
+          onChangeText={t =>
+            setFields(f => (f ? {...f, productName: t} : f))
+          }
+        />
+        <View style={{flexDirection: 'row', gap: 10}}>
+          <View style={[styles.fieldAccent, styles.retail]}>
             <AppField
-              label="Produto"
-              compact
-              value={fields?.productName ?? ''}
-              onChangeText={t =>
-                setFields(f => (f ? {...f, productName: t} : f))
-              }
-            />
-            <View style={{flexDirection: 'row', gap: 10}}>
-              <View style={[styles.fieldAccent, styles.retail]}>
-                <AppField
-                  label="Preço varejo"
-                  compact
-                  keyboardType="decimal-pad"
-                  value={
-                    fields?.retailPrice != null
-                      ? String(fields.retailPrice)
-                      : ''
-                  }
-                  onChangeText={t =>
-                    setFields(f =>
-                      f ? {...f, retailPrice: parseBrl(t)} : f,
-                    )
-                  }
-                />
-              </View>
-              <View style={[styles.fieldAccent, styles.wholesale]}>
-                <AppField
-                  label="Preço atacado"
-                  compact
-                  keyboardType="decimal-pad"
-                  value={
-                    fields?.wholesalePrice != null
-                      ? String(fields.wholesalePrice)
-                      : ''
-                  }
-                  onChangeText={t =>
-                    setFields(f =>
-                      f ? {...f, wholesalePrice: parseBrl(t)} : f,
-                    )
-                  }
-                />
-              </View>
-            </View>
-            <AppField
-              label="Qtd mín. atacado"
+              label="Varejo"
               compact
               keyboardType="decimal-pad"
               value={
-                fields?.minWholesaleQty != null
-                  ? String(fields.minWholesaleQty)
+                fields?.retailPrice != null ? String(fields.retailPrice) : ''
+              }
+              onChangeText={t =>
+                setFields(f => (f ? {...f, retailPrice: parseBrl(t)} : f))
+              }
+            />
+          </View>
+          <View style={[styles.fieldAccent, styles.wholesale]}>
+            <AppField
+              label="Atacado"
+              compact
+              keyboardType="decimal-pad"
+              value={
+                fields?.wholesalePrice != null
+                  ? String(fields.wholesalePrice)
                   : ''
               }
               onChangeText={t =>
                 setFields(f =>
-                  f
-                    ? {
-                        ...f,
-                        minWholesaleQty: t
-                          ? Number.parseFloat(t.replace(',', '.'))
-                          : null,
-                      }
-                    : f,
+                  f ? {...f, wholesalePrice: parseBrl(t)} : f,
                 )
               }
             />
-            {fields?.retailPrice != null ? (
-              <Text style={styles.preview}>
-                Varejo {formatBrl(fields.retailPrice)}
-                {fields.wholesalePrice != null
-                  ? ` · Atacado ${formatBrl(fields.wholesalePrice)}`
-                  : ''}
-              </Text>
-            ) : null}
-            <AppButton label="Salvar no carrinho" onPress={saveToCart} />
-            <AppButton
-              label="Cancelar"
-              outlined
-              onPress={() => setFields(null)}
-            />
-            <Pressable
-              onPress={async () => {
-                try {
-                  // tenta ML Kit se houver caminho de foto futura
-                  await TextRecognition;
-                } catch {
-                  /* optional */
-                }
-              }}
-            />
           </View>
         </View>
-      </Modal>
+        <AppField
+          label="Qtd mín. atacado"
+          compact
+          keyboardType="decimal-pad"
+          value={
+            fields?.minWholesaleQty != null
+              ? String(fields.minWholesaleQty)
+              : ''
+          }
+          onChangeText={t =>
+            setFields(f =>
+              f
+                ? {
+                    ...f,
+                    minWholesaleQty: t
+                      ? Number.parseFloat(t.replace(',', '.'))
+                      : null,
+                  }
+                : f,
+            )
+          }
+        />
+        {fields?.retailPrice != null ? (
+          <Text style={styles.preview}>
+            Varejo {formatBrl(fields.retailPrice)}
+            {fields.wholesalePrice != null
+              ? ` · Atacado ${formatBrl(fields.wholesalePrice)}`
+              : ''}
+          </Text>
+        ) : null}
+        <AppButton label="Salvar no carrinho" onPress={saveToCart} />
+        <AppButton
+          label="Cancelar"
+          outlined
+          onPress={() => setFields(null)}
+        />
+      </KeyboardSafeSheet>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: {flex: 1, backgroundColor: colors.bg},
-  body: {padding: 16, gap: 10, paddingBottom: 100},
-  cameraBox: {
-    height: 220,
-    borderRadius: 16,
+  root: {flex: 1, backgroundColor: '#0B1220'},
+  stage: {
+    flex: 1,
+    marginHorizontal: 16,
+    marginTop: 8,
+    borderRadius: 24,
     overflow: 'hidden',
-    backgroundColor: '#111',
+    backgroundColor: '#111827',
   },
-  cameraPlaceholder: {
+  stageIdle: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 2,
+    gap: 10,
+    padding: 24,
+  },
+  stageTitle: {
+    color: '#fff',
+    fontWeight: '800',
+    fontSize: 18,
+    textAlign: 'center',
+  },
+  stageHint: {
+    color: 'rgba(255,255,255,0.65)',
+    fontWeight: '600',
+    fontSize: 13,
+    textAlign: 'center',
+    maxWidth: 260,
+  },
+  frame: {
+    ...StyleSheet.absoluteFillObject,
+    margin: 28,
+  },
+  corner: {
+    position: 'absolute',
+    width: 28,
+    height: 28,
     borderColor: colors.yellowBright,
-    margin: 24,
-    borderStyle: 'dashed',
   },
-  camText: {color: '#fff', fontWeight: '700', textAlign: 'center'},
-  section: {fontWeight: '800', color: colors.navy, marginTop: 8},
-  modalRoot: {
+  tl: {top: 0, left: 0, borderTopWidth: 3, borderLeftWidth: 3, borderTopLeftRadius: 10},
+  tr: {top: 0, right: 0, borderTopWidth: 3, borderRightWidth: 3, borderTopRightRadius: 10},
+  bl: {bottom: 0, left: 0, borderBottomWidth: 3, borderLeftWidth: 3, borderBottomLeftRadius: 10},
+  br: {bottom: 0, right: 0, borderBottomWidth: 3, borderRightWidth: 3, borderBottomRightRadius: 10},
+  dock: {
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 28,
+    gap: 12,
+    backgroundColor: '#0B1220',
+  },
+  altRow: {flexDirection: 'row', gap: 10},
+  altBtn: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'flex-end',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
   },
-  modalCard: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    padding: 16,
-    gap: 8,
+  altOn: {
+    backgroundColor: colors.yellowBright,
+    borderColor: colors.yellowBright,
   },
+  altText: {color: '#E5E7EB', fontWeight: '800', fontSize: 13},
+  altTextOn: {color: colors.navy},
   modalTitle: {fontSize: 18, fontWeight: '800', color: colors.navy},
-  hint: {color: colors.muted, marginBottom: 4},
+  hint: {color: colors.muted, marginBottom: 4, fontWeight: '600'},
   fieldAccent: {flex: 1, borderRadius: 12, padding: 4},
   retail: {backgroundColor: '#EFF6FF'},
   wholesale: {backgroundColor: '#FFFBEB'},

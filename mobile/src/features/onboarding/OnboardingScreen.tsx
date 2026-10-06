@@ -1,6 +1,6 @@
 import React from 'react';
 import {SafeAreaView, StyleSheet, Text, View} from 'react-native';
-import {AppButton} from '@/ui/chrome';
+import {AppButton, BrandLogo} from '@/ui/chrome';
 import {colors} from '@/ui/theme';
 import {useAppStore} from '@/store/appStore';
 
@@ -9,6 +9,7 @@ export function OnboardingScreen() {
   return (
     <SafeAreaView style={styles.root}>
       <View style={styles.hero}>
+        <BrandLogo size={88} />
         <Text style={styles.brand}>PegouPreço</Text>
         <Text style={styles.lead}>
           Capture etiquetas, compare preços e finalize suas listas — offline
@@ -27,8 +28,14 @@ const styles = StyleSheet.create({
     padding: 24,
     justifyContent: 'space-between',
   },
-  hero: {marginTop: 80},
-  brand: {fontSize: 36, fontWeight: '900', color: colors.navy},
+  hero: {marginTop: 64},
+  brand: {
+    marginTop: 18,
+    fontSize: 36,
+    fontWeight: '900',
+    color: colors.navy,
+    letterSpacing: -0.5,
+  },
   lead: {
     marginTop: 12,
     fontSize: 16,

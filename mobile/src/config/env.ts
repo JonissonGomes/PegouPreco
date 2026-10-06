@@ -9,3 +9,7 @@ export const MAPBOX_ACCESS_TOKEN =
 export const SYNC_API_BASE = cfg.SYNC_API_BASE || 'http://10.0.2.2:8080';
 
 export const SEED_DEMO = String(cfg.SEED_DEMO || '').toLowerCase() === 'true';
+
+/** true = limpa dados do seed no boot (não reseeda). */
+export const CLEAR_SEED_DEMO =
+  String(cfg.CLEAR_SEED_DEMO || '').toLowerCase() === 'true';
