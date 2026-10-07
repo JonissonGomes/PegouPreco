@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   Image,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -22,7 +23,8 @@ export function BrandLogo({size = 28}: {size?: number}) {
       source={brandLogo}
       style={{width: size, height: size, borderRadius: size > 32 ? 12 : 8}}
       resizeMode="contain"
-      defaultSource={brandIcon}
+      // defaultSource é iOS-only; no Android (New Arch) derruba com erro de property.
+      {...(Platform.OS === 'ios' ? {defaultSource: brandIcon} : null)}
     />
   );
 }
