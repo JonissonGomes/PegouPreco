@@ -177,12 +177,15 @@ export function AppButton({
   label,
   onPress,
   outlined,
+  accent,
   disabled,
   icon,
 }: {
   label: string;
   onPress?: () => void;
   outlined?: boolean;
+  /** Fundo amarelo da marca (CTAs de missão / avaliar). */
+  accent?: boolean;
   disabled?: boolean;
   icon?: React.ReactNode;
 }) {
@@ -193,10 +196,15 @@ export function AppButton({
       style={[
         styles.btn,
         outlined && styles.btnOutlined,
+        accent && styles.btnAccent,
         disabled && {opacity: 0.5},
       ]}>
       {icon}
-      <Text style={[styles.btnText, outlined && {color: colors.navy}]}>
+      <Text
+        style={[
+          styles.btnText,
+          (outlined || accent) && {color: colors.navy},
+        ]}>
         {label}
       </Text>
     </Pressable>
@@ -382,6 +390,11 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     height: 48,
     borderRadius: 14,
+  },
+  btnAccent: {
+    backgroundColor: colors.yellowBright,
+    borderWidth: 2,
+    borderColor: colors.navy,
   },
   btnText: {color: '#fff', fontWeight: '800', fontSize: 15},
   fieldLabel: {

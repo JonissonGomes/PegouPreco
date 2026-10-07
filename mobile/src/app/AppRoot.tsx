@@ -4,6 +4,7 @@ import {GestureHandlerRootView} from 'react-native-gesture-handler';
 import {SafeAreaProvider} from 'react-native-safe-area-context';
 import {RootNavigation} from './navigation';
 import {useAppStore} from '@/store/appStore';
+import {AppDialogHost} from '@/ui/appDialog';
 import {colors} from '@/ui/theme';
 
 export function AppRoot() {
@@ -18,6 +19,7 @@ export function AppRoot() {
       <SafeAreaProvider>
         <StatusBar barStyle="dark-content" backgroundColor={colors.yellowBright} />
         <RootNavigation />
+        <AppDialogHost />
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

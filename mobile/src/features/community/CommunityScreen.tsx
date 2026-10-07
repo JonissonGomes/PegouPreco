@@ -1,14 +1,8 @@
 import React, {useCallback, useEffect, useMemo, useState} from 'react';
-import {
-  Alert,
-  FlatList,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import {FlatList, StyleSheet, Text, View} from 'react-native';
+import {useNavigation} from '@react-navigation/native';
 import {Star} from 'lucide-react-native';
-import {AppScreenHeader, AppScreenNavyBar} from '@/ui/chrome';
+import {AppButton, AppScreenHeader, AppScreenNavyBar} from '@/ui/chrome';
 import {
   EmptyState,
   FiscalBadge,
@@ -20,6 +14,7 @@ import {
   VoteButtons,
   XpBurst,
 } from '@/ui/components';
+import {appAlert} from '@/ui/appDialog';
 import {MarketReviewSheet} from '@/ui/MarketReviewSheet';
 import {colors, radii, space} from '@/ui/theme';
 import {formatBrl} from '@/domain/money';
@@ -39,6 +34,7 @@ type FeedItem = {
 type Burst = {points: number; title: string} | null;
 
 export function CommunityScreen() {
+  const nav = useNavigation<any>();
   const auth = useAppStore(s => s.auth);
   const markets = useAppStore(s => s.markets);
   const products = useAppStore(s => s.products);
@@ -49,6 +45,17 @@ export function CommunityScreen() {
   const [reviewBusy, setReviewBusy] = useState(false);
   const [rep, setRep] = useState<ReputationRemote | null>(null);
   const [burst, setBurst] = useState<Burst>(null);
+
+  const needAccount = (message: string) => {
+    appAlert('Conta necessária', message, [
+      {label: 'Agora não', style: 'cancel'},
+      {
+        label: 'Ir ao Perfil',
+        style: 'primary',
+        onPress: () => nav.navigate('Profile'),
+      },
+    ]);
+  };
 
   useEffect(() => {
     if (!auth?.token) {
@@ -99,17 +106,24 @@ export function CommunityScreen() {
   const vote = useCallback(
     async (item: FeedItem, voteType: 'confirm' | 'reject') => {
       if (!canContribute(auth)) {
-        Alert.alert(
-          'Conta necessária',
+        needAccount(
           'Verifique seu e-mail no Perfil para validar preços da comunidade.',
         );
         return;
       }
       const remoteId = item.log.remoteId;
       if (!remoteId || !auth?.token) {
-        Alert.alert(
-          'Sync',
-          'Sincronize seus dados (Perfil) para votar em preços da nuvem.',
+        appAlert(
+          'Sincronize seus dados',
+          'Abra o Perfil e sincronize para votar em preços da nuvem.',
+          [
+            {label: 'Agora não', style: 'cancel'},
+            {
+              label: 'Ir ao Perfil',
+              style: 'primary',
+              onPress: () => nav.navigate('Profile'),
+            },
+          ],
         );
         return;
       }
@@ -145,24 +159,37 @@ export function CommunityScreen() {
           voteType === 'confirm' ? 'Preço confirmado!' : 'Preço rejeitado!',
         );
       } catch (e) {
-        Alert.alert('Voto', apiErrorMessage(e));
+        appAlert('Voto', apiErrorMessage(e));
       } finally {
         setBusyId(null);
       }
     },
-    [auth, refresh, level],
+    // needAccount usa nav estável da tela
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [auth, refresh, level, nav],
   );
 
   const reviewMarket = markets.find(m => m.id === reviewMarketId);
 
   const submitReview = async (stars: number) => {
     if (!canContribute(auth) || !auth?.token) {
-      Alert.alert('Conta necessária', 'Verifique o e-mail para avaliar mercados.');
+      needAccount('Verifique o e-mail no Perfil para avaliar mercados.');
       return;
     }
     const rid = reviewMarket?.remoteId;
     if (!rid) {
-      Alert.alert('Mercado', 'Sincronize o mercado antes de avaliar.');
+      appAlert(
+        'Mercado ainda local',
+        'Sincronize no Perfil para enviar a avaliação deste mercado.',
+        [
+          {label: 'Ok', style: 'cancel'},
+          {
+            label: 'Ir ao Perfil',
+            style: 'primary',
+            onPress: () => nav.navigate('Profile'),
+          },
+        ],
+      );
       return;
     }
     setReviewBusy(true);
@@ -171,7 +198,7 @@ export function CommunityScreen() {
       setReviewMarketId(null);
       celebrate(5, `${stars}★ no ${reviewMarket?.name ?? 'mercado'}`);
     } catch (e) {
-      Alert.alert('Avaliação', apiErrorMessage(e));
+      appAlert('Avaliação', apiErrorMessage(e));
     } finally {
       setReviewBusy(false);
     }
@@ -269,21 +296,23 @@ export function CommunityScreen() {
               ) : null}
 
               {item.log.marketId != null ? (
-                <Pressable
-                  onPress={() => setReviewMarketId(item.log.marketId)}
-                  style={styles.reviewBtn}>
-                  <Star
-                    size={14}
-                    color={colors.navy}
-                    fill={colors.yellowBright}
+                <View style={styles.reviewWrap}>
+                  <AppButton
+                    accent
+                    icon={
+                      <Star
+                        size={18}
+                        color={colors.navy}
+                        fill={colors.navy}
+                      />
+                    }
+                    label="Avaliar mercado · +5 pts"
+                    onPress={() => setReviewMarketId(item.log.marketId)}
                   />
-                  <Text style={styles.reviewBtnText}>
-                    Avaliar {item.marketName}
+                  <Text style={styles.reviewHint} numberOfLines={1}>
+                    {item.marketName}
                   </Text>
-                  <View style={styles.miniPts}>
-                    <Text style={styles.miniPtsText}>+5</Text>
-                  </View>
-                </Pressable>
+                </View>
               ) : null}
             </View>
           );
@@ -345,23 +374,11 @@ const styles = StyleSheet.create({
   meta: {color: colors.muted, fontWeight: '600', fontSize: 12, marginTop: 2},
   price: {fontWeight: '900', color: colors.ink, fontSize: 22, marginTop: 6},
   source: {color: colors.muted, fontWeight: '600', fontSize: 11, marginTop: 2},
-  reviewBtn: {
-    marginTop: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    alignSelf: 'flex-start',
-    backgroundColor: '#EEF2FF',
-    borderRadius: radii.pill,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+  reviewWrap: {marginTop: 12, gap: 4},
+  reviewHint: {
+    textAlign: 'center',
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.muted,
   },
-  reviewBtnText: {color: colors.navy, fontWeight: '800', fontSize: 12},
-  miniPts: {
-    backgroundColor: colors.yellowBright,
-    borderRadius: radii.pill,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-  },
-  miniPtsText: {fontSize: 10, fontWeight: '900', color: colors.navy},
 });

@@ -1,7 +1,9 @@
 import React, {useEffect, useState} from 'react';
-import {Alert, Pressable, StyleSheet, Text, View} from 'react-native';
+import {Pressable, StyleSheet, Text, View} from 'react-native';
+import {useNavigation} from '@react-navigation/native';
 import {MapPin, Star, TrendingDown, TrendingUp, Minus} from 'lucide-react-native';
 import {AppButton} from '@/ui/chrome';
+import {appAlert} from '@/ui/appDialog';
 import {KeyboardSafeSheet} from '@/ui/keyboardSheet';
 import {MarketReviewSheet} from '@/ui/MarketReviewSheet';
 import {XpBurst} from '@/ui/gamification';
@@ -41,6 +43,7 @@ export function MarketPinSheet({
   onClose: () => void;
   onUse?: (market: Market) => void;
 }) {
+  const nav = useNavigation<any>();
   const auth = useAppStore(s => s.auth);
   const [cached, setCached] = useState<Market | null>(market);
   const [cachedDist, setCachedDist] = useState(distanceKm);
@@ -66,11 +69,33 @@ export function MarketPinSheet({
   const submitReview = async (stars: number) => {
     if (!shown) return;
     if (!canContribute(auth) || !auth?.token) {
-      Alert.alert('Conta necessária', 'Verifique o e-mail para avaliar mercados.');
+      appAlert(
+        'Conta necessária',
+        'Verifique o e-mail no Perfil para avaliar mercados.',
+        [
+          {label: 'Agora não', style: 'cancel'},
+          {
+            label: 'Ir ao Perfil',
+            style: 'primary',
+            onPress: () => nav.navigate('Main', {screen: 'Profile'}),
+          },
+        ],
+      );
       return;
     }
     if (!shown.remoteId) {
-      Alert.alert('Mercado', 'Sincronize o mercado antes de avaliar.');
+      appAlert(
+        'Mercado ainda local',
+        'Sincronize no Perfil para enviar a avaliação deste mercado.',
+        [
+          {label: 'Ok', style: 'cancel'},
+          {
+            label: 'Ir ao Perfil',
+            style: 'primary',
+            onPress: () => nav.navigate('Main', {screen: 'Profile'}),
+          },
+        ],
+      );
       return;
     }
     setReviewBusy(true);
@@ -79,7 +104,7 @@ export function MarketPinSheet({
       setReviewOpen(false);
       setBurst({points: 5, title: `${stars}★ no ${shown.name}`});
     } catch (e) {
-      Alert.alert('Avaliação', apiErrorMessage(e));
+      appAlert('Avaliação', apiErrorMessage(e));
     } finally {
       setReviewBusy(false);
     }
@@ -142,8 +167,11 @@ export function MarketPinSheet({
               />
             ) : null}
             <AppButton
+              accent
+              icon={
+                <Star size={18} color={colors.navy} fill={colors.navy} />
+              }
               label="Avaliar mercado · +5 pts"
-              outlined
               onPress={() => setReviewOpen(true)}
             />
             <Pressable style={styles.secondary} onPress={onClose}>

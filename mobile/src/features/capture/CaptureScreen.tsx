@@ -1,7 +1,6 @@
 import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Animated,
   Pressable,
   StyleSheet,
@@ -12,6 +11,7 @@ import {useFocusEffect, useNavigation} from '@react-navigation/native';
 import {Camera, useCameraDevice} from 'react-native-vision-camera';
 import {ChevronRight, FileText, QrCode, ScanLine, X} from 'lucide-react-native';
 import {AppButton, AppField, AppScreenHeader} from '@/ui/chrome';
+import {appAlert} from '@/ui/appDialog';
 import {KeyboardSafeSheet} from '@/ui/keyboardSheet';
 import {colors} from '@/ui/theme';
 import {parseLabel, type LabelFields} from '@/domain/labelParser';
@@ -158,12 +158,16 @@ export function CaptureScreen() {
 
   const ensureList = () => {
     if (!activeListName || !activeMarketId) {
-      Alert.alert(
+      appAlert(
         'Lista necessária',
         'Inicie uma lista na aba Listas antes de capturar.',
         [
-          {text: 'Cancelar', style: 'cancel'},
-          {text: 'Ir para Listas', onPress: () => nav.navigate('Lists')},
+          {label: 'Cancelar', style: 'cancel'},
+          {
+            label: 'Ir para Listas',
+            style: 'primary',
+            onPress: () => nav.navigate('Lists'),
+          },
         ],
       );
       return false;
@@ -180,7 +184,7 @@ export function CaptureScreen() {
   const runOcrFromText = (text: string) => {
     const parsed = parseLabel(text);
     if (!parsed) {
-      Alert.alert(
+      appAlert(
         'Etiqueta',
         'Não foi possível ler o preço. Ajuste o enquadramento.',
       );
@@ -194,7 +198,7 @@ export function CaptureScreen() {
       if (busyRef.current) return null;
       if (!cameraRef.current || !device) {
         if (opts?.manual) {
-          Alert.alert('Câmera', 'Câmera indisponível neste aparelho.');
+          appAlert('Câmera', 'Câmera indisponível neste aparelho.');
         }
         return null;
       }
@@ -220,7 +224,7 @@ export function CaptureScreen() {
         }
         if (opts?.manual) {
           setStatus('Nenhum preço legível');
-          Alert.alert(
+          appAlert(
             'Não li a etiqueta',
             rawText
               ? 'Vi texto, mas não achei um preço claro. Aproxime e tente de novo.'
@@ -230,7 +234,7 @@ export function CaptureScreen() {
         return null;
       } catch (e) {
         if (opts?.manual) {
-          Alert.alert(
+          appAlert(
             'OCR',
             e instanceof Error ? e.message : 'Falha ao ler a foto',
           );
@@ -255,7 +259,7 @@ export function CaptureScreen() {
     const granted = statusPerm === 'granted';
     useAppStore.setState({permissions: {...flags, camera: granted}});
     if (!granted) {
-      Alert.alert(
+      appAlert(
         'Câmera necessária',
         'Ative a permissão de câmera nas configurações para ler etiquetas.',
       );
@@ -301,13 +305,21 @@ export function CaptureScreen() {
   const saveToCart = () => {
     if (!ensureList()) return;
     if (!fields?.productName || fields.retailPrice == null) {
-      Alert.alert('Preencha produto e preço varejo');
+      appAlert('Falta preencher', 'Informe produto e preço de varejo.');
       return;
     }
     if (auth && !auth.emailVerified) {
-      Alert.alert(
+      appAlert(
         'Conta sem verificação',
         'O preço será salvo na lista local. Verifique o e-mail no Perfil para alimentar o comparador comunitário.',
+        [
+          {label: 'Continuar', style: 'cancel'},
+          {
+            label: 'Ir ao Perfil',
+            style: 'primary',
+            onPress: () => nav.navigate('Profile'),
+          },
+        ],
       );
     }
     const product = productRepo.resolveOrCreate(fields.productName);
@@ -357,7 +369,7 @@ export function CaptureScreen() {
         prefs.setCurrentMarketId(m.id);
       }
       if (!parsed.items.length) {
-        Alert.alert('NFC-e', 'Nenhum item encontrado');
+        appAlert('NFC-e', 'Nenhum item encontrado');
         return;
       }
       for (const it of parsed.items) {
@@ -391,9 +403,9 @@ export function CaptureScreen() {
       refresh();
       setExtra('none');
       setQrUrl('');
-      Alert.alert('NFC-e', `${parsed.items.length} itens adicionados`);
+      appAlert('NFC-e', `${parsed.items.length} itens adicionados`);
     } catch (e) {
-      Alert.alert('SEFAZ', e instanceof Error ? e.message : String(e));
+      appAlert('SEFAZ', e instanceof Error ? e.message : String(e));
     }
   };
 
