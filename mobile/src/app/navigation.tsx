@@ -122,12 +122,21 @@ function Tabs() {
           tabBarIcon: ({color}) => <UserRound size={20} color={color} />,
         }}
       />
-      {/* Mantém a tab bar visível ao abrir o mapa; sem slot no layout da barra. */}
+      {/* Mantém a tab bar visível; sem slot no layout da barra. */}
       <Tab.Screen
         name="Map"
         component={MapScreen}
         options={{
           title: 'Mapa',
+          tabBarButton: () => null,
+          tabBarItemStyle: {display: 'none'},
+        }}
+      />
+      <Tab.Screen
+        name="Insights"
+        component={InsightsScreen}
+        options={{
+          title: 'Insights',
           tabBarButton: () => null,
           tabBarItemStyle: {display: 'none'},
         }}
@@ -169,7 +178,6 @@ export function RootNavigation() {
             <Stack.Screen name="ShoppingLists" component={ShoppingListsScreen} />
             <Stack.Screen name="History" component={HistoryScreen} />
             <Stack.Screen name="ProductDetail" component={ProductDetailScreen} />
-            <Stack.Screen name="Insights" component={InsightsScreen} />
             <Stack.Screen name="AdminMarkets" component={AdminMarketsScreen} />
           </>
         )}

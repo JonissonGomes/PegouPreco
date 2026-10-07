@@ -19,7 +19,7 @@ import {
 import {FiscalBadge} from '@/ui/components';
 import {KeyboardSafeSheet} from '@/ui/keyboardSheet';
 import {MarketSuggestRow} from '@/ui/MarketSuggestRow';
-import {colors, radii, space} from '@/ui/theme';
+import {colors, radii, space, spacing} from '@/ui/theme';
 import {formatBrl} from '@/domain/money';
 import {rankNearestMarkets} from '@/domain/marketUi';
 import {TrustEngine} from '@/domain/trust';
@@ -312,7 +312,10 @@ export function InsightsScreen() {
       <FlatList
         data={data}
         keyExtractor={i => i.key}
-        contentContainerStyle={{padding: 16, paddingBottom: 100}}
+        contentContainerStyle={{
+          padding: 16,
+          paddingBottom: spacing.bottomNavClearance,
+        }}
         renderItem={({item}) => {
           if (item.type === 'period') {
             return (
