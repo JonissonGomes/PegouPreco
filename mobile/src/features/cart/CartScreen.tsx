@@ -1,37 +1,38 @@
 import React, {useEffect, useMemo, useState} from 'react';
 import {
+  ActivityIndicator,
   LayoutAnimation,
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   UIManager,
   View,
 } from 'react-native';
-import {FlatList} from 'react-native-gesture-handler';
 import {useNavigation} from '@react-navigation/native';
 import Geolocation from 'react-native-geolocation-service';
 import {
-  Check,
   ClipboardList,
   History,
-  Menu,
+  MoreVertical,
   RefreshCw,
   ScanLine,
   Trash2,
 } from 'lucide-react-native';
+import {AppButton, AppField} from '@/ui/chrome';
 import {
-  AppButton,
-  AppCartTotalsBar,
-  AppField,
-  AppScreenHeader,
-} from '@/ui/chrome';
+  ProgressBar,
+  SavePill,
+  SoftCard,
+  SoftHeader,
+} from '@/ui/screenChrome';
 import {appAlert} from '@/ui/appDialog';
 import {KeyboardSafeSheet} from '@/ui/keyboardSheet';
 import {MarketSuggestRow} from '@/ui/MarketSuggestRow';
 import {SwipeableActions} from '@/ui/SwipeableActions';
-import {colors, radii, spacing} from '@/ui/theme';
+import {colors, radii, space, spacing} from '@/ui/theme';
 
 if (
   Platform.OS === 'android' &&
@@ -40,8 +41,12 @@ if (
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 import {formatBrl, formatQty, parseBrl} from '@/domain/money';
-import {effectiveUnitPrice, lineTotal} from '@/domain/pricing';
-import {rankNearestMarkets} from '@/domain/marketUi';
+import {lineTotal} from '@/domain/pricing';
+import {
+  formatDistanceKm,
+  pickConfirmCandidate,
+  rankNearestMarkets,
+} from '@/domain/marketUi';
 import {
   cartRepo,
   prefs,
@@ -52,6 +57,9 @@ import {
 import type {CartItem} from '@/data/types';
 import {runFullSync} from '@/data/syncWorker';
 import {marketRepo} from '@/data/repositories';
+import {ensureNearbyMarketsDiscovered} from '@/data/remote/ensureNearbyMarkets';
+import {haversineKm} from '@/data/remote/nearbyMarkets';
+import {MAPBOX_ACCESS_TOKEN} from '@/config/env';
 
 function qtyPhrase(qty: number) {
   const n = formatQty(qty);
@@ -77,10 +85,25 @@ export function CartScreen() {
     () => prefs.getLastLocation(),
   );
   const [pickedMarketId, setPickedMarketId] = useState<number | null>(null);
+  /** confirm = pergunta in-loco; pick = escolher/buscar; loading discovery. */
+  const [startStep, setStartStep] = useState<'loading' | 'confirm' | 'pick'>(
+    'loading',
+  );
+  const [confirmHint, setConfirmHint] = useState<string | null>(null);
 
   const totals = useMemo(() => cartRepo.computeTotals(cart), [cart]);
   const selectedCount = totals.checkedCount;
   const bottomPad = spacing.bottomNavClearance;
+  const inCart = useMemo(
+    () => cart.filter(i => i.checkedOff),
+    [cart],
+  );
+  const missing = useMemo(
+    () => cart.filter(i => !i.checkedOff),
+    [cart],
+  );
+  const progress =
+    totals.itemCount > 0 ? selectedCount / totals.itemCount : 0;
 
   const goCapture = () => {
     if (!activeListName || !activeMarketId) {
@@ -97,6 +120,46 @@ export function CartScreen() {
 
   useEffect(() => {
     if (!startOpen) return;
+    let cancelled = false;
+    setStartStep('loading');
+    setConfirmHint(null);
+    setPickedMarketId(null);
+    setMarketQuery('');
+
+    const finishWithOrigin = async (next: {lat: number; lng: number} | null) => {
+      if (cancelled) return;
+      if (next) setOrigin(next);
+      const originPt = next ?? prefs.getLastLocation();
+      if (!originPt) {
+        setConfirmHint('GPS indisponível — escolha ou digite o mercado.');
+        setStartStep('pick');
+        return;
+      }
+      try {
+        await ensureNearbyMarketsDiscovered(originPt.lat, originPt.lng, {
+          mapboxToken: MAPBOX_ACCESS_TOKEN,
+        });
+        if (cancelled) return;
+        // Um único refresh ao terminar a discovery (não a cada pin)
+        refresh();
+        if (cancelled) return;
+        const marketsNow = marketRepo.all();
+        const candidate = pickConfirmCandidate(marketsNow, originPt);
+        if (candidate) {
+          setPickedMarketId(candidate.id);
+          setMarketQuery(candidate.name);
+          setStartStep('confirm');
+        } else {
+          setConfirmHint('Escolha o mercado mais próximo ou busque pelo nome.');
+          setStartStep('pick');
+        }
+      } catch {
+        if (cancelled) return;
+        setConfirmHint('Não foi possível buscar mercados próximos.');
+        setStartStep('pick');
+      }
+    };
+
     const last = prefs.getLastLocation();
     if (last) setOrigin(last);
     Geolocation.getCurrentPosition(
@@ -106,13 +169,18 @@ export function CartScreen() {
           lng: pos.coords.longitude,
         };
         prefs.setLastLocation(next.lat, next.lng);
-        setOrigin(next);
+        void finishWithOrigin(next);
       },
       () => {
-        // mantém última posição
+        void finishWithOrigin(last);
       },
       {enableHighAccuracy: false, timeout: 10000, maximumAge: 60000},
     );
+    return () => {
+      cancelled = true;
+    };
+    // Só reexecuta ao abrir/fechar o sheet — refresh estável não deve resetar o fluxo
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [startOpen]);
 
   const suggested = useMemo(
@@ -132,20 +200,19 @@ export function CartScreen() {
 
   return (
     <View style={styles.root}>
-      <AppScreenHeader
-        showLogo={false}
+      <SoftHeader
         title={activeListName || 'Lista de compras'}
         subtitle={
           activeListName
             ? marketName || 'Mercado não definido'
             : 'Inicie uma lista para capturar'
         }
-        actions={
+        trailing={
           <Pressable
             onPress={() => setMenuOpen(true)}
-            style={styles.headerIcon}
+            style={styles.menuCircle}
             accessibilityLabel="Menu da lista">
-            <Menu color={colors.navy} size={22} />
+            <MoreVertical color={colors.navy} size={20} />
           </Pressable>
         }
       />
@@ -217,21 +284,6 @@ export function CartScreen() {
           </View>
         </Pressable>
       </Modal>
-      {cart.length > 0 ? (
-        <AppCartTotalsBar
-          compact
-          value={formatBrl(totals.subtotal)}
-          retailLabel={formatBrl(totals.retailTotal)}
-          wholesaleLabel={formatBrl(totals.wholesaleTotal)}
-          savingsLabel={
-            totals.savings > 0
-              ? `${formatBrl(totals.savings)} econ.`
-              : 'sem economia'
-          }
-          itemsLabel={`${selectedCount}/${totals.itemCount}`}
-        />
-      ) : null}
-
       {cart.length === 0 ? (
         <View style={styles.empty}>
           <Text style={styles.emptyTitle}>
@@ -254,45 +306,108 @@ export function CartScreen() {
         </View>
       ) : (
         <>
-          <FlatList
-            data={cart}
-            keyExtractor={i => String(i.id)}
-            contentContainerStyle={styles.listPad}
-            renderItem={({item}) => (
-              <CartRow
-                item={item}
-                onEdit={() => setEditItem(item)}
-                onDelete={() => {
-                  appAlert(
-                    'Excluir item?',
-                    `"${item.productName}" será removido da lista.`,
-                    [
-                      {label: 'Cancelar', style: 'cancel'},
-                      {
-                        label: 'Excluir',
-                        style: 'destructive',
-                        onPress: () => {
-                          LayoutAnimation.configureNext(
-                            LayoutAnimation.Presets.easeInEaseOut,
-                          );
-                          cartRepo.remove(item.id);
-                          refresh();
-                        },
-                      },
-                    ],
-                  );
-                }}
-                onToggle={() => {
-                  cartRepo.toggleChecked(item.id);
-                  refresh();
-                }}
-              />
-            )}
-          />
+          <ScrollView
+            contentContainerStyle={[
+              styles.listPad,
+              {paddingBottom: bottomPad + 72},
+            ]}>
+            <SoftCard style={styles.summaryCard}>
+              <Text style={styles.summaryLabel}>
+                Total no carrinho · {selectedCount} de {totals.itemCount}{' '}
+                itens
+              </Text>
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryTotal}>
+                  {formatBrl(totals.subtotal)}
+                </Text>
+                {totals.savings > 0 ? (
+                  <SavePill label={`Atacado: -${formatBrl(totals.savings)}`} />
+                ) : null}
+              </View>
+              <ProgressBar progress={progress} height={8} />
+            </SoftCard>
+
+            {inCart.length > 0 ? (
+              <>
+                <Text style={styles.sectionTitle}>No carrinho</Text>
+                {inCart.map(item => (
+                  <CartRow
+                    key={item.id}
+                    item={item}
+                    muted={false}
+                    onEdit={() => setEditItem(item)}
+                    onDelete={() => {
+                      appAlert(
+                        'Excluir item?',
+                        `"${item.productName}" será removido da lista.`,
+                        [
+                          {label: 'Cancelar', style: 'cancel'},
+                          {
+                            label: 'Excluir',
+                            style: 'destructive',
+                            onPress: () => {
+                              LayoutAnimation.configureNext(
+                                LayoutAnimation.Presets.easeInEaseOut,
+                              );
+                              cartRepo.remove(item.id);
+                              refresh();
+                            },
+                          },
+                        ],
+                      );
+                    }}
+                    onToggle={() => {
+                      cartRepo.toggleChecked(item.id);
+                      refresh();
+                    }}
+                  />
+                ))}
+              </>
+            ) : null}
+
+            {missing.length > 0 ? (
+              <>
+                <Text style={styles.sectionTitle}>
+                  Faltam · {missing.length}
+                </Text>
+                {missing.map(item => (
+                  <CartRow
+                    key={item.id}
+                    item={item}
+                    muted
+                    onEdit={() => setEditItem(item)}
+                    onDelete={() => {
+                      appAlert(
+                        'Excluir item?',
+                        `"${item.productName}" será removido da lista.`,
+                        [
+                          {label: 'Cancelar', style: 'cancel'},
+                          {
+                            label: 'Excluir',
+                            style: 'destructive',
+                            onPress: () => {
+                              LayoutAnimation.configureNext(
+                                LayoutAnimation.Presets.easeInEaseOut,
+                              );
+                              cartRepo.remove(item.id);
+                              refresh();
+                            },
+                          },
+                        ],
+                      );
+                    }}
+                    onToggle={() => {
+                      cartRepo.toggleChecked(item.id);
+                      refresh();
+                    }}
+                  />
+                ))}
+              </>
+            ) : null}
+          </ScrollView>
           <View style={[styles.finalizeBar, {paddingBottom: bottomPad}]}>
             <AppButton
-              icon={<Check size={20} color="#fff" />}
-              label={`Finalizar · ${formatBrl(totals.subtotal)}`}
+              label={`Finalizar compra · ${formatBrl(totals.subtotal)}`}
               onPress={() => {
                 if (!activeListName) {
                   setStartOpen(true);
@@ -332,6 +447,7 @@ export function CartScreen() {
         onClose={() => {
           setStartOpen(false);
           setPickedMarketId(null);
+          setStartStep('loading');
         }}>
         <Text style={styles.modalTitle}>Nova lista de compras</Text>
         <AppField
@@ -340,67 +456,160 @@ export function CartScreen() {
           onChangeText={setListName}
           compact
         />
-        <AppField
-          label="Mercado"
-          placeholder="Buscar mercado próximo…"
-          value={marketQuery}
-          onChangeText={t => {
-            setMarketQuery(t);
-            setPickedMarketId(null);
-          }}
-          compact
-        />
-        <Text style={styles.suggestLabel}>
-          {marketQuery.trim()
-            ? 'Resultados'
-            : '3 mercados mais próximos'}
-        </Text>
-        {suggested.map(m => (
-          <MarketSuggestRow
-            key={m.id}
-            market={m}
-            highlight={pickedMarketId === m.id}
-            onPress={() => {
-              setMarketQuery(m.name);
-              setPickedMarketId(m.id);
-            }}
-          />
-        ))}
-        {suggested.length === 0 ? (
-          <Text style={styles.createHint}>
-            Nenhum mercado próximo. Digite um nome para criar.
-          </Text>
+        {startStep === 'loading' ? (
+          <View style={styles.discoverBox}>
+            <ActivityIndicator color={colors.navy} />
+            <Text style={styles.discoverText}>
+              Buscando mercados próximos…
+            </Text>
+          </View>
         ) : null}
-        {canCreateMarket ? (
-          <Text style={styles.createHint}>
-            Será criado: "{marketQuery.trim()}"
-          </Text>
+        {startStep === 'confirm' && pickedMarketId != null ? (
+          <>
+            <Text style={styles.confirmTitle}>
+              Você está no{' '}
+              {markets.find(m => m.id === pickedMarketId)?.name ??
+                marketQuery}
+              ?
+            </Text>
+            {(() => {
+              const live = markets.find(x => x.id === pickedMarketId);
+              if (!origin || live?.lat == null || live?.lng == null) {
+                return null;
+              }
+              const km = haversineKm(origin, {
+                lat: live.lat,
+                lng: live.lng,
+              });
+              return (
+                <Text style={styles.confirmDist}>
+                  A cerca de {formatDistanceKm(km)}
+                </Text>
+              );
+            })()}
+            <AppButton
+              label="Sim, estou aqui"
+              onPress={() => {
+                const name = listName.trim();
+                if (!name || pickedMarketId == null) {
+                  appAlert('Lista incompleta', 'Informe o nome da lista.');
+                  return;
+                }
+                startList(name, pickedMarketId);
+                setStartOpen(false);
+                setPickedMarketId(null);
+                setStartStep('loading');
+              }}
+            />
+            <AppButton
+              label="Outro mercado"
+              outlined
+              onPress={() => {
+                setPickedMarketId(null);
+                setMarketQuery('');
+                setStartStep('pick');
+              }}
+            />
+          </>
         ) : null}
-        <AppButton
-          label="Começar lista"
-          onPress={() => {
-            const name = listName.trim();
-            const q = marketQuery.trim();
-            if (!name || !q) {
-              appAlert('Lista incompleta', 'Informe nome da lista e mercado.');
-              return;
-            }
-            const market =
-              pickedMarketId != null
-                ? markets.find(m => m.id === pickedMarketId) ??
-                  marketRepo.resolveOrCreate(q)
-                : marketRepo.resolveOrCreate(q);
-            startList(name, market.id);
-            setStartOpen(false);
-            setPickedMarketId(null);
-          }}
-        />
+        {startStep === 'pick' ? (
+          <>
+            {confirmHint ? (
+              <Text style={styles.createHint}>{confirmHint}</Text>
+            ) : null}
+            <AppField
+              label="Mercado"
+              placeholder="Buscar mercado próximo…"
+              value={marketQuery}
+              onChangeText={t => {
+                setMarketQuery(t);
+                setPickedMarketId(null);
+              }}
+              compact
+            />
+            <Text style={styles.suggestLabel}>
+              {marketQuery.trim()
+                ? 'Resultados'
+                : '3 mercados mais próximos'}
+            </Text>
+            {suggested.map(m => (
+              <MarketSuggestRow
+                key={m.id}
+                market={m}
+                highlight={pickedMarketId === m.id}
+                onPress={() => {
+                  setMarketQuery(m.name);
+                  setPickedMarketId(m.id);
+                }}
+              />
+            ))}
+            {suggested.length === 0 ? (
+              <Text style={styles.createHint}>
+                Nenhum mercado próximo. Digite um nome para criar.
+              </Text>
+            ) : null}
+            {canCreateMarket ? (
+              <Text style={styles.createHint}>
+                Será criado: "{marketQuery.trim()}"
+              </Text>
+            ) : null}
+            {origin && marketQuery.trim() ? (
+              <AppButton
+                outlined
+                label="Usar GPS neste nome"
+                onPress={() => {
+                  const q = marketQuery.trim();
+                  const m = marketRepo.resolveOrCreateNear(
+                    q,
+                    origin.lat,
+                    origin.lng,
+                  );
+                  marketRepo.upsertGeo(m.id, {
+                    lat: origin.lat,
+                    lng: origin.lng,
+                  });
+                  refresh();
+                  setPickedMarketId(m.id);
+                  setMarketQuery(m.name);
+                  appAlert(
+                    'Mercado no GPS',
+                    'Pin local criado. Você pode começar a lista.',
+                  );
+                }}
+              />
+            ) : null}
+            <AppButton
+              label="Começar lista"
+              onPress={() => {
+                const name = listName.trim();
+                const q = marketQuery.trim();
+                if (!name || !q) {
+                  appAlert(
+                    'Lista incompleta',
+                    'Informe nome da lista e mercado.',
+                  );
+                  return;
+                }
+                const market =
+                  pickedMarketId != null
+                    ? markets.find(m => m.id === pickedMarketId) ??
+                      marketRepo.resolveOrCreate(q)
+                    : marketRepo.resolveOrCreate(q);
+                startList(name, market.id);
+                setStartOpen(false);
+                setPickedMarketId(null);
+                setStartStep('loading');
+              }}
+            />
+          </>
+        ) : null}
         <AppButton
           label="Cancelar"
           outlined
           onPress={() => {
             setStartOpen(false);
             setPickedMarketId(null);
+            setStartStep('loading');
           }}
         />
       </KeyboardSafeSheet>
@@ -425,17 +634,18 @@ export function CartScreen() {
 
 function CartRow({
   item,
+  muted,
   onEdit,
   onDelete,
   onToggle,
 }: {
   item: CartItem;
+  muted?: boolean;
   onEdit: () => void;
   onDelete: () => void;
   onToggle: () => void;
 }) {
   const refresh = useAppStore(s => s.refresh);
-  const selected = !!item.checkedOff;
   const total = lineTotal(item);
   const hasWholesale = item.wholesalePrice != null;
   const useWholesale = !!item.useWholesale && hasWholesale;
@@ -444,65 +654,41 @@ function CartRow({
     <SwipeableActions dense onEdit={onEdit} onDelete={onDelete}>
       <Pressable
         onPress={onEdit}
-        style={[styles.rowCard, !selected && styles.cardDim]}>
-        <Pressable
-          onPress={onToggle}
-          style={[styles.check, selected ? styles.checkOn : null]}
-          hitSlop={6}
-          accessibilityLabel={
-            selected ? 'Remover do total' : 'Incluir no total'
-          }>
-          {selected ? <Check size={12} color="#fff" strokeWidth={3} /> : null}
-        </Pressable>
-
+        onLongPress={onToggle}
+        style={[styles.rowCard, muted && styles.cardDim]}>
         <View style={styles.rowBody}>
           <View style={styles.rowMain}>
             <Text
-              style={[styles.itemName, !selected && {color: colors.muted}]}
-              numberOfLines={1}>
+              style={[styles.itemName, muted && {color: colors.muted}]}
+              numberOfLines={2}>
               {item.productName}
             </Text>
-            <Text style={[styles.price, !selected && {opacity: 0.45}]}>
+            <Text style={[styles.price, muted && {opacity: 0.5}]}>
               {formatBrl(total)}
             </Text>
           </View>
           <View style={styles.rowMeta}>
-            <Text style={styles.metaText}>
-              {qtyPhrase(item.quantity)} · {formatBrl(effectiveUnitPrice(item))}
-            </Text>
+            <Text style={styles.metaText}>{qtyPhrase(item.quantity)} ·</Text>
             {hasWholesale ? (
-              <View style={styles.modeSeg}>
-                <Pressable
-                  style={[styles.modeBtn, !useWholesale && styles.modeBtnOn]}
-                  onPress={() => {
-                    cartRepo.setUseWholesale(item.id, false);
-                    refresh();
-                  }}>
-                  <Text
-                    style={[
-                      styles.modeBtnText,
-                      !useWholesale && styles.modeBtnTextOn,
-                    ]}>
-                    V
-                  </Text>
-                </Pressable>
-                <Pressable
-                  style={[styles.modeBtn, useWholesale && styles.modeBtnOnAt]}
-                  onPress={() => {
-                    cartRepo.setUseWholesale(item.id, true);
-                    refresh();
-                  }}>
-                  <Text
-                    style={[
-                      styles.modeBtnText,
-                      useWholesale && styles.modeBtnTextOn,
-                    ]}>
-                    A
-                  </Text>
-                </Pressable>
-              </View>
+              <Pressable
+                onPress={() => {
+                  cartRepo.setUseWholesale(item.id, !useWholesale);
+                  refresh();
+                }}
+                style={[
+                  styles.wholesalePill,
+                  useWholesale && styles.wholesalePillOn,
+                ]}>
+                <Text
+                  style={[
+                    styles.wholesalePillText,
+                    useWholesale && styles.wholesalePillTextOn,
+                  ]}>
+                  {useWholesale ? 'Atacado' : 'Varejo'}
+                </Text>
+              </Pressable>
             ) : (
-              <Text style={styles.metaText}>varejo</Text>
+              <Text style={styles.metaText}>Varejo</Text>
             )}
           </View>
         </View>
@@ -599,7 +785,44 @@ function EditItemModal({
 
 const styles = StyleSheet.create({
   root: {flex: 1, backgroundColor: colors.bg},
-  headerIcon: {padding: 8},
+  menuCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    shadowOffset: {width: 0, height: 2},
+    elevation: 2,
+  },
+  summaryCard: {marginBottom: space.md, gap: 10},
+  summaryLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.muted,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  summaryTotal: {
+    fontSize: 32,
+    fontWeight: '900',
+    color: colors.navy,
+    letterSpacing: -0.5,
+  },
+  sectionTitle: {
+    fontSize: 17,
+    fontWeight: '900',
+    color: colors.navy,
+    marginBottom: space.sm,
+    marginTop: space.xs,
+  },
   menuBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.35)',
@@ -638,7 +861,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   menuItemText: {fontSize: 15, fontWeight: '700', color: colors.ink},
-  listPad: {paddingHorizontal: 12, paddingTop: 8, paddingBottom: 8},
+  listPad: {paddingHorizontal: space.md, paddingTop: 4},
   empty: {flex: 1, justifyContent: 'center', padding: 24, gap: 12},
   emptyTitle: {fontSize: 20, fontWeight: '800', color: colors.navy},
   emptyMsg: {color: colors.muted, marginBottom: 8},
@@ -648,32 +871,19 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg,
   },
   rowCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
     backgroundColor: '#fff',
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
+    borderRadius: radii.xl,
+    paddingVertical: space.sm,
+    paddingHorizontal: space.md,
+    marginBottom: space.sm,
+    shadowColor: '#000',
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    shadowOffset: {width: 0, height: 2},
+    elevation: 1,
   },
   cardDim: {opacity: 0.55},
-  check: {
-    width: 22,
-    height: 22,
-    borderWidth: 2,
-    borderColor: 'rgba(11,42,107,0.25)',
-    borderRadius: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#fff',
-  },
-  checkOn: {
-    backgroundColor: colors.navy,
-    borderColor: colors.navy,
-  },
-  rowBody: {flex: 1, minWidth: 0, gap: 2},
+  rowBody: {flex: 1, minWidth: 0, gap: 6},
   rowMain: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -688,28 +898,25 @@ const styles = StyleSheet.create({
   },
   itemName: {
     flex: 1,
-    fontWeight: '700',
-    color: colors.ink,
-    fontSize: 14,
+    fontWeight: '900',
+    color: colors.navy,
+    fontSize: 15,
   },
-  price: {fontWeight: '800', color: colors.navy, fontSize: 14},
-  metaText: {fontSize: 11, fontWeight: '600', color: colors.muted},
-  modeSeg: {
-    flexDirection: 'row',
+  price: {fontWeight: '900', color: colors.navy, fontSize: 16},
+  metaText: {fontSize: 12, fontWeight: '600', color: colors.muted},
+  wholesalePill: {
     borderRadius: radii.pill,
-    borderWidth: 1,
-    borderColor: colors.border,
-    overflow: 'hidden',
-  },
-  modeBtn: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
     backgroundColor: colors.bg,
   },
-  modeBtnOn: {backgroundColor: '#EEF2FF'},
-  modeBtnOnAt: {backgroundColor: colors.yellowBright},
-  modeBtnText: {fontSize: 11, fontWeight: '800', color: colors.muted},
-  modeBtnTextOn: {color: colors.navy},
+  wholesalePillOn: {backgroundColor: colors.yellow},
+  wholesalePillText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: colors.muted,
+  },
+  wholesalePillTextOn: {color: colors.navy},
   modalTitle: {fontSize: 18, fontWeight: '800', color: colors.navy},
   suggestLabel: {
     marginTop: 4,
@@ -725,5 +932,30 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.navy,
     marginBottom: 4,
+  },
+  discoverBox: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingVertical: 24,
+  },
+  discoverText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.muted,
+  },
+  confirmTitle: {
+    marginTop: 8,
+    marginBottom: 4,
+    fontSize: 17,
+    fontWeight: '800',
+    color: colors.navy,
+    lineHeight: 24,
+  },
+  confirmDist: {
+    marginBottom: 12,
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.muted,
   },
 });

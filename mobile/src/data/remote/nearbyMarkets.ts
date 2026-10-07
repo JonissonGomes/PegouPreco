@@ -14,10 +14,12 @@ export const NEARBY_RADIUS_KM = 25;
 export const NEARBY_RADIUS_M = NEARBY_RADIUS_KM * 1000;
 /** Quantos mais próximos manter dentro do raio. */
 export const NEARBY_MAX_RESULTS = 40;
+/** Distância máxima para perguntar “Você está neste mercado?”. */
+export const CONFIRM_AT_MARKET_KM = 0.2;
 
 /** Marcas / tipos aceitos no mapa. */
 const BRAND_HINT =
-  /atacad[aã]o|atacarejo|assa[ií]|carrefour|extra|bompre[cç]o|sam'?s|makro|fort\b|hiper|supermercado|mercado|atacadista|rede\s*compra|prezunic|guanabara|pao\s*de\s*acucar|p[aã]o\s*de\s*a[cç][uú]car|big\b|walmart|save\s*money|mix\s*mateus|mateus\s*sup|comercial\s*esperan/i;
+  /atacad[aã]o|atacarejo|assa[ií]|carrefour|extra|bompre[cç]o|sam'?s|makro|fort\b|hiper|supermercado|mercado|atacadista|rede\s*compra|prezunic|guanabara|pao\s*de\s*acucar|p[aã]o\s*de\s*a[cç][uú]car|big\b|walmart|save\s*money|mix\s*mateus|mix\s*matheus|mateus\s*sup|comercial\s*esperan/i;
 
 const SOURCE_RANK: Record<NearbyMarketHit['source'], number> = {
   osm: 3,
@@ -63,7 +65,7 @@ function nearestInRadius(
 }
 
 /** Dedupe só por proximidade — nomes iguais em lugares diferentes são filiais distintas. */
-function dedupeByGeo(
+export function dedupeByGeo(
   hits: NearbyMarketHit[],
   mergeKm = 0.18,
 ): NearbyMarketHit[] {
@@ -299,6 +301,10 @@ async function fetchMapboxNearbyMarkets(
     'Carrefour',
     'Extra Bompreço',
     "Sam's Club",
+    'Mix Mateus',
+    'Mix Matheus',
+    'Makro',
+    'Fort Atacadista',
     'supermercado',
   ];
   const hits: NearbyMarketHit[] = [];
@@ -371,7 +377,8 @@ export async function discoverNearbyMarkets(
   const near = nearestInRadius(dedupeByGeo(merged), origin, radiusKm);
   if (near.length > 0) return near;
 
-  return seedMarketsNear(lat, lng, Math.min(radiusKm, 12));
+  // Fallback seed RMR — raio alinhado à descoberta (até 25 km).
+  return seedMarketsNear(lat, lng, Math.min(radiusKm, NEARBY_RADIUS_KM));
 }
 
 /** Filtra mercados já salvos para exibir só os do raio. */

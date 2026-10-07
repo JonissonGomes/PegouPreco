@@ -66,12 +66,11 @@ export function MarketPinSheet({
   const band = shown ? resolvePriceBand(shown) : 'unknown';
   const rating = shown?.avgRating ?? 0;
 
-  const submitReview = async (stars: number) => {
-    if (!shown) return;
+  const requireVerified = (action: string) => {
     if (!canContribute(auth) || !auth?.token) {
       appAlert(
         'Conta necessária',
-        'Verifique o e-mail no Perfil para avaliar mercados.',
+        `Verifique o e-mail no Perfil para ${action}.`,
         [
           {label: 'Agora não', style: 'cancel'},
           {
@@ -81,8 +80,14 @@ export function MarketPinSheet({
           },
         ],
       );
-      return;
+      return false;
     }
+    return true;
+  };
+
+  const submitReview = async (stars: number) => {
+    if (!shown) return;
+    if (!requireVerified('avaliar mercados')) return;
     if (!shown.remoteId) {
       appAlert(
         'Mercado ainda local',
@@ -100,11 +105,46 @@ export function MarketPinSheet({
     }
     setReviewBusy(true);
     try {
-      await syncApi.submitMarketReview(auth.token, shown.remoteId, stars);
+      await syncApi.submitMarketReview(auth.token!, shown.remoteId, stars);
       setReviewOpen(false);
       setBurst({points: 5, title: `${stars}★ no ${shown.name}`});
     } catch (e) {
       appAlert('Avaliação', apiErrorMessage(e));
+    } finally {
+      setReviewBusy(false);
+    }
+  };
+
+  const submitSuggestion = async (kind: 'confirm' | 'fix') => {
+    if (!shown) return;
+    if (!requireVerified('contribuir com mercados')) return;
+    if (shown.lat == null || shown.lng == null) {
+      appAlert('Localização', 'Este mercado ainda não tem coordenadas.');
+      return;
+    }
+    setReviewBusy(true);
+    try {
+      await syncApi.submitMarketSuggestion(auth!.token!, {
+        name: shown.name,
+        lat: shown.lat,
+        lng: shown.lng,
+        address: shown.address,
+        cnpj: shown.cnpj,
+        kind,
+        targetMarketId: shown.remoteId,
+        note:
+          kind === 'fix'
+            ? 'Usuário reportou pin incorreto'
+            : 'Usuário confirmou localização',
+      });
+      appAlert(
+        'Obrigado!',
+        kind === 'confirm'
+          ? 'Confirmação enviada para a comunidade.'
+          : 'Reporte enviado. Um admin vai revisar.',
+      );
+    } catch (e) {
+      appAlert('Sugestão', apiErrorMessage(e));
     } finally {
       setReviewBusy(false);
     }
@@ -173,6 +213,16 @@ export function MarketPinSheet({
               }
               label="Avaliar mercado · +5 pts"
               onPress={() => setReviewOpen(true)}
+            />
+            <AppButton
+              outlined
+              label="Confirmar localização"
+              onPress={() => void submitSuggestion('confirm')}
+            />
+            <AppButton
+              outlined
+              label="Reportar erro neste pin"
+              onPress={() => void submitSuggestion('fix')}
             />
             <Pressable style={styles.secondary} onPress={onClose}>
               <Text style={styles.secondaryText}>Fechar</Text>

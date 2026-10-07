@@ -84,7 +84,7 @@ export function VoteButtons({
         disabled={busy}>
         <ThumbsUp size={18} color="#fff" />
         <View>
-          <Text style={styles.voteLabel}>Confirmar</Text>
+          <Text style={styles.voteLabel}>Confere</Text>
           <Text style={styles.votePts}>+{confirmPts} pts</Text>
         </View>
       </Pressable>
@@ -94,7 +94,7 @@ export function VoteButtons({
         disabled={busy}>
         <ThumbsDown size={18} color={colors.navy} />
         <View>
-          <Text style={styles.voteLabelDark}>Rejeitar</Text>
+          <Text style={styles.voteLabelDark}>Está errado</Text>
           <Text style={styles.votePtsDark}>+{rejectPts} pts</Text>
         </View>
       </Pressable>

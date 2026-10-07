@@ -20,6 +20,7 @@ export function useAnimatedSheet(visible: boolean, opts: Options = {}) {
   const backdrop = useRef(new Animated.Value(0)).current;
   const sheetY = useRef(new Animated.Value(fromY)).current;
   const [mounted, setMounted] = useState(visible);
+  const openAnimStarted = useRef(false);
 
   useEffect(() => {
     if (visible) setMounted(true);
@@ -28,6 +29,9 @@ export function useAnimatedSheet(visible: boolean, opts: Options = {}) {
   useEffect(() => {
     if (!mounted) return;
     if (visible) {
+      // Evita reabrir (piscar) quando o pai re-renderiza com sugestões novas
+      if (openAnimStarted.current) return;
+      openAnimStarted.current = true;
       backdrop.setValue(0);
       sheetY.setValue(fromY);
       Animated.parallel([
@@ -45,6 +49,7 @@ export function useAnimatedSheet(visible: boolean, opts: Options = {}) {
       ]).start();
       return;
     }
+    openAnimStarted.current = false;
     Animated.parallel([
       Animated.timing(backdrop, {
         toValue: 0,

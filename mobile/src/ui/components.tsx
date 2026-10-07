@@ -1,6 +1,6 @@
 import React from 'react';
 import {Pressable, StyleSheet, Text, View, type ViewStyle} from 'react-native';
-import {ShieldCheck, Star, TrendingDown} from 'lucide-react-native';
+import {ShieldCheck, Star} from 'lucide-react-native';
 import {colors, radii, space, typography} from './theme';
 import type {FiscalLevel, TrustLevel} from '@/data/types';
 import {TrustEngine} from '@/domain/trust';
@@ -113,39 +113,39 @@ export function MarketRankRow({
   place,
   onPress,
   highlight,
+  bestTotal,
 }: {
   rank: MarketBasketRank;
   place: number;
   onPress?: () => void;
   highlight?: boolean;
+  /** Total do 1º lugar — exibe "+ R$ X que o melhor" nos demais. */
+  bestTotal?: number;
 }) {
-  const pct = Math.round(rank.coverage * 100);
+  const delta =
+    bestTotal != null && place > 1 && rank.total > bestTotal
+      ? rank.total - bestTotal
+      : 0;
   return (
     <Pressable
       onPress={onPress}
       style={[styles.rankRow, highlight && styles.rankHi]}>
-      <View style={styles.rankPlace}>
-        <Text style={styles.rankPlaceText}>{place}</Text>
-      </View>
-      <View style={{flex: 1, minWidth: 0}}>
-        <Text style={styles.rankName} numberOfLines={1}>
-          {rank.marketName}
+      <View style={styles.rankRowInner}>
+        <Text style={styles.rankLine} numberOfLines={1}>
+          <Text style={styles.rankNum}>{place}</Text>
+          <Text style={styles.rankDot}> · </Text>
+          <Text style={styles.rankNameInline}>{rank.marketName}</Text>
         </Text>
-        <Text style={styles.rankMeta}>
-          {pct}% da lista · {rank.coveredItems}/{rank.totalItems} itens
-        </Text>
-      </View>
-      <View style={{alignItems: 'flex-end'}}>
         <Text style={styles.rankTotal}>
           {rank.coveredItems > 0 ? formatBrl(rank.total) : '—'}
         </Text>
-        {place === 1 && rank.coveredItems > 0 ? (
-          <View style={styles.bestPill}>
-            <TrendingDown size={12} color={colors.navy} />
-            <Text style={styles.bestPillText}>melhor</Text>
-          </View>
-        ) : null}
       </View>
+      {highlight ? <View style={styles.rankYellowBar} /> : null}
+      {!highlight && delta > 0 ? (
+        <Text style={styles.rankDelta}>
+          + {formatBrl(delta)} que o melhor
+        </Text>
+      ) : null}
     </Pressable>
   );
 }
@@ -217,38 +217,41 @@ const styles = StyleSheet.create({
   },
   fiscalText: {fontWeight: '800', color: colors.navy, fontSize: 12},
   rankRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space.sm,
     backgroundColor: '#fff',
-    borderRadius: radii.lg,
+    borderRadius: radii.xl,
     borderWidth: 1,
     borderColor: colors.border,
-    padding: space.sm,
-    marginBottom: space.xs,
+    paddingHorizontal: space.md,
+    paddingVertical: space.sm,
+    marginBottom: space.sm,
+    gap: 6,
+    shadowColor: '#000',
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    shadowOffset: {width: 0, height: 1},
+    elevation: 1,
   },
-  rankHi: {borderColor: colors.navy, backgroundColor: '#EEF2FF'},
-  rankPlace: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: colors.yellowBright,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  rankPlaceText: {fontWeight: '900', color: colors.navy},
-  rankName: {fontWeight: '800', color: colors.navy, fontSize: 14},
-  rankMeta: {marginTop: 2, color: colors.muted, fontWeight: '600', fontSize: 11},
-  rankTotal: {fontWeight: '800', color: colors.ink, fontSize: 15},
-  bestPill: {
-    marginTop: 4,
+  rankHi: {borderColor: colors.yellow, borderWidth: 2},
+  rankRowInner: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 2,
-    backgroundColor: '#DCFCE7',
-    borderRadius: radii.pill,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    justifyContent: 'space-between',
+    gap: space.sm,
   },
-  bestPillText: {fontSize: 10, fontWeight: '800', color: colors.navy},
+  rankLine: {flex: 1, minWidth: 0},
+  rankNum: {fontWeight: '900', color: colors.navy, fontSize: 15},
+  rankDot: {fontWeight: '700', color: colors.muted},
+  rankNameInline: {fontWeight: '800', color: colors.navy, fontSize: 15},
+  rankTotal: {fontWeight: '900', color: colors.navy, fontSize: 15},
+  rankYellowBar: {
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: colors.yellow,
+    width: '100%',
+  },
+  rankDelta: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.muted,
+  },
 });

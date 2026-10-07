@@ -2,17 +2,20 @@ import React, {useCallback, useEffect, useMemo, useState} from 'react';
 import {FlatList, Pressable, StyleSheet, Text, View} from 'react-native';
 import {useNavigation} from '@react-navigation/native';
 import {Star} from 'lucide-react-native';
-import {AppScreenHeader} from '@/ui/chrome';
 import {
   EmptyState,
-  PriceTrustBadge,
-  ScoreMeter,
   Screen,
   VoteButtons,
   XpBurst,
 } from '@/ui/components';
 import {appAlert} from '@/ui/appDialog';
 import {MarketReviewSheet} from '@/ui/MarketReviewSheet';
+import {
+  ProgressBar,
+  SavePill,
+  SoftCard,
+  SoftHeader,
+} from '@/ui/screenChrome';
 import {colors, radii, space} from '@/ui/theme';
 import {formatBrl} from '@/domain/money';
 import {TrustEngine} from '@/domain/trust';
@@ -26,9 +29,50 @@ type FeedItem = {
   log: PriceLog;
   productName: string;
   marketName: string;
+  avgPct: number | null;
 };
 
 type Burst = {points: number; title: string} | null;
+
+/** Limiares alinhados a TrustEngine.levelForPoints (100 Prata, 300 Ouro). */
+const FISCAL_THRESHOLDS = {silver: 100, gold: 300} as const;
+
+function fiscalUi(points: number) {
+  const level = TrustEngine.levelForPoints(points);
+  const prev =
+    level === 'gold'
+      ? FISCAL_THRESHOLDS.gold
+      : level === 'silver'
+        ? FISCAL_THRESHOLDS.silver
+        : 0;
+  const next =
+    level === 'bronze'
+      ? FISCAL_THRESHOLDS.silver
+      : level === 'silver'
+        ? FISCAL_THRESHOLDS.gold
+        : FISCAL_THRESHOLDS.gold;
+  const progress =
+    level === 'gold'
+      ? 1
+      : next > prev
+        ? Math.min(1, Math.max(0, (points - prev) / (next - prev)))
+        : 1;
+  const hint =
+    level === 'gold'
+      ? 'Continue validando para manter sua reputação.'
+      : level === 'bronze'
+        ? 'Valide preços para chegar ao nível Prata.'
+        : 'Valide preços para chegar ao nível Ouro.';
+  return {level, next, progress, hint};
+}
+
+function avgPriceForProduct(productId: number, excludeId: number): number | null {
+  const prices = getState()
+    .price_logs.filter(l => l.productId === productId && l.id !== excludeId)
+    .map(l => l.retailPrice);
+  if (!prices.length) return null;
+  return prices.reduce((a, b) => a + b, 0) / prices.length;
+}
 
 export function CommunityScreen() {
   const nav = useNavigation<any>();
@@ -66,17 +110,23 @@ export function CommunityScreen() {
   }, [auth?.token]);
 
   const feed = useMemo(() => {
-    const logs = getState().price_logs.filter(
-      l => l.trustLevel === 'suspect' || l.trustLevel === 'verified',
-    );
+    const logs = getState().price_logs.filter(l => l.trustLevel === 'suspect');
     return logs
-      .map(log => ({
-        log,
-        productName:
-          products.find(p => p.id === log.productId)?.name ?? 'Produto',
-        marketName:
-          markets.find(m => m.id === log.marketId)?.name ?? 'Mercado',
-      }))
+      .map(log => {
+        const avg = avgPriceForProduct(log.productId, log.id);
+        const avgPct =
+          avg != null && avg > 0
+            ? ((log.retailPrice - avg) / avg) * 100
+            : null;
+        return {
+          log,
+          productName:
+            products.find(p => p.id === log.productId)?.name ?? 'Produto',
+          marketName:
+            markets.find(m => m.id === log.marketId)?.name ?? 'Mercado',
+          avgPct,
+        };
+      })
       .sort(
         (a, b) =>
           new Date(b.log.capturedAt).getTime() -
@@ -85,13 +135,14 @@ export function CommunityScreen() {
       .slice(0, 40);
   }, [markets, products, refresh]);
 
-  const pending = feed.filter(f => f.log.trustLevel === 'suspect').length;
+  const pending = feed.length;
+  const points = rep?.points ?? 0;
   const level =
-    (rep?.level as FiscalLevel) ??
-    TrustEngine.levelForPoints(rep?.points ?? 0);
+    (rep?.level as FiscalLevel) ?? TrustEngine.levelForPoints(points);
+  const fiscal = fiscalUi(points);
 
-  const celebrate = (points: number, title: string) => {
-    setBurst({points, title});
+  const celebrate = (pts: number, title: string) => {
+    setBurst({points: pts, title});
     if (auth?.token) {
       syncApi
         .reputation(auth.token)
@@ -204,34 +255,37 @@ export function CommunityScreen() {
     [loc.neighborhood, loc.city].filter(Boolean).join(', ') ||
     'Sua região';
 
-  const missionCta = canContribute(auth)
-    ? pending > 0
-      ? 'Confirme ou rejeite para ganhar XP'
-      : 'Capture preços para gerar missões'
-    : 'Verifique o e-mail no Perfil';
+  const priceBadge = (pct: number | null) => {
+    if (pct == null) return null;
+    const below = pct <= -1;
+    const label = below
+      ? `${Math.abs(Math.round(pct))}% abaixo da média`
+      : `${Math.round(Math.abs(pct))}% acima`;
+    return (
+      <SavePill label={label} tone={below ? 'green' : 'orange'} />
+    );
+  };
 
   return (
     <Screen>
-      <AppScreenHeader
-        showLogo={false}
-        stacked
-        title="Comunidade"
-        subtitle={region}
-      />
+      <SoftHeader location={region} title="Comunidade" />
 
-      <View style={styles.missionStrip}>
-        <View style={styles.stripLeft}>
-          <Text style={styles.stripCount}>{pending}</Text>
-          <Text style={styles.stripLabel}>pendentes</Text>
-        </View>
-        <View style={styles.levelPill}>
-          <Text style={styles.levelPillText}>
-            {TrustEngine.fiscalLabel(level)} · {rep?.points ?? 0} pts
+      <View style={styles.fiscalCard}>
+        <View style={styles.fiscalTop}>
+          <Text style={styles.fiscalLevel}>
+            Fiscal {TrustEngine.fiscalLabel(fiscal.level)}
+          </Text>
+          <Text style={styles.fiscalPts}>
+            {points} / {fiscal.next} pts
           </Text>
         </View>
-        <Text style={styles.stripCta} numberOfLines={1}>
-          {missionCta}
-        </Text>
+        <ProgressBar
+          progress={fiscal.progress}
+          trackColor="rgba(255,255,255,0.85)"
+          fillColor={colors.navy}
+          height={8}
+        />
+        <Text style={styles.fiscalHint}>{fiscal.hint}</Text>
       </View>
 
       <FlatList
@@ -239,7 +293,15 @@ export function CommunityScreen() {
         keyExtractor={i => String(i.log.id)}
         contentContainerStyle={styles.list}
         ListHeaderComponent={
-          <Text style={styles.listHeading}>Preços para validar</Text>
+          <View style={styles.sectionHead}>
+            <Text style={styles.listHeading}>Preços para validar</Text>
+            {pending > 0 ? (
+              <SavePill
+                label={`${pending} pendentes`}
+                tone="orange"
+              />
+            ) : null}
+          </View>
         }
         ListEmptyComponent={
           <EmptyState
@@ -247,59 +309,40 @@ export function CommunityScreen() {
             message="Quando surgir um preço suspeito na região, a missão aparece nesta lista."
           />
         }
-        renderItem={({item}) => {
-          const suspect = item.log.trustLevel === 'suspect';
-          return (
-            <View style={[styles.card, suspect && styles.cardQuest]}>
-              <View style={styles.cardHead}>
-                <View style={{flex: 1, minWidth: 0}}>
-                  <Text style={styles.name} numberOfLines={2}>
-                    {item.productName}
-                  </Text>
-                  <Text style={styles.meta} numberOfLines={1}>
-                    {item.marketName}
-                  </Text>
-                </View>
-                {suspect ? (
-                  <View style={styles.questTag}>
-                    <Text style={styles.questTagText}>Missão</Text>
-                  </View>
-                ) : (
-                  <PriceTrustBadge level={item.log.trustLevel} />
-                )}
+        renderItem={({item}) => (
+          <SoftCard style={styles.validateCard}>
+            <View style={styles.cardHead}>
+              <View style={{flex: 1, minWidth: 0}}>
+                <Text style={styles.name} numberOfLines={2}>
+                  {item.productName}
+                </Text>
+                <Text style={styles.meta} numberOfLines={1}>
+                  {item.marketName}
+                </Text>
               </View>
-
-              <Text style={styles.price}>
-                {formatBrl(item.log.retailPrice)}
-              </Text>
-
-              {suspect ? (
-                <>
-                  <ScoreMeter
-                    confirm={item.log.confirmScore}
-                    reject={item.log.rejectScore}
-                  />
-                  <VoteButtons
-                    busy={busyId === item.log.id}
-                    confirmPts={TrustEngine.pointsForVote('confirm', false)}
-                    rejectPts={TrustEngine.pointsForVote('reject', false)}
-                    onConfirm={() => vote(item, 'confirm')}
-                    onReject={() => vote(item, 'reject')}
-                  />
-                </>
-              ) : null}
-
-              {item.log.marketId != null ? (
-                <Pressable
-                  style={styles.reviewBtn}
-                  onPress={() => setReviewMarketId(item.log.marketId)}>
-                  <Star size={16} color={colors.navy} fill={colors.navy} />
-                  <Text style={styles.reviewBtnText}>Avaliar · +5 pts</Text>
-                </Pressable>
-              ) : null}
+              {priceBadge(item.avgPct)}
             </View>
-          );
-        }}
+
+            <Text style={styles.price}>{formatBrl(item.log.retailPrice)}</Text>
+
+            <VoteButtons
+              busy={busyId === item.log.id}
+              confirmPts={TrustEngine.pointsForVote('confirm', false)}
+              rejectPts={TrustEngine.pointsForVote('reject', false)}
+              onConfirm={() => vote(item, 'confirm')}
+              onReject={() => vote(item, 'reject')}
+            />
+
+            {item.log.marketId != null ? (
+              <Pressable
+                style={styles.reviewBtn}
+                onPress={() => setReviewMarketId(item.log.marketId)}>
+                <Star size={16} color={colors.navy} fill={colors.navy} />
+                <Text style={styles.reviewBtnText}>Avaliar · +5 pts</Text>
+              </Pressable>
+            ) : null}
+          </SoftCard>
+        )}
       />
 
       <MarketReviewSheet
@@ -321,74 +364,36 @@ export function CommunityScreen() {
 }
 
 const styles = StyleSheet.create({
-  missionStrip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  fiscalCard: {
     marginHorizontal: space.md,
     marginBottom: space.sm,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    backgroundColor: colors.navy,
-    borderRadius: radii.md,
-  },
-  stripLeft: {alignItems: 'center', minWidth: 44},
-  stripCount: {
-    fontSize: 20,
-    fontWeight: '900',
-    color: colors.yellow,
-    lineHeight: 22,
-  },
-  stripLabel: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: colors.cyan,
-    textTransform: 'uppercase',
-  },
-  levelPill: {
     backgroundColor: colors.yellow,
-    borderRadius: radii.pill,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    borderRadius: radii.xl,
+    padding: space.md,
+    gap: space.sm,
   },
-  levelPillText: {color: colors.navy, fontWeight: '800', fontSize: 10},
-  stripCta: {
-    flex: 1,
-    color: colors.white,
-    fontWeight: '700',
-    fontSize: 11,
+  fiscalTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
-  listHeading: {
-    fontWeight: '800',
-    fontSize: 15,
-    color: colors.navy,
+  fiscalLevel: {fontWeight: '900', color: colors.navy, fontSize: 16},
+  fiscalPts: {fontWeight: '800', color: colors.navy, fontSize: 14},
+  fiscalHint: {fontWeight: '700', color: colors.navy, fontSize: 13},
+  sectionHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: space.sm,
+    gap: 8,
   },
+  listHeading: {fontWeight: '900', fontSize: 18, color: colors.navy, flex: 1},
   list: {padding: space.md, paddingBottom: 120},
-  card: {
-    backgroundColor: colors.white,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: space.sm,
-    marginBottom: space.sm,
-    gap: 6,
-  },
-  cardQuest: {
-    borderColor: colors.navy,
-    backgroundColor: '#FFFEF5',
-  },
+  validateCard: {marginBottom: space.sm, gap: space.sm},
   cardHead: {flexDirection: 'row', alignItems: 'flex-start', gap: 8},
-  questTag: {
-    backgroundColor: colors.yellow,
-    borderRadius: radii.pill,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
-  questTagText: {fontSize: 9, fontWeight: '900', color: colors.navy},
-  name: {fontWeight: '800', color: colors.navy, fontSize: 14},
-  meta: {color: colors.muted, fontWeight: '600', fontSize: 11},
-  price: {fontWeight: '900', color: colors.ink, fontSize: 24},
+  name: {fontWeight: '900', color: colors.navy, fontSize: 16},
+  meta: {color: colors.muted, fontWeight: '600', fontSize: 13, marginTop: 2},
+  price: {fontWeight: '900', color: colors.navy, fontSize: 28},
   reviewBtn: {
     flexDirection: 'row',
     alignItems: 'center',

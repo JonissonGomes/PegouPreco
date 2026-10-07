@@ -130,9 +130,15 @@ export const syncApi = {
     client
       .get('/sync/pull', {params: {since}, headers: auth(token)})
       .then(r => r.data),
-  marketsMap: (token?: string | null) =>
+  marketsMap: (
+    token?: string | null,
+    params?: {lat?: number; lng?: number; radiusKm?: number},
+  ) =>
     client
-      .get('/markets/map', token ? {headers: auth(token)} : undefined)
+      .get('/markets/map', {
+        ...(token ? {headers: auth(token)} : {}),
+        params,
+      })
       .then(r => {
         const data = r.data as
           | Array<Record<string, unknown>>
@@ -173,5 +179,43 @@ export const syncApi = {
   adminDeleteMarket: (token: string, id: string) =>
     client
       .delete(`/admin/markets/${id}`, {headers: auth(token)})
+      .then(r => r.data),
+  submitMarketSuggestion: (
+    token: string,
+    body: {
+      name: string;
+      lat: number;
+      lng: number;
+      address?: string | null;
+      cnpj?: string | null;
+      kind: 'add' | 'fix' | 'confirm';
+      targetMarketId?: string | null;
+      note?: string | null;
+    },
+  ) =>
+    client
+      .post('/markets/suggestions', body, {headers: auth(token)})
+      .then(r => r.data),
+  adminListMarketSuggestions: (
+    token: string,
+    status: string = 'pending',
+  ) =>
+    client
+      .get<{suggestions: Array<Record<string, unknown>>}>(
+        '/admin/market-suggestions',
+        {headers: auth(token), params: {status}},
+      )
+      .then(r => r.data.suggestions ?? []),
+  adminResolveMarketSuggestion: (
+    token: string,
+    id: string,
+    approve: boolean,
+  ) =>
+    client
+      .post(
+        `/admin/market-suggestions/${id}/resolve`,
+        {approve},
+        {headers: auth(token)},
+      )
       .then(r => r.data),
 };

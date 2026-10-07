@@ -33,6 +33,9 @@ import {
   useMarketName,
 } from '@/store/appStore';
 import {fetchAndParseNfce} from '@/data/remote/sefazClient';
+import {geocodeMarketNear} from '@/data/remote/geocodeMarket';
+import {MAPBOX_ACCESS_TOKEN} from '@/config/env';
+import Geolocation from 'react-native-geolocation-service';
 
 type ExtraMode = 'none' | 'text' | 'nfce';
 
@@ -357,27 +360,81 @@ export function CaptureScreen() {
     setStatus('Item salvo — aponte para a próxima etiqueta');
   };
 
+  const resolveGps = (): Promise<{lat: number; lng: number} | null> =>
+    new Promise(resolve => {
+      const last = prefs.getLastLocation();
+      Geolocation.getCurrentPosition(
+        pos => {
+          const next = {
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+          };
+          prefs.setLastLocation(next.lat, next.lng);
+          resolve(next);
+        },
+        () => resolve(last),
+        {enableHighAccuracy: false, timeout: 8000, maximumAge: 60000},
+      );
+    });
+
   const fetchNfce = async () => {
     if (!ensureList() || !qrUrl.trim()) return;
     try {
       const parsed = await fetchAndParseNfce(qrUrl.trim());
+      let marketNotice: string | null = null;
       if (parsed.marketName) {
-        const m = marketRepo.resolveOrCreate(
-          parsed.marketName,
-          parsed.marketCnpj,
-        );
+        const origin = await resolveGps();
+        let m;
+        if (origin) {
+          const geo = await geocodeMarketNear(
+            parsed.marketName,
+            origin,
+            MAPBOX_ACCESS_TOKEN,
+          );
+          if (geo) {
+            m = marketRepo.resolveOrCreateNear(
+              parsed.marketName,
+              geo.lat,
+              geo.lng,
+              parsed.marketCnpj,
+            );
+            marketRepo.upsertGeo(m.id, {
+              lat: geo.lat,
+              lng: geo.lng,
+              address: geo.address ?? m.address,
+            });
+          } else {
+            m = marketRepo.resolveOrCreate(
+              parsed.marketName,
+              parsed.marketCnpj,
+            );
+          }
+        } else {
+          m = marketRepo.resolveOrCreate(
+            parsed.marketName,
+            parsed.marketCnpj,
+          );
+        }
+        const prevActive = prefs.getActiveMarketId();
         prefs.setCurrentMarketId(m.id);
+        if (prefs.getActiveListName()) {
+          prefs.setActiveMarketId(m.id);
+          if (prevActive != null && prevActive !== m.id) {
+            marketNotice = `Mercado da lista atualizado para ${m.name}`;
+          }
+        }
       }
       if (!parsed.items.length) {
         appAlert('NFC-e', 'Nenhum item encontrado');
         return;
       }
+      const marketId = prefs.getActiveMarketId();
       for (const it of parsed.items) {
         const product = productRepo.resolveOrCreate(it.description);
         const now = new Date().toISOString();
         priceLogRepo.insert({
           productId: product.id,
-          marketId: prefs.getActiveMarketId(),
+          marketId,
           retailPrice: it.unitPrice,
           wholesalePrice: null,
           minWholesaleQty: null,
@@ -403,7 +460,12 @@ export function CaptureScreen() {
       refresh();
       setExtra('none');
       setQrUrl('');
-      appAlert('NFC-e', `${parsed.items.length} itens adicionados`);
+      appAlert(
+        'NFC-e',
+        marketNotice
+          ? `${parsed.items.length} itens adicionados.\n${marketNotice}`
+          : `${parsed.items.length} itens adicionados`,
+      );
     } catch (e) {
       appAlert('SEFAZ', e instanceof Error ? e.message : String(e));
     }

@@ -34,6 +34,10 @@ export const prefs = {
     metaSet('activeListName', name);
     metaSet('activeMarketId', String(marketId));
   },
+  /** Atualiza só o mercado da lista ativa (ex.: NFC-e do emitente). */
+  setActiveMarketId: (marketId: number) => {
+    metaSet('activeMarketId', String(marketId));
+  },
   clearActiveList: () => {
     metaSet('activeListName', '');
     metaSet('activeMarketId', '');

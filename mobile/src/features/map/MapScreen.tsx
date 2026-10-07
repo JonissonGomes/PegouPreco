@@ -11,17 +11,25 @@ import {
 } from 'react-native';
 import {WebView, type WebViewMessageEvent} from 'react-native-webview';
 import Geolocation from 'react-native-geolocation-service';
-import {LocateFixed, RefreshCw, Search, X} from 'lucide-react-native';
+import {LocateFixed, Plus, RefreshCw, Search, X} from 'lucide-react-native';
 import {MAPBOX_ACCESS_TOKEN} from '@/config/env';
 import {refreshPermissionFlags} from '@/app/permissions';
-import {AppScreenHeader, AppScreenNavyBar} from '@/ui/chrome';
+import {AppButton, AppField, AppScreenHeader, AppScreenNavyBar} from '@/ui/chrome';
+import {appAlert} from '@/ui/appDialog';
+import {apiErrorMessage} from '@/data/remote/apiError';
+import {KeyboardSafeSheet} from '@/ui/keyboardSheet';
 import {MarketPinSheet} from '@/ui/MarketPinSheet';
 import {colors, space, spacing} from '@/ui/theme';
 import {formatDistanceKm} from '@/domain/marketUi';
-import {marketRepo, prefs, useAppStore} from '@/store/appStore';
-import {syncApi} from '@/data/remote/syncApi';
 import {
-  discoverNearbyMarkets,
+  canContribute,
+  marketRepo,
+  prefs,
+  useAppStore,
+} from '@/store/appStore';
+import {syncApi} from '@/data/remote/syncApi';
+import {ensureNearbyMarketsDiscovered} from '@/data/remote/ensureNearbyMarkets';
+import {
   filterMarketsInRadius,
   haversineKm,
   NEARBY_RADIUS_KM,
@@ -203,22 +211,6 @@ function buildMapHtml(
 </html>`;
 }
 
-function ingestHits(
-  hits: Array<{
-    name: string;
-    lat: number;
-    lng: number;
-    address?: string | null;
-  }>,
-): number[] {
-  const ids: number[] = [];
-  for (const h of hits) {
-    const m = marketRepo.upsertFromDiscovery(h);
-    ids.push(m.id);
-  }
-  return ids;
-}
-
 export function MapScreen() {
   const markets = useAppStore(s => s.markets);
   const refresh = useAppStore(s => s.refresh);
@@ -235,6 +227,10 @@ export function MapScreen() {
   const [pinIds, setPinIds] = useState<number[] | null>(null);
   const [query, setQuery] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+  const [addName, setAddName] = useState('');
+  const [addBusy, setAddBusy] = useState(false);
+  const auth = useAppStore(s => s.auth);
 
   const nearby = useMemo(() => {
     if (pinIds && pinIds.length > 0) {
@@ -328,14 +324,13 @@ export function MapScreen() {
       setStatus(`${local.length} salvos · buscando mais…`);
     }
     try {
-      const hits = await discoverNearbyMarkets(
+      const {hits, marketIds} = await ensureNearbyMarketsDiscovered(
         point.latitude,
         point.longitude,
-        NEARBY_RADIUS_KM,
-        MAPBOX_ACCESS_TOKEN,
+        {radiusKm: NEARBY_RADIUS_KM, mapboxToken: MAPBOX_ACCESS_TOKEN},
       );
-      const ids = ingestHits(hits);
-      setPinIds(ids.length ? ids : local.map(m => m.id));
+      const ids = marketIds.length ? marketIds : local.map(m => m.id);
+      setPinIds(ids);
       refresh();
       setStatus(
         hits.length
@@ -344,8 +339,7 @@ export function MapScreen() {
             ? `${local.length} mercados salvos próximos`
             : 'Nenhum mercado próximo encontrado',
       );
-      // API remota só enriquece nota/preço dos pontos já descobertos
-      void loadRemote(point, ids.length ? ids : local.map(m => m.id));
+      void loadRemote(point, ids);
     } catch {
       setStatus(
         local.length
@@ -397,9 +391,13 @@ export function MapScreen() {
     try {
       const raw = prefs.getAuthJson();
       const token = raw ? (JSON.parse(raw) as {token: string}).token : null;
-      const remote = await syncApi.marketsMap(token);
       const originPt = {lat: origin.latitude, lng: origin.longitude};
-      const allow = discoveredIds?.length ? new Set(discoveredIds) : null;
+      const remote = await syncApi.marketsMap(token, {
+        lat: originPt.lat,
+        lng: originPt.lng,
+        radiusKm: NEARBY_RADIUS_KM,
+      });
+      const pinSet = new Set(discoveredIds ?? []);
       for (const r of remote) {
         const name = String(r.name ?? '');
         if (!name) continue;
@@ -413,23 +411,7 @@ export function MapScreen() {
           lng,
           (r.cnpj as string) ?? null,
         );
-        // Não cria pin remoto fora da descoberta local (evita nome/lugar errados)
-        if (allow && !allow.has(m.id)) {
-          const nearDiscover = discoveredIds!.some(id => {
-            const d = marketRepo.getById(id);
-            return (
-              d?.lat != null &&
-              d?.lng != null &&
-              haversineKm(
-                {lat: d.lat, lng: d.lng},
-                {lat, lng},
-              ) < 0.25
-            );
-          });
-          if (!nearDiscover) continue;
-        }
         marketRepo.upsertGeo(m.id, {
-          // só enriquece meta; geo da descoberta local prevalece se já existir
           lat: m.lat ?? lat,
           lng: m.lng ?? lng,
           address: m.address ?? (r.address as string) ?? null,
@@ -439,7 +421,10 @@ export function MapScreen() {
           priceLevel: (r.priceLevel as string) ?? m.priceLevel,
           remoteId: (r.id as string) ?? m.remoteId,
         });
+        // Mercados curados na API entram como pins mesmo sem discovery local
+        pinSet.add(m.id);
       }
+      if (pinSet.size) setPinIds([...pinSet]);
       refresh();
     } catch {
       // offline ok
@@ -597,6 +582,17 @@ export function MapScreen() {
         ) : null}
       </View>
 
+      <Pressable
+        style={styles.addFab}
+        onPress={() => {
+          setAddName('');
+          setAddOpen(true);
+        }}
+        accessibilityLabel="Adicionar mercado aqui">
+        <Plus size={20} color={colors.navy} />
+        <Text style={styles.addFabText}>Adicionar aqui</Text>
+      </Pressable>
+
       <MarketPinSheet
         market={selected}
         distanceKm={selectedDistance}
@@ -606,6 +602,76 @@ export function MapScreen() {
           setSelected(null);
         }}
       />
+
+      <KeyboardSafeSheet visible={addOpen} onClose={() => setAddOpen(false)}>
+        <Text style={styles.addTitle}>Adicionar mercado aqui</Text>
+        <Text style={styles.addHint}>
+          Usa sua posição atual (ou o centro do mapa) e envia para moderação.
+        </Text>
+        <AppField
+          label="Nome do mercado"
+          placeholder="Ex.: Mix Mateus Imbiribeira"
+          value={addName}
+          onChangeText={setAddName}
+          compact
+        />
+        <AppButton
+          disabled={addBusy}
+          label={addBusy ? 'Enviando…' : 'Salvar e sugerir'}
+          onPress={async () => {
+            const name = addName.trim();
+            if (!name) {
+              appAlert('Nome', 'Informe o nome do mercado.');
+              return;
+            }
+            setAddBusy(true);
+            try {
+              const m = marketRepo.resolveOrCreateNear(
+                name,
+                center.latitude,
+                center.longitude,
+              );
+              marketRepo.upsertGeo(m.id, {
+                lat: center.latitude,
+                lng: center.longitude,
+              });
+              setPinIds(prev =>
+                prev ? Array.from(new Set([...prev, m.id])) : [m.id],
+              );
+              refresh();
+              if (canContribute(auth) && auth?.token) {
+                await syncApi.submitMarketSuggestion(auth.token, {
+                  name,
+                  lat: center.latitude,
+                  lng: center.longitude,
+                  kind: 'add',
+                  note: 'Sugestão pelo mapa',
+                });
+                appAlert(
+                  'Mercado adicionado',
+                  'Salvo no seu aparelho e enviado para revisão da comunidade.',
+                );
+              } else {
+                appAlert(
+                  'Mercado adicionado',
+                  'Salvo localmente. Com conta verificada, a sugestão sobe para a comunidade.',
+                );
+              }
+              setAddOpen(false);
+              setSelected(m);
+            } catch (e) {
+              appAlert('Erro', apiErrorMessage(e));
+            } finally {
+              setAddBusy(false);
+            }
+          }}
+        />
+        <AppButton
+          outlined
+          label="Cancelar"
+          onPress={() => setAddOpen(false)}
+        />
+      </KeyboardSafeSheet>
     </View>
   );
 }
@@ -671,6 +737,37 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     gap: 8,
+  },
+  addFab: {
+    position: 'absolute',
+    right: space.md,
+    bottom: spacing.bottomNavClearance + 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.yellowBright,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 999,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    shadowOffset: {width: 0, height: 2},
+    zIndex: 15,
+  },
+  addFabText: {fontWeight: '800', color: colors.navy, fontSize: 13},
+  addTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: colors.navy,
+    marginBottom: 4,
+  },
+  addHint: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.muted,
+    marginBottom: 10,
   },
   overlayText: {
     marginTop: 8,

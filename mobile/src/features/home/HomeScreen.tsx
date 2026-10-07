@@ -9,48 +9,46 @@ import {
 } from 'react-native';
 import {useFocusEffect, useNavigation} from '@react-navigation/native';
 import Geolocation from 'react-native-geolocation-service';
-import {Map as MapIcon, Sparkles} from 'lucide-react-native';
-import {AppButton, AppScreenHeader} from '@/ui/chrome';
+import {AppButton} from '@/ui/chrome';
 import {
   EmptyState,
-  FiscalBadge,
   MarketRankRow,
   Screen,
   SectionHeader,
 } from '@/ui/components';
+import {MiniMapPreview} from '@/ui/MiniMapPreview';
+import {SavePill, ScreenScrollPad, SoftHeader} from '@/ui/screenChrome';
 import {colors, radii, space} from '@/ui/theme';
 import {
   cartToBasket,
   rankMarketsForBasket,
   type MarketBasketRank,
 } from '@/domain/compare';
-import {
-  categorySpendFromCart,
-  categorySavingsPotential,
-  lifetimeSavings,
-} from '@/domain/homeInsights';
 import {formatBrl} from '@/domain/money';
-import {TrustEngine} from '@/domain/trust';
-import {prefs, useAppStore, useMarketName} from '@/store/appStore';
-import {syncApi, type ReputationRemote} from '@/data/remote/syncApi';
+import {prefs, useAppStore} from '@/store/appStore';
+import {syncApi} from '@/data/remote/syncApi';
 import {reverseGeocode} from '@/data/remote/reverseGeocode';
 import {getState} from '@/data/db';
-import type {FiscalLevel} from '@/data/types';
 import {MAPBOX_ACCESS_TOKEN} from '@/config/env';
-import {HomeMarketBars} from './HomeMarketBars';
+import {
+  filterMarketsInRadius,
+  NEARBY_RADIUS_KM,
+} from '@/data/remote/nearbyMarkets';
+import {ensureNearbyMarketsDiscovered} from '@/data/remote/ensureNearbyMarkets';
+import {HomeWelcome} from '@/features/home/HomeWelcome';
+import {lifetimeSavings} from '@/domain/homeInsights';
+
+const RECIFE = {lat: -8.0476, lng: -34.8813};
 
 export function HomeScreen() {
   const nav = useNavigation<any>();
   const cart = useAppStore(s => s.cart);
   const markets = useAppStore(s => s.markets);
   const lists = useAppStore(s => s.lists);
-  const products = useAppStore(s => s.products);
   const refresh = useAppStore(s => s.refresh);
   const activeListName = useAppStore(s => s.activeListName);
-  const activeMarketId = useAppStore(s => s.activeMarketId);
   const auth = useAppStore(s => s.auth);
   const permissions = useAppStore(s => s.permissions);
-  const marketName = useMarketName(activeMarketId);
   const [locSnapshot, setLocSnapshot] = useState(() => prefs.getLocationPrefs());
   const [geoAttempted, setGeoAttempted] = useState(false);
   const [detecting, setDetecting] = useState(false);
@@ -59,7 +57,10 @@ export function HomeScreen() {
   const [remoteRanks, setRemoteRanks] = useState<MarketBasketRank[] | null>(
     null,
   );
-  const [rep, setRep] = useState<ReputationRemote | null>(null);
+  const [mapOrigin, setMapOrigin] = useState(() => {
+    const last = prefs.getLastLocation();
+    return last ?? RECIFE;
+  });
 
   const loc = locSnapshot;
   const logsKey = lists.length + cart.length + markets.length;
@@ -80,61 +81,114 @@ export function HomeScreen() {
   const worst = ranks.length > 1 ? ranks[ranks.length - 1] : null;
   const saveEst =
     best && worst && worst.total > best.total ? worst.total - best.total : 0;
-  const histSave = useMemo(() => lifetimeSavings(lists), [lists]);
-  const byCategory = useMemo(
-    () => categorySpendFromCart(cart, products),
-    [cart, products],
-  );
-  const saveByCat = useMemo(() => {
-    const logs = getState().price_logs;
-    return categorySavingsPotential(cart, products, logs);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cart, products, logsKey]);
 
   const regionLabel = [loc.neighborhood, loc.city].filter(Boolean).join(', ');
-  const headerTitle = auth?.displayName
-    ? `Olá, ${auth.displayName.split(/\s+/)[0]}`
-    : 'Onde comprar';
-  const headerSubtitle = detecting
-    ? 'Detectando região…'
-    : regionLabel || marketName || 'Defina sua região no perfil';
+  const openListLabel = activeListName
+    ? `Abrir ${activeListName}`
+    : 'Abrir listas';
+
+  const nearbyMarkets = useMemo(
+    () => filterMarketsInRadius(markets, mapOrigin, NEARBY_RADIUS_KM, 20),
+    [markets, mapOrigin],
+  );
+  const mapMarkers = useMemo(
+    () =>
+      nearbyMarkets
+        .filter(m => m.lat != null && m.lng != null)
+        .map(m => ({
+          id: String(m.id),
+          name: m.name,
+          lat: m.lat!,
+          lng: m.lng!,
+        })),
+    [nearbyMarkets],
+  );
+
+  const hasGeoMarkets = mapMarkers.length > 0;
+  const hasHistory = lists.length > 0;
+  const hasDashboard = cart.length > 0 && ranks.length > 0;
+  /** Usuário com dados locais — mapa reduzido em vez do empty "Monte sua lista". */
+  const isReturning = hasGeoMarkets || hasHistory || hasDashboard;
+  const savedTotal = useMemo(() => lifetimeSavings(lists), [lists]);
+
+  const discoverNearHome = useCallback(async (origin: {
+    lat: number;
+    lng: number;
+  }) => {
+    try {
+      const {marketIds} = await ensureNearbyMarketsDiscovered(
+        origin.lat,
+        origin.lng,
+        {mapboxToken: MAPBOX_ACCESS_TOKEN},
+      );
+      // Só refresh se algo novo entrou — evita piscar o WebView do mini-mapa
+      if (marketIds.length > 0) refresh();
+    } catch {
+      // offline / Overpass ok
+    }
+  }, [refresh]);
 
   const tryAutoRegion = useCallback(async () => {
     const current = prefs.getLocationPrefs();
     if (current.city?.trim()) {
       setLocSnapshot(current);
       setGeoAttempted(true);
-      return;
     }
     if (!permissions.location) {
       setGeoAttempted(true);
+      const last = prefs.getLastLocation() ?? RECIFE;
+      setMapOrigin(prev =>
+        prev.lat === last.lat && prev.lng === last.lng ? prev : last,
+      );
+      void discoverNearHome(last);
       return;
     }
     setDetecting(true);
     try {
-      await new Promise<void>((resolve, reject) => {
+      await new Promise<void>(resolve => {
         Geolocation.getCurrentPosition(
           async pos => {
+            const next = {
+              lat: pos.coords.latitude,
+              lng: pos.coords.longitude,
+            };
+            prefs.setLastLocation(next.lat, next.lng);
+            setMapOrigin(prev =>
+              Math.abs(prev.lat - next.lat) < 1e-5 &&
+              Math.abs(prev.lng - next.lng) < 1e-5
+                ? prev
+                : next,
+            );
             try {
-              const hit = await reverseGeocode(
-                pos.coords.latitude,
-                pos.coords.longitude,
-                MAPBOX_ACCESS_TOKEN,
-              );
-              if (hit?.city) {
-                prefs.setLocationPrefs({
-                  city: hit.city,
-                  neighborhood: hit.neighborhood,
-                  favoriteMarketIds: current.favoriteMarketIds,
-                });
-                setLocSnapshot(prefs.getLocationPrefs());
+              if (!current.city?.trim()) {
+                const hit = await reverseGeocode(
+                  next.lat,
+                  next.lng,
+                  MAPBOX_ACCESS_TOKEN,
+                );
+                if (hit?.city) {
+                  prefs.setLocationPrefs({
+                    city: hit.city,
+                    neighborhood: hit.neighborhood,
+                    favoriteMarketIds: current.favoriteMarketIds,
+                  });
+                  setLocSnapshot(prefs.getLocationPrefs());
+                }
               }
-              resolve();
-            } catch (e) {
-              reject(e);
+            } catch {
+              // reverse geocode opcional
             }
+            await discoverNearHome(next);
+            resolve();
           },
-          () => resolve(),
+          () => {
+            const last = prefs.getLastLocation() ?? RECIFE;
+            setMapOrigin(prev =>
+              prev.lat === last.lat && prev.lng === last.lng ? prev : last,
+            );
+            void discoverNearHome(last);
+            resolve();
+          },
           {enableHighAccuracy: false, timeout: 12000, maximumAge: 60000},
         );
       });
@@ -142,19 +196,20 @@ export function HomeScreen() {
       setDetecting(false);
       setGeoAttempted(true);
     }
-  }, [permissions.location]);
+  }, [permissions.location, discoverNearHome]);
 
   useFocusEffect(
     useCallback(() => {
       refresh();
       setLocSnapshot(prefs.getLocationPrefs());
+      // Discovery uma vez por sessão — evita loop refresh → re-render → piscar
       if (!geoOnce.current) {
         geoOnce.current = true;
         void tryAutoRegion();
-      } else if (!prefs.getLocationPrefs().city?.trim()) {
-        void tryAutoRegion();
       }
-    }, [tryAutoRegion, refresh]),
+      // tryAutoRegion propositalmente fora das deps do foco contínuo
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [refresh]),
   );
 
   const loadRemote = async () => {
@@ -201,36 +256,29 @@ export function HomeScreen() {
   };
 
   useEffect(() => {
-    if (!auth?.token) return;
-    syncApi
-      .reputation(auth.token)
-      .then(setRep)
-      .catch(() => setRep(null));
     void loadRemote();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auth?.token, cart.length, loc.city, loc.neighborhood]);
 
-  const fiscalLevel =
-    (rep?.level as FiscalLevel) ??
-    TrustEngine.levelForPoints(rep?.points ?? 0);
+  const bestTotal = best?.total ?? 0;
+  const goMap = useCallback(() => nav.navigate('Map'), [nav]);
+  const goLists = useCallback(() => nav.navigate('Lists'), [nav]);
 
-  const hasDashboard = cart.length > 0 && ranks.length > 0;
+  const headerTitle = hasDashboard
+    ? 'Onde comprar hoje'
+    : isReturning
+      ? 'Mercados perto de você'
+      : 'PegouPreço';
 
   return (
     <Screen>
-      <AppScreenHeader
-        showLogo={false}
-        stacked
-        title={headerTitle}
-        subtitle={headerSubtitle}
-        actions={
-          <Pressable
-            onPress={() => nav.navigate('Map')}
-            style={styles.iconBtn}
-            accessibilityLabel="Abrir mapa">
-            <MapIcon color={colors.navy} size={22} />
-          </Pressable>
+      <SoftHeader
+        location={
+          detecting
+            ? 'Detectando região…'
+            : regionLabel || 'Defina sua região no perfil'
         }
+        title={headerTitle}
       />
       <ScrollView
         contentContainerStyle={styles.body}
@@ -240,238 +288,245 @@ export function HomeScreen() {
             onRefresh={async () => {
               setRefreshing(true);
               refresh();
+              await discoverNearHome(mapOrigin);
               await loadRemote();
               setRefreshing(false);
             }}
             tintColor={colors.navy}
           />
         }>
-        <View style={styles.heroBand}>
-          <View style={styles.heroTop}>
-            <FiscalBadge level={fiscalLevel} points={rep?.points ?? 0} />
-          </View>
-          <Text style={styles.heroList}>
-            {activeListName
-              ? `Lista ativa: ${activeListName}`
-              : 'Nenhuma lista ativa'}
-          </Text>
-          {hasDashboard ? (
-            <Text style={styles.heroBig}>
-              {saveEst > 0
-                ? formatBrl(saveEst)
-                : formatBrl(best?.total ?? 0)}
-            </Text>
-          ) : null}
-          <Text style={styles.heroCaption}>
-            {hasDashboard
-              ? saveEst > 0
-                ? 'Economia estimada vs. mercado mais caro'
-                : `${best?.marketName} lidera entre os favoritos`
-              : 'Compare mercados com preços verificados na região'}
-          </Text>
-        </View>
-
-        {hasDashboard ? (
-          <>
-            <View style={styles.statRow}>
-              <View style={styles.statTile}>
-                <Text style={styles.statVal}>{formatBrl(histSave)}</Text>
-                <Text style={styles.statLbl}>Economia histórica</Text>
-              </View>
-              <View style={[styles.statTile, styles.statTileHi]}>
-                <Text style={styles.statVal}>{formatBrl(saveEst)}</Text>
-                <Text style={styles.statLbl}>Nesta lista</Text>
-              </View>
-              <View style={styles.statTile}>
-                <Text style={styles.statVal}>{cart.length}</Text>
-                <Text style={styles.statLbl}>Itens na lista</Text>
-              </View>
-            </View>
-
-            <SectionHeader title="Comparativo visual" />
-            <HomeMarketBars ranks={ranks} />
-
-            {byCategory.length ? (
-              <>
-                <SectionHeader title="Por categoria" />
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.chipRow}>
-                  {byCategory.map(c => {
-                    const pot = saveByCat.find(s => s.category === c.category);
-                    return (
-                      <View key={c.category} style={styles.chip}>
-                        <Text style={styles.chipCat}>{c.category}</Text>
-                        <Text style={styles.chipVal}>
-                          {formatBrl(c.total)}
-                        </Text>
-                        <Text style={styles.chipMeta}>
-                          {c.itemCount} {c.itemCount === 1 ? 'item' : 'itens'}
-                          {pot && pot.saveEst > 0
-                            ? ` · −${formatBrl(pot.saveEst)}`
-                            : ''}
-                        </Text>
-                      </View>
-                    );
-                  })}
-                </ScrollView>
-              </>
-            ) : null}
-
-            <SectionHeader
-              title="Ranking da lista"
-              actionLabel="Listas"
-              onAction={() => nav.navigate('Lists')}
-            />
-            <View style={styles.listPad}>
-              {ranks.slice(0, 8).map((r, i) => (
-                <MarketRankRow
-                  key={`${r.marketId}-${r.marketName}`}
-                  rank={r}
-                  place={i + 1}
-                  highlight={i === 0}
-                />
-              ))}
-            </View>
-
-            <View style={styles.ctaRow}>
-              <Pressable
-                style={styles.ctaCard}
-                onPress={() => nav.navigate('Insights')}>
-                <Sparkles color={colors.navy} size={20} />
-                <Text style={styles.ctaCardTitle}>Ver insights</Text>
-                <Text style={styles.ctaCardSub}>
-                  Alertas e menores preços por item
+        <ScreenScrollPad>
+          {hasDashboard && best ? (
+            <>
+              <Pressable style={styles.heroCard} onPress={goLists}>
+                <Text style={styles.heroKicker}>
+                  MELHOR OPÇÃO PARA SUA LISTA
                 </Text>
+                <Text style={styles.heroMarket} numberOfLines={2}>
+                  {best.marketName}
+                </Text>
+                <View style={styles.heroMetaRow}>
+                  <Text style={styles.heroMeta}>
+                    {formatBrl(best.total)} · {best.coveredItems} de{' '}
+                    {best.totalItems} itens
+                  </Text>
+                  {saveEst > 0 ? (
+                    <SavePill label={`Economize ${formatBrl(saveEst)}`} />
+                  ) : null}
+                </View>
+                <Text style={styles.heroCta}>{openListLabel}</Text>
               </Pressable>
-              <Pressable
-                style={styles.ctaCard}
-                onPress={() => nav.navigate('Map')}>
-                <MapIcon color={colors.navy} size={20} />
-                <Text style={styles.ctaCardTitle}>Mapa</Text>
-                <Text style={styles.ctaCardSub}>Mercados perto de você</Text>
-              </Pressable>
-            </View>
-          </>
-        ) : !cart.length ? (
-          <EmptyState
-            title="Monte sua lista"
-            message="Adicione itens na aba Listas ou capture etiquetas para comparar mercados da comunidade."
-            actionLabel="Ir para Listas"
-            onAction={() => nav.navigate('Lists')}
-          />
-        ) : (
-          <EmptyState
-            title="Poucos dados na região"
-            message="Ainda não há preços verificados o bastante. Capture etiquetas ou valide preços na Comunidade."
-            actionLabel="Capturar"
-            onAction={() => nav.navigate('Capture')}
-          />
-        )}
 
-        {geoAttempted && !loc.city?.trim() ? (
-          <View style={styles.ctaBox}>
-            <Text style={styles.ctaTitle}>Defina cidade e bairro</Text>
-            <Text style={styles.ctaMsg}>
-              O ranking usa sua região e mercados favoritos.
-            </Text>
-            <AppButton
-              label="Configurar região"
-              onPress={() => nav.navigate('Profile')}
+              <SectionHeader
+                title="Perto de você"
+                actionLabel="Mapa completo"
+                onAction={goMap}
+              />
+              <MiniMapPreview
+                center={mapOrigin}
+                markers={mapMarkers}
+                onPress={goMap}
+                caption={
+                  mapMarkers.length
+                    ? `${mapMarkers.length} mercados · ${NEARBY_RADIUS_KM} km`
+                    : 'Abrir mapa'
+                }
+              />
+
+              <SectionHeader
+                title="Ranking"
+                actionLabel="Ver listas"
+                onAction={goLists}
+              />
+              <View style={styles.listPad}>
+                {ranks.slice(0, 8).map((r, i) => (
+                  <MarketRankRow
+                    key={`${r.marketId}-${r.marketName}`}
+                    rank={r}
+                    place={i + 1}
+                    highlight={i === 0}
+                    bestTotal={bestTotal}
+                  />
+                ))}
+              </View>
+
+              <View style={styles.ctaRow}>
+                <Pressable
+                  style={styles.ctaCard}
+                  onPress={() => nav.navigate('Insights')}>
+                  <Text style={styles.ctaCardTitle}>Insights</Text>
+                  <Text style={styles.ctaCardSub}>
+                    Alertas e menores preços
+                  </Text>
+                </Pressable>
+                <Pressable style={styles.ctaCard} onPress={goLists}>
+                  <Text style={styles.ctaCardTitle}>Listas</Text>
+                  <Text style={styles.ctaCardSub}>
+                    {activeListName || 'Montar ou reabrir'}
+                  </Text>
+                </Pressable>
+              </View>
+            </>
+          ) : isReturning ? (
+            <>
+              <MiniMapPreview
+                center={mapOrigin}
+                markers={mapMarkers}
+                height={200}
+                onPress={goMap}
+                caption={
+                  mapMarkers.length
+                    ? `${mapMarkers.length} mercados por perto`
+                    : 'Explorar mapa'
+                }
+              />
+              <View style={styles.returnBlock}>
+                <Text style={styles.returnTitle}>
+                  {hasHistory
+                    ? 'Pronto para a próxima compra'
+                    : 'Mercados descobertos na sua área'}
+                </Text>
+                <Text style={styles.returnMsg}>
+                  {hasHistory
+                    ? savedTotal > 0
+                      ? `Você já economizou ${formatBrl(savedTotal)} em listas finalizadas. Abra o mapa ou comece uma nova lista.`
+                      : 'Toque no mapa para ver pinos ou inicie uma lista para comparar preços.'
+                    : 'Toque no mapa para explorar ou comece uma lista para comparar preços da comunidade.'}
+                </Text>
+                <AppButton label="Abrir mapa" onPress={goMap} />
+                <AppButton
+                  outlined
+                  label={
+                    activeListName
+                      ? `Continuar ${activeListName}`
+                      : 'Nova lista de compras'
+                  }
+                  onPress={goLists}
+                />
+              </View>
+            </>
+          ) : (
+            <HomeWelcome
+              regionLabel={regionLabel || undefined}
+              onExploreMap={goMap}
+              onStartList={goLists}
+              onCapture={() => nav.navigate('Capture')}
             />
-          </View>
-        ) : null}
+          )}
+
+          {cart.length > 0 && !hasDashboard ? (
+            <EmptyState
+              title="Poucos dados na região"
+              message="Ainda não há preços verificados o bastante. Capture etiquetas ou valide preços na Comunidade."
+              actionLabel="Capturar"
+              onAction={() => nav.navigate('Capture')}
+            />
+          ) : null}
+
+          {geoAttempted && !loc.city?.trim() ? (
+            <View style={styles.ctaBox}>
+              <Text style={styles.ctaTitle}>Defina cidade e bairro</Text>
+              <Text style={styles.ctaMsg}>
+                O ranking usa sua região e mercados favoritos.
+              </Text>
+              <AppButton
+                label="Configurar região"
+                onPress={() => nav.navigate('Profile')}
+              />
+            </View>
+          ) : null}
+        </ScreenScrollPad>
       </ScrollView>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  body: {paddingBottom: 120},
-  iconBtn: {padding: 8},
-  heroBand: {
-    backgroundColor: colors.yellow,
-    paddingHorizontal: space.md,
-    paddingVertical: space.lg,
-    gap: 6,
-    borderBottomWidth: 3,
-    borderBottomColor: colors.navy,
+  body: {paddingBottom: 8},
+  heroCard: {
+    marginHorizontal: space.md,
+    marginTop: space.xs,
+    marginBottom: space.md,
+    backgroundColor: colors.navy,
+    borderRadius: radii.xl,
+    padding: space.lg,
+    gap: 8,
   },
-  heroTop: {alignSelf: 'flex-start'},
-  heroList: {fontSize: 15, fontWeight: '800', color: colors.navy},
-  heroBig: {fontSize: 36, fontWeight: '900', color: colors.navy},
-  heroCaption: {
-    color: colors.navy,
-    fontWeight: '600',
-    fontSize: 13,
-    opacity: 0.9,
+  heroKicker: {
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.6,
+    color: colors.yellow,
   },
-  statRow: {
+  heroMarket: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: colors.white,
+    lineHeight: 28,
+  },
+  heroMetaRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
     gap: 8,
-    paddingHorizontal: space.md,
-    paddingVertical: space.md,
   },
-  statTile: {
-    flex: 1,
-    backgroundColor: colors.white,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: 10,
-    gap: 4,
+  heroMeta: {
+    color: 'rgba(255,255,255,0.92)',
+    fontWeight: '700',
+    fontSize: 14,
   },
-  statTileHi: {
-    backgroundColor: colors.yellowBright,
-    borderColor: colors.navy,
+  heroCta: {
+    marginTop: space.sm,
+    textAlign: 'center',
+    color: colors.white,
+    fontWeight: '900',
+    fontSize: 16,
   },
-  statVal: {fontSize: 14, fontWeight: '900', color: colors.navy},
-  statLbl: {fontSize: 10, fontWeight: '700', color: colors.muted},
-  chipRow: {
-    paddingHorizontal: space.md,
-    gap: 8,
-    paddingBottom: space.sm,
-  },
-  chip: {
-    backgroundColor: colors.white,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    minWidth: 120,
-    gap: 2,
-  },
-  chipCat: {fontWeight: '800', color: colors.navy, fontSize: 12},
-  chipVal: {fontWeight: '900', color: colors.navy, fontSize: 15},
-  chipMeta: {fontSize: 10, fontWeight: '600', color: colors.muted},
-  listPad: {paddingHorizontal: space.md, paddingTop: space.xs},
+  listPad: {paddingHorizontal: space.md, marginTop: space.sm},
   ctaRow: {
     flexDirection: 'row',
     gap: 10,
     paddingHorizontal: space.md,
-    marginTop: space.sm,
+    marginTop: space.md,
     marginBottom: space.md,
   },
   ctaCard: {
     flex: 1,
     backgroundColor: colors.white,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: 12,
+    borderRadius: radii.xl,
+    padding: space.md,
     gap: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    shadowOffset: {width: 0, height: 2},
+    elevation: 2,
   },
-  ctaCardTitle: {fontWeight: '800', color: colors.navy, fontSize: 14},
-  ctaCardSub: {fontWeight: '600', color: colors.muted, fontSize: 11},
+  ctaCardTitle: {fontWeight: '900', color: colors.navy, fontSize: 16},
+  ctaCardSub: {fontWeight: '600', color: colors.muted, fontSize: 12},
+  returnBlock: {
+    marginHorizontal: space.md,
+    marginTop: space.md,
+    gap: 8,
+  },
+  returnTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: colors.navy,
+    letterSpacing: -0.3,
+  },
+  returnMsg: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.muted,
+    lineHeight: 19,
+    marginBottom: 4,
+  },
   ctaBox: {
     margin: space.md,
     padding: space.md,
     backgroundColor: colors.white,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.border,
+    borderRadius: radii.xl,
     gap: 8,
   },
   ctaTitle: {fontWeight: '800', color: colors.navy, fontSize: 16},

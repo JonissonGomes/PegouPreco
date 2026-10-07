@@ -12,13 +12,22 @@ import {
 import {FlatList, ScrollView} from 'react-native-gesture-handler';
 import {useNavigation} from '@react-navigation/native';
 import {ArrowLeft} from 'lucide-react-native';
-import {AppListCard, AppScreenHeader, AppScreenNavyBar} from '@/ui/chrome';
+import {AppButton} from '@/ui/chrome';
 import {KeyboardSafeSheet} from '@/ui/keyboardSheet';
 import {SwipeableActions} from '@/ui/SwipeableActions';
-import {colors} from '@/ui/theme';
+import {
+  BackCircleButton,
+  SoftCard,
+  SoftHeader,
+} from '@/ui/screenChrome';
+import {colors, space} from '@/ui/theme';
 import {formatBrl, formatQty} from '@/domain/money';
-import {effectiveUnitPrice, lineTotal} from '@/domain/pricing';
-import {shoppingListRepo, useAppStore} from '@/store/appStore';
+import {lineTotal} from '@/domain/pricing';
+import {
+  cartRepo,
+  shoppingListRepo,
+  useAppStore,
+} from '@/store/appStore';
 import type {CartItem, ShoppingList} from '@/data/types';
 
 if (
@@ -27,6 +36,8 @@ if (
 ) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
+
+const DETAIL_PREVIEW = 4;
 
 function parseListItems(list: ShoppingList): CartItem[] {
   try {
@@ -37,47 +48,69 @@ function parseListItems(list: ShoppingList): CartItem[] {
   }
 }
 
+function formatListDate(iso: string) {
+  const d = new Date(iso);
+  const day = d.getDate().toString().padStart(2, '0');
+  const month = d.toLocaleDateString('pt-BR', {month: 'short'}).replace('.', '');
+  return `${day} ${month}`;
+}
+
 export function ShoppingListsScreen() {
-  const nav = useNavigation();
+  const nav = useNavigation<any>();
   const lists = useAppStore(s => s.lists);
   const refresh = useAppStore(s => s.refresh);
+  const startList = useAppStore(s => s.startList);
   const [selected, setSelected] = useState<ShoppingList | null>(null);
   const totalSpent = lists.reduce((s, l) => s + l.subtotal, 0);
-  const totalSaved = lists.reduce((s, l) => s + l.savings, 0);
   const detailItems = useMemo(
     () => (selected ? parseListItems(selected) : []),
     [selected],
   );
+  const preview = detailItems.slice(0, DETAIL_PREVIEW);
+  const extraCount = Math.max(0, detailItems.length - DETAIL_PREVIEW);
+
+  const redoList = (list: ShoppingList) => {
+    const items = parseListItems(list);
+    cartRepo.clear();
+    for (const it of items) {
+      cartRepo.upsert({
+        productId: it.productId,
+        productName: it.productName,
+        quantity: it.quantity,
+        retailPrice: it.retailPrice,
+        wholesalePrice: it.wholesalePrice,
+        minWholesaleQty: it.minWholesaleQty,
+        useWholesale: it.useWholesale,
+        checkedOff: 0,
+      });
+    }
+    startList(list.name, list.marketId);
+    setSelected(null);
+    nav.navigate('Main', {screen: 'Lists'});
+  };
 
   return (
     <View style={styles.root}>
-      <AppScreenHeader
+      <SoftHeader
         title="Listas salvas"
-        subtitle="Compare compras passadas"
+        subtitle={`${lists.length} listas · ${formatBrl(totalSpent)} gastos`}
         leading={
-          <Pressable onPress={() => nav.goBack()} style={{padding: 8}}>
+          <BackCircleButton onPress={() => nav.goBack()}>
             <ArrowLeft color={colors.navy} size={22} />
-          </Pressable>
-        }
-      />
-      <AppScreenNavyBar
-        value={formatBrl(totalSpent)}
-        label="Total gasto nas listas"
-        trailing={
-          <View>
-            <View style={styles.pill}>
-              <Text style={styles.pillText}>
-                {formatBrl(totalSaved)} economizados
-              </Text>
-            </View>
-            <Text style={styles.count}>{lists.length} LISTAS</Text>
-          </View>
+          </BackCircleButton>
         }
       />
       <FlatList
         data={lists}
         keyExtractor={l => String(l.id)}
-        contentContainerStyle={{padding: 16}}
+        contentContainerStyle={styles.listPad}
+        ListFooterComponent={
+          lists.length ? (
+            <Text style={styles.footerHint}>
+              Deslize para a esquerda para excluir
+            </Text>
+          ) : null
+        }
         renderItem={({item}) => (
           <SwipeableActions
             onDelete={() => {
@@ -95,23 +128,24 @@ export function ShoppingListsScreen() {
                       );
                       shoppingListRepo.remove(item.id);
                       refresh();
+                      if (selected?.id === item.id) setSelected(null);
                     },
                   },
                 ],
               );
             }}>
-            <AppListCard
-              style={{marginBottom: 0}}
-              onPress={() => setSelected(item)}>
-              <Text style={styles.name}>{item.name}</Text>
-              <Text style={styles.muted}>
-                {item.marketName} ·{' '}
-                {new Date(item.finishedAt).toLocaleDateString('pt-BR')} ·{' '}
-                {item.itemCount} itens
-              </Text>
-              <Text style={styles.price}>{formatBrl(item.subtotal)}</Text>
-              <Text style={styles.hint}>Toque para ver itens · arraste ← para excluir</Text>
-            </AppListCard>
+            <SoftCard onPress={() => setSelected(item)} style={styles.listCard}>
+              <View style={styles.listRow}>
+                <View style={{flex: 1, minWidth: 0}}>
+                  <Text style={styles.name}>{item.name}</Text>
+                  <Text style={styles.muted} numberOfLines={1}>
+                    {item.marketName} · {formatListDate(item.finishedAt)} ·{' '}
+                    {item.itemCount} itens
+                  </Text>
+                </View>
+                <Text style={styles.price}>{formatBrl(item.subtotal)}</Text>
+              </View>
+            </SoftCard>
           </SwipeableActions>
         )}
       />
@@ -124,47 +158,68 @@ export function ShoppingListsScreen() {
             <Text style={styles.detailTitle}>{selected.name}</Text>
             <Text style={styles.detailMeta}>
               {selected.marketName || 'Mercado'} ·{' '}
-              {new Date(selected.finishedAt).toLocaleDateString('pt-BR')}
+              {formatListDate(selected.finishedAt)}
             </Text>
-            <View style={styles.detailTotals}>
-              <Text style={styles.detailTotal}>
-                {formatBrl(selected.subtotal)}
-              </Text>
-              {selected.savings > 0 ? (
-                <Text style={styles.detailSave}>
-                  {formatBrl(selected.savings)} economizados
-                </Text>
-              ) : null}
-            </View>
+            <Text style={styles.detailTotal}>
+              {formatBrl(selected.subtotal)}
+            </Text>
             <ScrollView style={styles.detailScroll}>
-              {detailItems.length === 0 ? (
-                <Text style={styles.muted}>Nenhum item nesta lista.</Text>
-              ) : (
-                detailItems.map((it, idx) => {
-                  const unit = effectiveUnitPrice(it);
-                  const total = lineTotal(it);
-                  return (
-                    <View
-                      key={`${it.id}-${idx}`}
-                      style={[
-                        styles.detailRow,
-                        idx < detailItems.length - 1 && styles.detailRowBorder,
-                      ]}>
-                      <View style={{flex: 1, minWidth: 0}}>
-                        <Text style={styles.detailName} numberOfLines={2}>
-                          {it.productName}
-                        </Text>
-                        <Text style={styles.detailQty}>
-                          {formatQty(it.quantity)} un · {formatBrl(unit)} / un
-                          {it.useWholesale ? ' · atacado' : ''}
-                        </Text>
-                      </View>
-                      <Text style={styles.detailLine}>{formatBrl(total)}</Text>
-                    </View>
-                  );
-                })
-              )}
+              {preview.map((it, idx) => (
+                <View
+                  key={`${it.productId}-${idx}`}
+                  style={[
+                    styles.detailRow,
+                    idx < preview.length - 1 && styles.detailRowBorder,
+                  ]}>
+                  <View style={{flex: 1, minWidth: 0}}>
+                    <Text style={styles.detailName} numberOfLines={2}>
+                      {it.productName}
+                    </Text>
+                    <Text style={styles.detailQty}>
+                      {formatQty(it.quantity)} un
+                    </Text>
+                  </View>
+                  <Text style={styles.detailLine}>
+                    {formatBrl(lineTotal(it))}
+                  </Text>
+                </View>
+              ))}
+              {extraCount > 0 ? (
+                <Text style={styles.moreItems}>+ {extraCount} itens</Text>
+              ) : null}
             </ScrollView>
+            <View style={styles.detailActions}>
+              <View style={{flex: 1}}>
+                <AppButton
+                  label="Refazer esta lista"
+                  onPress={() => redoList(selected)}
+                />
+              </View>
+              <View style={{flex: 1}}>
+                <AppButton
+                  label="Excluir"
+                  outlined
+                  onPress={() => {
+                    Alert.alert(
+                      'Excluir lista?',
+                      `"${selected.name}" será removida.`,
+                      [
+                        {text: 'Cancelar', style: 'cancel'},
+                        {
+                          text: 'Excluir',
+                          style: 'destructive',
+                          onPress: () => {
+                            shoppingListRepo.remove(selected.id);
+                            refresh();
+                            setSelected(null);
+                          },
+                        },
+                      ],
+                    );
+                  }}
+                />
+              </View>
+            </View>
           </>
         ) : null}
       </KeyboardSafeSheet>
@@ -174,42 +229,33 @@ export function ShoppingListsScreen() {
 
 const styles = StyleSheet.create({
   root: {flex: 1, backgroundColor: colors.bg},
-  pill: {
-    backgroundColor: colors.yellowBright,
-    borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  pillText: {color: colors.navy, fontWeight: '800', fontSize: 11},
-  count: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 12,
-    marginTop: 6,
-    textAlign: 'right',
-  },
-  name: {fontWeight: '800', color: colors.navy},
-  muted: {color: colors.muted, marginTop: 2},
-  price: {fontWeight: '800', color: colors.navy, marginTop: 6},
-  hint: {
-    marginTop: 6,
-    fontSize: 10,
-    fontWeight: '600',
-    color: 'rgba(107,114,128,0.75)',
-  },
-  detailTitle: {fontSize: 18, fontWeight: '800', color: colors.navy},
-  detailMeta: {marginTop: 4, color: colors.muted, fontWeight: '600'},
-  detailTotals: {
-    marginTop: 12,
-    marginBottom: 8,
+  listPad: {padding: space.md, paddingBottom: 40},
+  listCard: {marginBottom: space.sm},
+  listRow: {
     flexDirection: 'row',
-    alignItems: 'baseline',
-    justifyContent: 'space-between',
+    alignItems: 'center',
     gap: 12,
   },
-  detailTotal: {fontSize: 22, fontWeight: '900', color: colors.navy},
-  detailSave: {fontWeight: '700', color: colors.trustGreen, fontSize: 13},
-  detailScroll: {maxHeight: 360, marginTop: 4},
+  name: {fontWeight: '900', color: colors.navy, fontSize: 16},
+  muted: {color: colors.muted, marginTop: 4, fontWeight: '600', fontSize: 13},
+  price: {fontWeight: '900', color: colors.navy, fontSize: 17},
+  footerHint: {
+    textAlign: 'center',
+    color: colors.muted,
+    fontWeight: '600',
+    fontSize: 13,
+    marginTop: space.md,
+  },
+  detailTitle: {fontSize: 20, fontWeight: '900', color: colors.navy},
+  detailMeta: {marginTop: 4, color: colors.muted, fontWeight: '600'},
+  detailTotal: {
+    marginTop: 12,
+    marginBottom: 8,
+    fontSize: 28,
+    fontWeight: '900',
+    color: colors.navy,
+  },
+  detailScroll: {maxHeight: 320, marginTop: 4},
   detailRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -220,7 +266,18 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
   },
-  detailName: {fontWeight: '700', color: colors.ink, fontSize: 14},
+  detailName: {fontWeight: '800', color: colors.navy, fontSize: 15},
   detailQty: {marginTop: 2, fontSize: 12, fontWeight: '600', color: colors.muted},
-  detailLine: {fontWeight: '800', color: colors.navy, fontSize: 14},
+  detailLine: {fontWeight: '900', color: colors.navy, fontSize: 15},
+  moreItems: {
+    marginTop: 8,
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.muted,
+  },
+  detailActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: space.md,
+  },
 });

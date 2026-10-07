@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useCallback, useState} from 'react';
 import {
   Alert,
   FlatList,
@@ -8,7 +8,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import {useNavigation} from '@react-navigation/native';
+import {useFocusEffect, useNavigation} from '@react-navigation/native';
 import Geolocation from 'react-native-geolocation-service';
 import {ArrowLeft, MapPin, Trash2} from 'lucide-react-native';
 import {AppButton, AppField, AppScreenHeader} from '@/ui/chrome';
@@ -31,6 +31,28 @@ export function AdminMarketsScreen() {
   const [lng, setLng] = useState('');
   const [cnpj, setCnpj] = useState('');
   const [busy, setBusy] = useState(false);
+  const [suggestions, setSuggestions] = useState<
+    Array<Record<string, unknown>>
+  >([]);
+
+  const loadSuggestions = useCallback(async () => {
+    if (!auth?.token) return;
+    try {
+      const list = await syncApi.adminListMarketSuggestions(
+        auth.token,
+        'pending',
+      );
+      setSuggestions(list);
+    } catch {
+      setSuggestions([]);
+    }
+  }, [auth?.token]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadSuggestions();
+    }, [loadSuggestions]),
+  );
 
   function resetForm() {
     setEditLocalId(null);
@@ -210,6 +232,70 @@ export function AdminMarketsScreen() {
         ) : null}
 
         <Text style={[styles.section, {marginTop: space.lg}]}>
+          Sugestões pendentes ({suggestions.length})
+        </Text>
+        {suggestions.length === 0 ? (
+          <Text style={styles.emptySug}>Nenhuma sugestão pendente.</Text>
+        ) : (
+          suggestions.map(s => (
+            <View key={String(s.id)} style={styles.sugCard}>
+              <Text style={styles.rowName} numberOfLines={2}>
+                {String(s.name ?? '')}
+              </Text>
+              <Text style={styles.rowMeta} numberOfLines={2}>
+                {String(s.kind ?? 'add')} · {Number(s.lat).toFixed(4)},{' '}
+                {Number(s.lng).toFixed(4)}
+                {s.note ? ` · ${String(s.note)}` : ''}
+              </Text>
+              <View style={styles.sugActions}>
+                <AppButton
+                  disabled={busy}
+                  label="Aprovar"
+                  onPress={async () => {
+                    if (!auth?.token) return;
+                    setBusy(true);
+                    try {
+                      await syncApi.adminResolveMarketSuggestion(
+                        auth.token,
+                        String(s.id),
+                        true,
+                      );
+                      await loadSuggestions();
+                      Alert.alert('Aprovado', 'Mercado publicado no mapa.');
+                    } catch (e) {
+                      Alert.alert('Erro', apiErrorMessage(e));
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                />
+                <AppButton
+                  disabled={busy}
+                  outlined
+                  label="Rejeitar"
+                  onPress={async () => {
+                    if (!auth?.token) return;
+                    setBusy(true);
+                    try {
+                      await syncApi.adminResolveMarketSuggestion(
+                        auth.token,
+                        String(s.id),
+                        false,
+                      );
+                      await loadSuggestions();
+                    } catch (e) {
+                      Alert.alert('Erro', apiErrorMessage(e));
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                />
+              </View>
+            </View>
+          ))
+        )}
+
+        <Text style={[styles.section, {marginTop: space.lg}]}>
           Mercados locais ({markets.length})
         </Text>
       </ScrollView>
@@ -268,4 +354,20 @@ const styles = StyleSheet.create({
   rowActive: {borderColor: colors.navy, borderWidth: 2},
   rowName: {fontWeight: '800', color: colors.navy, fontSize: 14},
   rowMeta: {color: colors.muted, fontWeight: '600', fontSize: 11, marginTop: 2},
+  emptySug: {
+    color: colors.muted,
+    fontWeight: '600',
+    fontSize: 12,
+    marginBottom: 8,
+  },
+  sugCard: {
+    backgroundColor: colors.white,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: space.sm,
+    marginBottom: 8,
+    gap: 6,
+  },
+  sugActions: {flexDirection: 'row', gap: 8},
 });

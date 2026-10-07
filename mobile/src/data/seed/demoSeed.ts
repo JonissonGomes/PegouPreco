@@ -239,6 +239,41 @@ export function runDemoSeed() {
     st.shopping_lists.push(list);
   }
 
+  const communitySuspect: {pi: number; mi: number; priceMul: number}[] = [
+    {pi: 1, mi: 4, priceMul: 1.18},
+    {pi: 4, mi: 6, priceMul: 0.88},
+    {pi: 7, mi: 2, priceMul: 1.06},
+    {pi: 20, mi: 7, priceMul: 1.12},
+  ];
+  for (const s of communitySuspect) {
+    const c = CATALOG[s.pi];
+    const market = markets[s.mi % markets.length];
+    const retail = Number((c.retail * s.priceMul).toFixed(2));
+    const at = new Date(now.getTime() - (2 + s.mi) * 3600000).toISOString();
+    st.price_logs.push({
+      id: nextId('price_logs'),
+      productId: products[s.pi].id,
+      marketId: market.id,
+      retailPrice: retail,
+      wholesalePrice:
+        c.wholesale == null
+          ? null
+          : Number((c.wholesale * s.priceMul).toFixed(2)),
+      minWholesaleQty: c.minQty,
+      source: 'manual',
+      capturedAt: at,
+      remoteId: null,
+      nfceKey: null,
+      confirmScore: 0,
+      rejectScore: 0,
+      trustLevel: 'suspect',
+      lastConfirmedAt: null,
+      contributorId: 'demo_community',
+      updatedAt: at,
+      synced: 0,
+    });
+  }
+
   prefs.setOnboardingDone(true);
   prefs.setActiveList('Compras de hoje', markets[0].id);
   prefs.setCurrentMarketId(markets[0].id);

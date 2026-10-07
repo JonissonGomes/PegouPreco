@@ -37,7 +37,8 @@ export function KeyboardSafeSheet({
       statusBarTranslucent>
       <KeyboardAvoidingView
         style={styles.root}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        // Em Android, `height` faz o sheet piscar ao mudar a lista de sugestões
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose}>
           <Animated.View style={[styles.backdrop, backdropStyle]} />

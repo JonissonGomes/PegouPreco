@@ -1,5 +1,8 @@
 import type {Market} from '@/data/types';
-import {haversineKm} from '@/data/remote/nearbyMarkets';
+import {
+  CONFIRM_AT_MARKET_KM,
+  haversineKm,
+} from '@/data/remote/nearbyMarkets';
 
 export type PriceBand = 'low' | 'fair' | 'high' | 'unknown';
 
@@ -7,6 +10,19 @@ export type RankedMarket = Market & {
   distanceKm: number | null;
   priceBand: PriceBand;
 };
+
+/** Mercado mais próximo se estiver dentro do limiar de confirmação in-loco. */
+export function pickConfirmCandidate(
+  markets: Market[],
+  origin: {lat: number; lng: number} | null,
+  maxKm = CONFIRM_AT_MARKET_KM,
+): RankedMarket | null {
+  if (!origin) return null;
+  const ranked = rankNearestMarkets(markets, origin, {limit: 1});
+  const top = ranked[0];
+  if (!top || top.distanceKm == null || top.distanceKm > maxKm) return null;
+  return top;
+}
 
 export function resolvePriceBand(market: Market): PriceBand {
   const raw = (market.priceLevel || '').toLowerCase();
