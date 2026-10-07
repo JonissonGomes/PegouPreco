@@ -1,0 +1,45 @@
+# Blueprint Render — PegouPreço sync_api
+# Dashboard → New → Blueprint → selecione este repositório.
+# Variáveis com sync: false devem ser preenchidas no painel (secrets).
+
+services:
+  - type: web
+    name: pegoupreco-api
+    runtime: node
+    plan: free
+    region: oregon
+    rootDir: sync_api
+    buildCommand: npm install && npm run build
+    startCommand: npm run start:dist
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGODB_DB
+        value: pegou_preco
+      - key: SKIP_EMAIL_VERIFICATION
+        value: "false"
+      - key: SKIP_SMS_VERIFICATION
+        value: "false"
+      - key: EXPOSE_OTP_IN_RESPONSE
+        value: "false"
+      # Secrets — definir no Render após o Blueprint
+      - key: MONGODB_URI
+        sync: false
+      - key: ADMIN_EMAILS
+        sync: false
+      - key: EMAIL_USER
+        sync: false
+      - key: EMAIL_PASS
+        sync: false
+      - key: EMAIL_LOGO_URL
+        sync: false
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_FROM_NUMBER
+        sync: false
+      - key: JEV_API_KEY
+        sync: false
