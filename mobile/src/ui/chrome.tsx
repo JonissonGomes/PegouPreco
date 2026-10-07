@@ -9,7 +9,7 @@ import {
   type TextInputProps,
   type ViewStyle,
 } from 'react-native';
-import {MapPin, TrendingDown} from 'lucide-react-native';
+import {MapPin} from 'lucide-react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {colors, spacing} from './theme';
 
@@ -123,35 +123,35 @@ export function AppCartTotalsBar({
   wholesaleLabel,
   savingsLabel,
   itemsLabel,
+  compact,
 }: {
   value: string;
   retailLabel?: string;
   wholesaleLabel?: string;
   savingsLabel: string;
   itemsLabel: string;
+  compact?: boolean;
 }) {
   return (
-    <View style={styles.navyTotals}>
-      <View style={{flex: 1}}>
-        <Text style={styles.navyTotalsLabel}>TOTAL DA COMPRA</Text>
-        <Text style={styles.navyTotalsValue}>{value}</Text>
-        {retailLabel || wholesaleLabel ? (
-          <View style={styles.navySplitRow}>
-            {retailLabel ? (
-              <Text style={styles.navySplit}>Varejo {retailLabel}</Text>
-            ) : null}
-            {wholesaleLabel ? (
-              <Text style={styles.navySplit}>Atacado {wholesaleLabel}</Text>
-            ) : null}
-          </View>
-        ) : null}
-      </View>
-      <View style={styles.navyTotalsRight}>
-        <View style={styles.pill}>
-          <TrendingDown size={14} color={colors.navy} />
-          <Text style={styles.pillText}>{savingsLabel}</Text>
-        </View>
-        <Text style={styles.navyItems}>{itemsLabel}</Text>
+    <View style={[styles.navyTotals, compact && styles.navyTotalsCompact]}>
+      <View style={{flex: 1, minWidth: 0}}>
+        <Text style={styles.navyTotalsLabel}>TOTAL · {itemsLabel}</Text>
+        <Text
+          style={[
+            styles.navyTotalsValue,
+            compact && styles.navyTotalsValueCompact,
+          ]}>
+          {value}
+        </Text>
+        <Text style={styles.navySplit} numberOfLines={1}>
+          {[
+            retailLabel ? `Varejo ${retailLabel}` : null,
+            wholesaleLabel ? `Atacado ${wholesaleLabel}` : null,
+            savingsLabel,
+          ]
+            .filter(Boolean)
+            .join(' · ')}
+        </Text>
       </View>
     </View>
   );
@@ -312,6 +312,14 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.4,
     flexShrink: 1,
+  },
+  navyTotalsCompact: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+  },
+  navyTotalsValueCompact: {
+    fontSize: 22,
+    lineHeight: 26,
   },
   navyTotals: {
     backgroundColor: colors.navy,

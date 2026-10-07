@@ -10,6 +10,7 @@ type Props = {
   onDelete?: () => void;
   editLabel?: string;
   deleteLabel?: string;
+  dense?: boolean;
 };
 
 export function SwipeableActions({
@@ -18,6 +19,7 @@ export function SwipeableActions({
   onDelete,
   editLabel = 'Editar',
   deleteLabel = 'Excluir',
+  dense,
 }: Props) {
   const ref = useRef<Swipeable>(null);
 
@@ -65,7 +67,7 @@ export function SwipeableActions({
       overshootRight={false}
       rightThreshold={40}
       renderRightActions={renderRight}
-      containerStyle={styles.wrap}>
+      containerStyle={[styles.wrap, dense && styles.wrapDense]}>
       {children}
     </Swipeable>
   );
@@ -73,6 +75,7 @@ export function SwipeableActions({
 
 const styles = StyleSheet.create({
   wrap: {marginBottom: 12, overflow: 'hidden', borderRadius: radii.md},
+  wrapDense: {marginBottom: 6, borderRadius: radii.sm},
   actions: {
     flexDirection: 'row',
     width: 152,
