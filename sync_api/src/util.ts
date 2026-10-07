@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import type {Response} from 'express';
+import {config} from './config.js';
 
 export function sha256(value: string): string {
   return crypto.createHash('sha256').update(value, 'utf8').digest('hex');
@@ -24,6 +25,17 @@ export function sendError(res: Response, status: number, message: string) {
   return res.status(status).json({error: message});
 }
 
+export function resolveRole(
+  user: Record<string, unknown>,
+): 'admin' | 'user' {
+  if (user.role === 'admin') return 'admin';
+  const email = String(user.email ?? '')
+    .trim()
+    .toLowerCase();
+  if (email && config.adminEmails.includes(email)) return 'admin';
+  return 'user';
+}
+
 export function publicUser(
   user: Record<string, unknown>,
   token?: string,
@@ -38,5 +50,6 @@ export function publicUser(
     phoneVerified: user.phoneVerified === true,
     uf: user.uf,
     city: user.city,
+    role: resolveRole(user),
   };
 }

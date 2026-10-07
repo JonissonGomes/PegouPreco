@@ -16,7 +16,7 @@ import {MAPBOX_ACCESS_TOKEN} from '@/config/env';
 import {refreshPermissionFlags} from '@/app/permissions';
 import {AppScreenHeader, AppScreenNavyBar} from '@/ui/chrome';
 import {MarketPinSheet} from '@/ui/MarketPinSheet';
-import {colors, space} from '@/ui/theme';
+import {colors, space, spacing} from '@/ui/theme';
 import {formatDistanceKm} from '@/domain/marketUi';
 import {marketRepo, prefs, useAppStore} from '@/store/appStore';
 import {syncApi} from '@/data/remote/syncApi';
@@ -317,6 +317,16 @@ export function MapScreen() {
   const discoverAround = async (point: GeoPoint) => {
     setDiscovering(true);
     setStatus('Buscando mercados próximos…');
+    // Mostra pins locais imediatamente enquanto OSM/Mapbox respondem.
+    const local = filterMarketsInRadius(
+      markets,
+      {lat: point.latitude, lng: point.longitude},
+      NEARBY_RADIUS_KM,
+    );
+    if (local.length) {
+      setPinIds(local.map(m => m.id));
+      setStatus(`${local.length} salvos · buscando mais…`);
+    }
     try {
       const hits = await discoverNearbyMarkets(
         point.latitude,
@@ -325,17 +335,23 @@ export function MapScreen() {
         MAPBOX_ACCESS_TOKEN,
       );
       const ids = ingestHits(hits);
-      // API remota só enriquece nota/preço dos pontos já descobertos
-      await loadRemote(point, ids);
-      setPinIds(ids);
+      setPinIds(ids.length ? ids : local.map(m => m.id));
       refresh();
       setStatus(
         hits.length
           ? `${hits.length} mercados nesta localidade`
-          : 'Nenhum mercado próximo encontrado',
+          : local.length
+            ? `${local.length} mercados salvos próximos`
+            : 'Nenhum mercado próximo encontrado',
       );
+      // API remota só enriquece nota/preço dos pontos já descobertos
+      void loadRemote(point, ids.length ? ids : local.map(m => m.id));
     } catch {
-      setStatus('Falha ao buscar mercados próximos');
+      setStatus(
+        local.length
+          ? `${local.length} mercados salvos próximos`
+          : 'Falha ao buscar mercados próximos',
+      );
     } finally {
       setDiscovering(false);
     }
@@ -465,7 +481,7 @@ export function MapScreen() {
   };
 
   return (
-    <View style={styles.root}>
+    <View style={[styles.root, {paddingBottom: spacing.bottomNavClearance}]}>
       <AppScreenHeader
         title="Mapa"
         subtitle={

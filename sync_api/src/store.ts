@@ -1,7 +1,8 @@
 import {Db, Collection, MongoClient} from 'mongodb';
 import {v4 as uuidv4} from 'uuid';
+import {config} from './config.js';
 import {JevClient} from './jev.js';
-import {sha256} from './util.js';
+import {resolveRole, sha256} from './util.js';
 
 type MemMap = Record<string, Record<string, unknown>>;
 
@@ -94,6 +95,11 @@ export class DataStore {
     const id = uuidv4();
     const token = uuidv4();
     const now = new Date();
+    const role = config.adminEmails.includes(
+      String(args.email).trim().toLowerCase(),
+    )
+      ? 'admin'
+      : 'user';
     const doc: Record<string, unknown> = {
       id,
       email: args.email,
@@ -104,6 +110,7 @@ export class DataStore {
       city: args.city,
       emailVerified: args.emailVerified,
       phoneVerified: args.phoneVerified ?? false,
+      role,
       verificationCodeHash: args.verificationCodeHash,
       verificationExpiresAt: new Date(now.getTime() + 15 * 60 * 1000).toISOString(),
       token,
@@ -179,6 +186,7 @@ export class DataStore {
       phoneVerified: user.phoneVerified === true,
       uf: user.uf,
       city: user.city,
+      role: resolveRole(user),
     };
   }
 
@@ -1154,5 +1162,70 @@ export class DataStore {
       rejectScore: log.rejectScore ?? 0,
       lastConfirmedAt: log.lastConfirmedAt,
     };
+  }
+
+  async adminListMarkets(): Promise<Record<string, unknown>[]> {
+    this.ensureDemoMarkets();
+    if (this.mode === 'memory') {
+      return Object.values(this._memMarkets).sort((a, b) =>
+        String(a.name ?? '').localeCompare(String(b.name ?? ''), 'pt-BR'),
+      );
+    }
+    return (await this.col('markets')
+      .find()
+      .sort({name: 1})
+      .toArray()) as Record<string, unknown>[];
+  }
+
+  async adminUpsertMarket(body: {
+    id?: string | null;
+    name: string;
+    lat: number;
+    lng: number;
+    address?: string | null;
+    cnpj?: string | null;
+    city?: string | null;
+    uf?: string | null;
+  }): Promise<Record<string, unknown>> {
+    const now = new Date().toISOString();
+    const id = body.id?.trim() || uuidv4();
+    let existing: Record<string, unknown> | null = null;
+    if (this.mode === 'memory') {
+      existing = this._memMarkets[id] ?? null;
+    } else {
+      existing = (await this.col('markets').findOne({id})) as Record<
+        string,
+        unknown
+      > | null;
+    }
+    const doc: Record<string, unknown> = {
+      ...(existing ?? {}),
+      id,
+      name: body.name.trim(),
+      lat: body.lat,
+      lng: body.lng,
+      address: body.address ?? existing?.address ?? null,
+      cnpj: body.cnpj ?? existing?.cnpj ?? null,
+      city: body.city ?? existing?.city ?? null,
+      uf: body.uf ?? existing?.uf ?? null,
+      updatedAt: now,
+      synced: 1,
+    };
+    if (this.mode === 'memory') {
+      this._memMarkets[id] = doc;
+      return doc;
+    }
+    await this.col('markets').replaceOne({id}, doc, {upsert: true});
+    return doc;
+  }
+
+  async adminDeleteMarket(id: string): Promise<boolean> {
+    if (this.mode === 'memory') {
+      if (!this._memMarkets[id]) return false;
+      delete this._memMarkets[id];
+      return true;
+    }
+    const r = await this.col('markets').deleteOne({id});
+    return r.deletedCount > 0;
   }
 }

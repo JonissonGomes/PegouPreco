@@ -28,6 +28,7 @@ import {CommunityScreen} from '@/features/community/CommunityScreen';
 import {InsightsScreen} from '@/features/insights/InsightsScreen';
 import {ProductDetailScreen} from '@/features/insights/ProductDetailScreen';
 import {ProfileScreen} from '@/features/profile/ProfileScreen';
+import {AdminMarketsScreen} from '@/features/admin/AdminMarketsScreen';
 import {HistoryScreen} from '@/features/history/HistoryScreen';
 import {OnboardingScreen} from '@/features/onboarding/OnboardingScreen';
 import {BrandLogo} from '@/ui/chrome';
@@ -121,6 +122,16 @@ function Tabs() {
           tabBarIcon: ({color}) => <UserRound size={20} color={color} />,
         }}
       />
+      {/* Mantém a tab bar visível ao abrir o mapa; sem slot no layout da barra. */}
+      <Tab.Screen
+        name="Map"
+        component={MapScreen}
+        options={{
+          title: 'Mapa',
+          tabBarButton: () => null,
+          tabBarItemStyle: {display: 'none'},
+        }}
+      />
     </Tab.Navigator>
   );
 }
@@ -158,8 +169,8 @@ export function RootNavigation() {
             <Stack.Screen name="ShoppingLists" component={ShoppingListsScreen} />
             <Stack.Screen name="History" component={HistoryScreen} />
             <Stack.Screen name="ProductDetail" component={ProductDetailScreen} />
-            <Stack.Screen name="Map" component={MapScreen} />
             <Stack.Screen name="Insights" component={InsightsScreen} />
+            <Stack.Screen name="AdminMarkets" component={AdminMarketsScreen} />
           </>
         )}
       </Stack.Navigator>

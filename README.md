@@ -44,19 +44,16 @@ No Windows, o primeiro build New Arch pode exigir Ninja ≥ 1.12 (o `make run` /
 ```env
 # Mesmo valor de REACT_APP_MAPBOX_ACCESS_TOKEN do ResenhaFC
 MAPBOX_ACCESS_TOKEN=
-SYNC_API_BASE=http://10.0.2.2:8080
+# Emulador: http://10.0.2.2:8080
+# Device USB: http://127.0.0.1:8080  (make api / make run fazem adb reverse)
+SYNC_API_BASE=http://127.0.0.1:8080
 SEED_DEMO=false
 CLEAR_SEED_DEMO=false
 ```
 
-`react-native-config` embute o `.env` no build nativo: depois de alterar o token, rode `make run` (ou reinstale o APK). Só reiniciar o Metro não atualiza.
+`react-native-config` embute o `.env` no build nativo: depois de alterar `SYNC_API_BASE` ou o token, rode `make run` (ou reinstale o APK). Só reiniciar o Metro não atualiza.
 
-Em dispositivo físico na mesma rede:
-
-```env
-SYNC_API_BASE=http://SEU_IP_LAN:8080
-```
-
+**Importante:** `10.0.2.2` só funciona no emulador. Em celular USB use `127.0.0.1:8080` + `adb reverse tcp:8080 tcp:8080` (já feito por `make api` / `make run`). Na mesma Wi‑Fi, use o IP LAN do PC.
 ## sync_api
 
 ```bash
@@ -65,6 +62,14 @@ cp .env.example .env
 npm install
 npm start
 ```
+
+Admin (CRUD de supermercados no app): no `sync_api/.env` defina
+
+```env
+ADMIN_EMAILS=seu@email.com
+```
+
+Contas com esse e-mail recebem `role=admin` no login e veem **Admin · Mercados** no Perfil.
 
 ## Módulos
 

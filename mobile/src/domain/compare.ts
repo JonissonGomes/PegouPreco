@@ -21,7 +21,7 @@ const COMMUNITY_TRUST: TrustLevel[] = ['verified'];
 
 /** Preços elegíveis ao comparador comunitário. */
 export function isCommunityPrice(log: PriceLog, now = new Date()): boolean {
-  // Seed demo não entra no ranking comunitário
+  // Logs internos seed_* ficam fora; demo usa contributorId demo_community
   if ((log.contributorId ?? '').startsWith('seed')) return false;
   if (log.trustLevel === 'hidden') return false;
   if (log.trustLevel === 'verified') return true;

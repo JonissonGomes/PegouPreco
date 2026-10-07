@@ -1,16 +1,13 @@
 import React, {useCallback, useEffect, useMemo, useState} from 'react';
-import {FlatList, StyleSheet, Text, View} from 'react-native';
+import {FlatList, Pressable, StyleSheet, Text, View} from 'react-native';
 import {useNavigation} from '@react-navigation/native';
 import {Star} from 'lucide-react-native';
-import {AppButton, AppScreenHeader, AppScreenNavyBar} from '@/ui/chrome';
+import {AppScreenHeader} from '@/ui/chrome';
 import {
   EmptyState,
-  FiscalBadge,
-  MissionHero,
   PriceTrustBadge,
   ScoreMeter,
   Screen,
-  SectionHeader,
   VoteButtons,
   XpBurst,
 } from '@/ui/components';
@@ -164,7 +161,6 @@ export function CommunityScreen() {
         setBusyId(null);
       }
     },
-    // needAccount usa nav estável da tela
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [auth, refresh, level, nav],
   );
@@ -206,64 +202,57 @@ export function CommunityScreen() {
 
   const region =
     [loc.neighborhood, loc.city].filter(Boolean).join(', ') ||
-    'Valide preços da região';
+    'Sua região';
+
+  const missionCta = canContribute(auth)
+    ? pending > 0
+      ? 'Confirme ou rejeite para ganhar XP'
+      : 'Capture preços para gerar missões'
+    : 'Verifique o e-mail no Perfil';
 
   return (
     <Screen>
       <AppScreenHeader
+        showLogo={false}
         stacked
-        title="Missões da comunidade"
+        title="Comunidade"
         subtitle={region}
       />
-      <AppScreenNavyBar
-        value={String(pending)}
-        label="preços na fila"
-        trailing={
-          <View style={styles.pill}>
-            <Text style={styles.pillText}>
-              Fiscal {TrustEngine.fiscalLabel(level)} · {rep?.points ?? 0} pts
-            </Text>
-          </View>
-        }
-      />
 
-      <MissionHero
-        badge={<FiscalBadge level={level} points={rep?.points ?? 0} />}
-        title={
-          pending > 0
-            ? `${pending} missões esperando você`
-            : 'Fila limpa — bom trabalho!'
-        }
-        subtitle="Confirme ou rejeite preços suspeitos e ganhe pontos de Fiscal. Avalie mercados para subir de nível."
-        footer={
-          canContribute(auth)
-            ? 'Conta verificada · votos valem XP'
-            : 'Verifique o e-mail no Perfil para liberar missões'
-        }
-      />
+      <View style={styles.missionStrip}>
+        <View style={styles.stripLeft}>
+          <Text style={styles.stripCount}>{pending}</Text>
+          <Text style={styles.stripLabel}>pendentes</Text>
+        </View>
+        <View style={styles.levelPill}>
+          <Text style={styles.levelPillText}>
+            {TrustEngine.fiscalLabel(level)} · {rep?.points ?? 0} pts
+          </Text>
+        </View>
+        <Text style={styles.stripCta} numberOfLines={1}>
+          {missionCta}
+        </Text>
+      </View>
 
-      <SectionHeader title="Preços para validar" />
       <FlatList
         data={feed}
         keyExtractor={i => String(i.log.id)}
         contentContainerStyle={styles.list}
+        ListHeaderComponent={
+          <Text style={styles.listHeading}>Preços para validar</Text>
+        }
         ListEmptyComponent={
           <EmptyState
-            title="Nada na fila"
-            message="Quando alguém capturar um preço suspeito na sua região, a missão aparece aqui."
+            title="Tudo certo por aqui"
+            message="Quando surgir um preço suspeito na região, a missão aparece nesta lista."
           />
         }
         renderItem={({item}) => {
           const suspect = item.log.trustLevel === 'suspect';
           return (
             <View style={[styles.card, suspect && styles.cardQuest]}>
-              <View style={styles.cardTop}>
+              <View style={styles.cardHead}>
                 <View style={{flex: 1, minWidth: 0}}>
-                  {suspect ? (
-                    <View style={styles.questTag}>
-                      <Text style={styles.questTagText}>Missão</Text>
-                    </View>
-                  ) : null}
                   <Text style={styles.name} numberOfLines={2}>
                     {item.productName}
                   </Text>
@@ -271,48 +260,42 @@ export function CommunityScreen() {
                     {item.marketName}
                   </Text>
                 </View>
-                <PriceTrustBadge level={item.log.trustLevel} />
+                {suspect ? (
+                  <View style={styles.questTag}>
+                    <Text style={styles.questTagText}>Missão</Text>
+                  </View>
+                ) : (
+                  <PriceTrustBadge level={item.log.trustLevel} />
+                )}
               </View>
 
               <Text style={styles.price}>
                 {formatBrl(item.log.retailPrice)}
               </Text>
-              <ScoreMeter
-                confirm={item.log.confirmScore}
-                reject={item.log.rejectScore}
-              />
-              <Text style={styles.source}>
-                fonte {item.log.source} · peso comunitário
-              </Text>
 
               {suspect ? (
-                <VoteButtons
-                  busy={busyId === item.log.id}
-                  confirmPts={TrustEngine.pointsForVote('confirm', false)}
-                  rejectPts={TrustEngine.pointsForVote('reject', false)}
-                  onConfirm={() => vote(item, 'confirm')}
-                  onReject={() => vote(item, 'reject')}
-                />
+                <>
+                  <ScoreMeter
+                    confirm={item.log.confirmScore}
+                    reject={item.log.rejectScore}
+                  />
+                  <VoteButtons
+                    busy={busyId === item.log.id}
+                    confirmPts={TrustEngine.pointsForVote('confirm', false)}
+                    rejectPts={TrustEngine.pointsForVote('reject', false)}
+                    onConfirm={() => vote(item, 'confirm')}
+                    onReject={() => vote(item, 'reject')}
+                  />
+                </>
               ) : null}
 
               {item.log.marketId != null ? (
-                <View style={styles.reviewWrap}>
-                  <AppButton
-                    accent
-                    icon={
-                      <Star
-                        size={18}
-                        color={colors.navy}
-                        fill={colors.navy}
-                      />
-                    }
-                    label="Avaliar mercado · +5 pts"
-                    onPress={() => setReviewMarketId(item.log.marketId)}
-                  />
-                  <Text style={styles.reviewHint} numberOfLines={1}>
-                    {item.marketName}
-                  </Text>
-                </View>
+                <Pressable
+                  style={styles.reviewBtn}
+                  onPress={() => setReviewMarketId(item.log.marketId)}>
+                  <Star size={16} color={colors.navy} fill={colors.navy} />
+                  <Text style={styles.reviewBtnText}>Avaliar · +5 pts</Text>
+                </Pressable>
               ) : null}
             </View>
           );
@@ -338,47 +321,83 @@ export function CommunityScreen() {
 }
 
 const styles = StyleSheet.create({
-  pill: {
-    backgroundColor: colors.yellowBright,
+  missionStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginHorizontal: space.md,
+    marginBottom: space.sm,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    backgroundColor: colors.navy,
+    borderRadius: radii.md,
+  },
+  stripLeft: {alignItems: 'center', minWidth: 44},
+  stripCount: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: colors.yellow,
+    lineHeight: 22,
+  },
+  stripLabel: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: colors.cyan,
+    textTransform: 'uppercase',
+  },
+  levelPill: {
+    backgroundColor: colors.yellow,
     borderRadius: radii.pill,
     paddingHorizontal: 8,
     paddingVertical: 4,
   },
-  pillText: {color: colors.navy, fontWeight: '800', fontSize: 11},
+  levelPillText: {color: colors.navy, fontWeight: '800', fontSize: 10},
+  stripCta: {
+    flex: 1,
+    color: colors.white,
+    fontWeight: '700',
+    fontSize: 11,
+  },
+  listHeading: {
+    fontWeight: '800',
+    fontSize: 15,
+    color: colors.navy,
+    marginBottom: space.sm,
+  },
   list: {padding: space.md, paddingBottom: 120},
   card: {
-    backgroundColor: '#fff',
-    borderRadius: radii.lg,
+    backgroundColor: colors.white,
+    borderRadius: radii.md,
     borderWidth: 1,
     borderColor: colors.border,
-    padding: space.md,
+    padding: space.sm,
     marginBottom: space.sm,
-    gap: 4,
+    gap: 6,
   },
   cardQuest: {
     borderColor: colors.navy,
-    borderWidth: 1.5,
     backgroundColor: '#FFFEF5',
   },
-  cardTop: {flexDirection: 'row', alignItems: 'flex-start', gap: 8},
+  cardHead: {flexDirection: 'row', alignItems: 'flex-start', gap: 8},
   questTag: {
-    alignSelf: 'flex-start',
-    backgroundColor: colors.yellowBright,
+    backgroundColor: colors.yellow,
     borderRadius: radii.pill,
     paddingHorizontal: 8,
-    paddingVertical: 2,
-    marginBottom: 4,
+    paddingVertical: 3,
   },
-  questTagText: {fontSize: 10, fontWeight: '900', color: colors.navy},
-  name: {fontWeight: '800', color: colors.navy, fontSize: 15},
-  meta: {color: colors.muted, fontWeight: '600', fontSize: 12, marginTop: 2},
-  price: {fontWeight: '900', color: colors.ink, fontSize: 22, marginTop: 6},
-  source: {color: colors.muted, fontWeight: '600', fontSize: 11, marginTop: 2},
-  reviewWrap: {marginTop: 12, gap: 4},
-  reviewHint: {
-    textAlign: 'center',
-    fontSize: 11,
-    fontWeight: '700',
-    color: colors.muted,
+  questTagText: {fontSize: 9, fontWeight: '900', color: colors.navy},
+  name: {fontWeight: '800', color: colors.navy, fontSize: 14},
+  meta: {color: colors.muted, fontWeight: '600', fontSize: 11},
+  price: {fontWeight: '900', color: colors.ink, fontSize: 24},
+  reviewBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    marginTop: 4,
   },
+  reviewBtnText: {fontWeight: '800', color: colors.navy, fontSize: 12},
 });

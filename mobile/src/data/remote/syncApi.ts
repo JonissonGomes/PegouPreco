@@ -22,9 +22,25 @@ export type AuthResponse = {
   phoneVerified?: boolean;
   needsVerification?: boolean;
   otpChannel?: 'email' | 'phone';
+  role?: 'user' | 'admin';
   devCode?: string;
   hint?: string;
   ok?: boolean;
+};
+
+export type AdminMarketBody = {
+  id?: string;
+  name: string;
+  lat: number;
+  lng: number;
+  address?: string | null;
+  cnpj?: string | null;
+  city?: string | null;
+};
+
+export type AdminMarketRemote = AdminMarketBody & {
+  id: string;
+  updatedAt?: string;
 };
 
 export type UserPrefsRemote = {
@@ -146,4 +162,16 @@ export const syncApi = {
     },
   ) =>
     client.post('/votes/check', body, {headers: auth(token)}).then(r => r.data),
+  adminListMarkets: (token: string) =>
+    client
+      .get<AdminMarketRemote[]>('/admin/markets', {headers: auth(token)})
+      .then(r => r.data),
+  adminUpsertMarket: (token: string, body: AdminMarketBody) =>
+    client
+      .post<AdminMarketRemote>('/admin/markets', body, {headers: auth(token)})
+      .then(r => r.data),
+  adminDeleteMarket: (token: string, id: string) =>
+    client
+      .delete(`/admin/markets/${id}`, {headers: auth(token)})
+      .then(r => r.data),
 };

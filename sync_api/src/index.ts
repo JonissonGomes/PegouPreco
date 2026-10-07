@@ -15,7 +15,7 @@ async function main() {
   app.use(express.json());
   app.use(createRouter(store));
 
-  app.listen(config.port, () => {
+  app.listen(config.port, '0.0.0.0', () => {
     console.log(
       `PegouPreço sync_api em http://0.0.0.0:${config.port} · store=${store.mode}`,
     );

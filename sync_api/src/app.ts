@@ -10,7 +10,19 @@ import {
   sha256,
   sendError,
   publicUser,
+  resolveRole,
 } from './util.js';
+
+async function requireAdmin(
+  req: Request,
+  store: DataStore,
+): Promise<{userId: string; user: Record<string, unknown>} | null> {
+  const userId = await auth(req, store);
+  if (!userId) return null;
+  const user = await store.findUserById(userId);
+  if (!user || resolveRole(user) !== 'admin') return null;
+  return {userId, user};
+}
 
 async function auth(req: Request, store: DataStore): Promise<string | null> {
   const header = req.headers.authorization;
@@ -467,6 +479,44 @@ export function createRouter(store: DataStore): Router {
     const city = req.query.city as string | undefined;
     const result = await store.communityPrices({productName, city});
     return res.json({prices: result});
+  });
+
+  router.get('/admin/markets', async (req, res) => {
+    const admin = await requireAdmin(req, store);
+    if (!admin) return sendError(res, 403, 'admin only');
+    const markets = await store.adminListMarkets();
+    return res.json(markets);
+  });
+
+  router.post('/admin/markets', async (req, res) => {
+    const admin = await requireAdmin(req, store);
+    if (!admin) return sendError(res, 403, 'admin only');
+    const body = req.body as Record<string, unknown>;
+    const name = String(body.name ?? '').trim();
+    const lat = Number(body.lat);
+    const lng = Number(body.lng);
+    if (!name || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return sendError(res, 400, 'name/lat/lng obrigatórios');
+    }
+    const market = await store.adminUpsertMarket({
+      id: body.id != null ? String(body.id) : null,
+      name,
+      lat,
+      lng,
+      address: body.address != null ? String(body.address) : null,
+      cnpj: body.cnpj != null ? String(body.cnpj) : null,
+      city: body.city != null ? String(body.city) : null,
+      uf: body.uf != null ? String(body.uf) : null,
+    });
+    return res.json(market);
+  });
+
+  router.delete('/admin/markets/:id', async (req, res) => {
+    const admin = await requireAdmin(req, store);
+    if (!admin) return sendError(res, 403, 'admin only');
+    const ok = await store.adminDeleteMarket(req.params.id);
+    if (!ok) return sendError(res, 404, 'mercado não encontrado');
+    return res.json({ok: true});
   });
 
   store.attachJev(jev);

@@ -8,6 +8,14 @@ function flag(value: string | undefined): boolean {
   return v === 'true' || v === '1' || v === 'yes';
 }
 
+function emailList(value: string | undefined): string[] {
+  if (!value) return [];
+  return value
+    .split(',')
+    .map(s => s.trim().toLowerCase())
+    .filter(Boolean);
+}
+
 export const config = {
   port: Number.parseInt(process.env.PORT ?? '8080', 10) || 8080,
   mongoUri: process.env.MONGODB_URI ?? process.env.MONGO_URI ?? '',
@@ -22,4 +30,6 @@ export const config = {
   twilioToken: process.env.TWILIO_AUTH_TOKEN ?? '',
   twilioFrom: process.env.TWILIO_FROM_NUMBER ?? '',
   jevApiKey: process.env.JEV_API_KEY ?? '',
+  /** E-mails com role admin (CRUD de mercados). Separados por vírgula. */
+  adminEmails: emailList(process.env.ADMIN_EMAILS),
 };

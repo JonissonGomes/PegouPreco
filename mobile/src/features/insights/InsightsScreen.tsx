@@ -87,6 +87,16 @@ export function InsightsScreen() {
   const cheapF = cheap.filter(
     r => match(r.product.name) || match(r.marketName ?? ''),
   );
+  const cheapByCat = useMemo(() => {
+    const map = new Map<string, typeof cheapF>();
+    for (const r of cheapF) {
+      const cat = r.product.category?.trim() || 'Outros';
+      const arr = map.get(cat) ?? [];
+      arr.push(r);
+      map.set(cat, arr);
+    }
+    return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0], 'pt-BR'));
+  }, [cheapF]);
   const oppsF = opps.filter(o => match(o.product.name));
   const listsF = lists.filter(
     l => match(l.name) || match(l.marketName ?? ''),
@@ -119,6 +129,23 @@ export function InsightsScreen() {
   }
   data.push({type: 'section', key: 'cheap-h', payload: {title: 'Preço mais baixo', trailing: `${cheapF.length} itens`}});
   cheapF.forEach(r => data.push({type: 'cheap', key: `c-${r.product.id}`, payload: r}));
+  if (cheapByCat.length) {
+    data.push({
+      type: 'section',
+      key: 'bycat-h',
+      payload: {title: 'Por categoria', trailing: `${cheapByCat.length} grupos`},
+    });
+    for (const [cat, items] of cheapByCat) {
+      data.push({
+        type: 'cat-section',
+        key: `bycat-${cat}`,
+        payload: {title: cat, trailing: String(items.length)},
+      });
+      items.forEach(r =>
+        data.push({type: 'cheap', key: `bc-${cat}-${r.product.id}`, payload: r}),
+      );
+    }
+  }
   data.push({type: 'section', key: 'opp-h', payload: {title: 'Acima da sua média', trailing: String(oppsF.length)}});
   oppsF.forEach(o => data.push({type: 'opp', key: `o-${o.product.id}`, payload: o}));
   data.push({type: 'section', key: 'list-h', payload: {title: 'Listas passadas', trailing: String(listsF.length)}});
@@ -127,6 +154,7 @@ export function InsightsScreen() {
   return (
     <View style={styles.root}>
       <AppScreenHeader
+        showLogo={false}
         title="Insights"
         subtitle={marketName || 'Preços e alertas'}
         actions={
@@ -168,10 +196,13 @@ export function InsightsScreen() {
         keyExtractor={i => i.key}
         contentContainerStyle={{padding: 16, paddingBottom: 100}}
         renderItem={({item}) => {
-          if (item.type === 'section') {
+          if (item.type === 'section' || item.type === 'cat-section') {
+            const isCat = item.type === 'cat-section';
             return (
-              <View style={styles.sectionRow}>
-                <Text style={styles.section}>{item.payload.title}</Text>
+              <View style={[styles.sectionRow, isCat && styles.catSectionRow]}>
+                <Text style={[styles.section, isCat && styles.catSection]}>
+                  {item.payload.title}
+                </Text>
                 <View style={styles.sectionPill}>
                   <Text style={styles.sectionPillText}>
                     {item.payload.trailing}
@@ -343,6 +374,8 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   section: {fontWeight: '800', color: colors.navy, fontSize: 15},
+  catSectionRow: {marginTop: 4, marginLeft: 4},
+  catSection: {fontSize: 13, fontWeight: '700', color: colors.muted},
   sectionPill: {
     backgroundColor: colors.yellowBright,
     borderRadius: radii.pill,

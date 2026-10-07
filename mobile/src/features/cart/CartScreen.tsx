@@ -1,6 +1,7 @@
-import React, {useCallback, useEffect, useMemo, useState} from 'react';
+import React, {useEffect, useMemo, useState} from 'react';
 import {
   LayoutAnimation,
+  Modal,
   Platform,
   Pressable,
   StyleSheet,
@@ -9,12 +10,13 @@ import {
   View,
 } from 'react-native';
 import {FlatList} from 'react-native-gesture-handler';
-import {useFocusEffect, useNavigation} from '@react-navigation/native';
+import {useNavigation} from '@react-navigation/native';
 import Geolocation from 'react-native-geolocation-service';
 import {
   Check,
   ClipboardList,
   History,
+  Menu,
   RefreshCw,
   ScanLine,
   Trash2,
@@ -65,11 +67,10 @@ export function CartScreen() {
   const activeListName = useAppStore(s => s.activeListName);
   const activeMarketId = useAppStore(s => s.activeMarketId);
   const markets = useAppStore(s => s.markets);
-  const navVisible = useAppStore(s => s.bottomNavVisible);
-  const setNavVisible = useAppStore(s => s.setNavVisible);
   const marketName = useMarketName(activeMarketId);
   const [editItem, setEditItem] = useState<CartItem | null>(null);
   const [startOpen, setStartOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [listName, setListName] = useState('Compras de hoje');
   const [marketQuery, setMarketQuery] = useState('');
   const [origin, setOrigin] = useState<{lat: number; lng: number} | null>(
@@ -79,7 +80,7 @@ export function CartScreen() {
 
   const totals = useMemo(() => cartRepo.computeTotals(cart), [cart]);
   const selectedCount = totals.checkedCount;
-  const bottomPad = navVisible ? spacing.bottomNavClearance : 16;
+  const bottomPad = spacing.bottomNavClearance;
 
   const goCapture = () => {
     if (!activeListName || !activeMarketId) {
@@ -89,12 +90,10 @@ export function CartScreen() {
     nav.navigate('Capture');
   };
 
-  useFocusEffect(
-    useCallback(() => {
-      setNavVisible(true);
-      return () => setNavVisible(true);
-    }, [setNavVisible]),
-  );
+  const runMenuAction = (action: () => void) => {
+    setMenuOpen(false);
+    action();
+  };
 
   useEffect(() => {
     if (!startOpen) return;
@@ -134,63 +133,90 @@ export function CartScreen() {
   return (
     <View style={styles.root}>
       <AppScreenHeader
-        stacked
-        title={activeListName || 'Nova lista'}
+        showLogo={false}
+        title={activeListName || 'Lista de compras'}
         subtitle={
           activeListName
             ? marketName || 'Mercado não definido'
             : 'Inicie uma lista para capturar'
         }
         actions={
-          <View style={styles.headerActions}>
-            <Pressable
-              onPress={goCapture}
-              style={styles.headerIcon}
-              accessibilityLabel="Escanear item">
-              <ScanLine color={colors.navy} size={20} />
-            </Pressable>
-            <Pressable
-              onPress={() => nav.navigate('ShoppingLists')}
-              style={styles.headerIcon}
-              accessibilityLabel="Listas salvas">
-              <ClipboardList color={colors.navy} size={20} />
-            </Pressable>
-            <Pressable
-              onPress={() => nav.navigate('History')}
-              style={styles.headerIcon}
-              accessibilityLabel="Histórico">
-              <History color={colors.navy} size={20} />
-            </Pressable>
-            <Pressable
-              onPress={async () => {
-                const r = await runFullSync();
-                appAlert(r.ok ? 'Sync' : 'Falha', r.message);
-              }}
-              style={styles.headerIcon}
-              accessibilityLabel="Sincronizar">
-              <RefreshCw color={colors.navy} size={20} />
-            </Pressable>
-            <Pressable
-              onPress={() =>
-                appAlert('Limpar carrinho?', 'Todos os itens serão removidos.', [
-                  {label: 'Cancelar', style: 'cancel'},
-                  {
-                    label: 'Limpar',
-                    style: 'destructive',
-                    onPress: () => {
-                      cartRepo.clear();
-                      refresh();
-                    },
-                  },
-                ])
-              }
-              style={styles.headerIcon}
-              accessibilityLabel="Limpar lista">
-              <Trash2 color={colors.navy} size={20} />
-            </Pressable>
-          </View>
+          <Pressable
+            onPress={() => setMenuOpen(true)}
+            style={styles.headerIcon}
+            accessibilityLabel="Menu da lista">
+            <Menu color={colors.navy} size={22} />
+          </Pressable>
         }
       />
+      <Modal
+        visible={menuOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMenuOpen(false)}>
+        <Pressable style={styles.menuBackdrop} onPress={() => setMenuOpen(false)}>
+          <View style={styles.menuCard}>
+            <Text style={styles.menuTitle}>Ações</Text>
+            <Pressable
+              style={styles.menuItem}
+              onPress={() => runMenuAction(goCapture)}>
+              <ScanLine size={18} color={colors.navy} />
+              <Text style={styles.menuItemText}>Escanear item</Text>
+            </Pressable>
+            <Pressable
+              style={styles.menuItem}
+              onPress={() =>
+                runMenuAction(() => nav.navigate('ShoppingLists'))
+              }>
+              <ClipboardList size={18} color={colors.navy} />
+              <Text style={styles.menuItemText}>Listas salvas</Text>
+            </Pressable>
+            <Pressable
+              style={styles.menuItem}
+              onPress={() => runMenuAction(() => nav.navigate('History'))}>
+              <History size={18} color={colors.navy} />
+              <Text style={styles.menuItemText}>Histórico</Text>
+            </Pressable>
+            <Pressable
+              style={styles.menuItem}
+              onPress={() =>
+                runMenuAction(async () => {
+                  const r = await runFullSync();
+                  appAlert(r.ok ? 'Sync' : 'Falha', r.message);
+                })
+              }>
+              <RefreshCw size={18} color={colors.navy} />
+              <Text style={styles.menuItemText}>Sincronizar</Text>
+            </Pressable>
+            <Pressable
+              style={styles.menuItem}
+              onPress={() =>
+                runMenuAction(() =>
+                  appAlert(
+                    'Limpar carrinho?',
+                    'Todos os itens serão removidos.',
+                    [
+                      {label: 'Cancelar', style: 'cancel'},
+                      {
+                        label: 'Limpar',
+                        style: 'destructive',
+                        onPress: () => {
+                          cartRepo.clear();
+                          refresh();
+                        },
+                      },
+                    ],
+                  ),
+                )
+              }>
+              <Trash2 size={18} color={colors.danger} />
+              <Text style={[styles.menuItemText, {color: colors.danger}]}>
+                Limpar lista
+              </Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Modal>
       {cart.length > 0 ? (
         <AppCartTotalsBar
           compact
@@ -232,12 +258,6 @@ export function CartScreen() {
             data={cart}
             keyExtractor={i => String(i.id)}
             contentContainerStyle={styles.listPad}
-            onScroll={e => {
-              const y = e.nativeEvent.contentOffset.y;
-              if (y > 40 && navVisible) setNavVisible(false);
-              if (y < 8 && !navVisible) setNavVisible(true);
-            }}
-            scrollEventThrottle={16}
             renderItem={({item}) => (
               <CartRow
                 item={item}
@@ -579,8 +599,45 @@ function EditItemModal({
 
 const styles = StyleSheet.create({
   root: {flex: 1, backgroundColor: colors.bg},
-  headerActions: {flexDirection: 'row', alignItems: 'center'},
   headerIcon: {padding: 8},
+  menuBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    justifyContent: 'flex-start',
+    alignItems: 'flex-end',
+    paddingTop: 72,
+    paddingHorizontal: 16,
+  },
+  menuCard: {
+    minWidth: 220,
+    backgroundColor: '#fff',
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: 8,
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    shadowOffset: {width: 0, height: 4},
+  },
+  menuTitle: {
+    paddingHorizontal: 14,
+    paddingBottom: 6,
+    fontSize: 11,
+    fontWeight: '800',
+    color: colors.muted,
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  menuItemText: {fontSize: 15, fontWeight: '700', color: colors.ink},
   listPad: {paddingHorizontal: 12, paddingTop: 8, paddingBottom: 8},
   empty: {flex: 1, justifyContent: 'center', padding: 24, gap: 12},
   emptyTitle: {fontSize: 20, fontWeight: '800', color: colors.navy},

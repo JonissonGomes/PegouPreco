@@ -37,6 +37,12 @@ describe('compare community', () => {
       source: 'nfce' as const,
     };
     expect(isCommunityPrice(nfce)).toBe(true);
+
+    const seedHistory = {...verified, contributorId: 'seed_history'};
+    expect(isCommunityPrice(seedHistory)).toBe(false);
+
+    const demoCommunity = {...verified, contributorId: 'demo_community'};
+    expect(isCommunityPrice(demoCommunity)).toBe(true);
   });
 
   it('ranqueia mercados favoritos por cobertura e total', () => {
@@ -121,6 +127,109 @@ describe('compare community', () => {
     );
     expect(ranks[0].marketName).toBe('Mercado B');
     expect(ranks[0].total).toBeCloseTo(30, 1);
+  });
+
+  it('ignora seed_history e usa demo_community no ranking', () => {
+    const markets: Market[] = [
+      {
+        id: 1,
+        name: 'Atacadão',
+        cnpj: null,
+        uf: 'PE',
+        lat: -8,
+        lng: -34,
+        address: null,
+        avgRating: null,
+        ratingsCount: 0,
+        priceLevel: null,
+        remoteId: null,
+        updatedAt: '',
+        synced: 0,
+      },
+      {
+        id: 2,
+        name: 'Carrefour',
+        cnpj: null,
+        uf: 'PE',
+        lat: -8,
+        lng: -34,
+        address: null,
+        avgRating: null,
+        ratingsCount: 0,
+        priceLevel: null,
+        remoteId: null,
+        updatedAt: '',
+        synced: 0,
+      },
+    ];
+    const now = new Date().toISOString();
+    const logs: PriceLog[] = [
+      {
+        id: 1,
+        productId: 5,
+        marketId: 1,
+        retailPrice: 8,
+        wholesalePrice: null,
+        minWholesaleQty: null,
+        source: 'label',
+        capturedAt: now,
+        remoteId: null,
+        nfceKey: null,
+        confirmScore: 4,
+        rejectScore: 0,
+        trustLevel: 'verified',
+        lastConfirmedAt: now,
+        contributorId: 'demo_community',
+        updatedAt: now,
+        synced: 0,
+      },
+      {
+        id: 2,
+        productId: 5,
+        marketId: 2,
+        retailPrice: 12,
+        wholesalePrice: null,
+        minWholesaleQty: null,
+        source: 'label',
+        capturedAt: now,
+        remoteId: null,
+        nfceKey: null,
+        confirmScore: 4,
+        rejectScore: 0,
+        trustLevel: 'verified',
+        lastConfirmedAt: now,
+        contributorId: 'demo_community',
+        updatedAt: now,
+        synced: 0,
+      },
+      {
+        id: 3,
+        productId: 5,
+        marketId: 2,
+        retailPrice: 3,
+        wholesalePrice: null,
+        minWholesaleQty: null,
+        source: 'manual',
+        capturedAt: now,
+        remoteId: null,
+        nfceKey: null,
+        confirmScore: 1,
+        rejectScore: 0,
+        trustLevel: 'verified',
+        lastConfirmedAt: null,
+        contributorId: 'seed_history',
+        updatedAt: now,
+        synced: 0,
+      },
+    ];
+    const ranks = rankMarketsForBasket(
+      [{productId: 5, productName: 'Arroz', quantity: 1}],
+      markets,
+      logs,
+      {favoriteIds: [1, 2], minCoverage: 0.2},
+    );
+    expect(ranks[0].marketName).toBe('Atacadão');
+    expect(ranks[0].total).toBe(8);
   });
 });
 

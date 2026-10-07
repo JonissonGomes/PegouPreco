@@ -77,7 +77,6 @@ function dedupeByGeo(
       out.push(h);
       continue;
     }
-    // Mantém a fonte melhor; se empatar, prefer nome mais descritivo
     if (
       SOURCE_RANK[h.source] > SOURCE_RANK[dup.source] ||
       (SOURCE_RANK[h.source] === SOURCE_RANK[dup.source] &&
@@ -98,6 +97,21 @@ function bboxAround(lat: number, lng: number, km: number) {
     maxLng: lng + dLng,
     maxLat: lat + dLat,
   };
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise(resolve => {
+    const timer = setTimeout(() => resolve(fallback), ms);
+    promise
+      .then(v => {
+        clearTimeout(timer);
+        resolve(v);
+      })
+      .catch(() => {
+        clearTimeout(timer);
+        resolve(fallback);
+      });
+  });
 }
 
 function formatOsmName(tags: Record<string, string>): string {
@@ -143,7 +157,7 @@ export async function fetchOsmNearbyMarkets(
   radiusM = NEARBY_RADIUS_M,
 ): Promise<NearbyMarketHit[]> {
   const query = `
-[out:json][timeout:45];
+[out:json][timeout:12];
 (
   node["shop"="supermarket"](around:${radiusM},${lat},${lng});
   way["shop"="supermarket"](around:${radiusM},${lat},${lng});
@@ -155,36 +169,33 @@ export async function fetchOsmNearbyMarkets(
 out center tags;
 `;
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 40000);
+  const timer = setTimeout(() => controller.abort(), 12000);
   try {
+    // Dispara os mirrors em paralelo e usa o primeiro que responder OK.
     const endpoints = [
       'https://overpass-api.de/api/interpreter',
       'https://overpass.kumi.systems/api/interpreter',
     ];
-    let data: {
-      elements?: Array<{
-        tags?: Record<string, string>;
-        lat?: number;
-        lon?: number;
-        center?: {lat: number; lon: number};
-      }>;
-    } | null = null;
+    const body = `data=${encodeURIComponent(query)}`;
+    const attempts = endpoints.map(async endpoint => {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body,
+        signal: controller.signal,
+      });
+      if (!res.ok) throw new Error(`overpass ${res.status}`);
+      return (await res.json()) as {
+        elements?: Array<{
+          tags?: Record<string, string>;
+          lat?: number;
+          lon?: number;
+          center?: {lat: number; lon: number};
+        }>;
+      };
+    });
 
-    for (const endpoint of endpoints) {
-      try {
-        const res = await fetch(endpoint, {
-          method: 'POST',
-          headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-          body: `data=${encodeURIComponent(query)}`,
-          signal: controller.signal,
-        });
-        if (!res.ok) continue;
-        data = (await res.json()) as typeof data;
-        break;
-      } catch {
-        // tenta próximo endpoint
-      }
-    }
+    const data = await Promise.any(attempts).catch(() => null);
     if (!data) throw new Error('Overpass indisponível');
 
     const hits: NearbyMarketHit[] = [];
@@ -245,8 +256,9 @@ function mapboxDisplayName(f: MapboxFeature): string {
   const base = (f.text || '').trim();
   if (!base) return '';
   const neighborhood =
-    f.context?.find(c => c.id?.startsWith('neighborhood') || c.id?.startsWith('locality'))
-      ?.text ||
+    f.context?.find(
+      c => c.id?.startsWith('neighborhood') || c.id?.startsWith('locality'),
+    )?.text ||
     f.context?.find(c => c.id?.startsWith('place'))?.text ||
     '';
   const street = (f.properties?.address || '').trim();
@@ -266,7 +278,6 @@ function isPlausibleMarket(f: MapboxFeature, name: string): boolean {
     cat &&
     !/shop|food|grocery|supermarket|wholesale|store|mall|commercial/i.test(cat)
   ) {
-    // categoria estranha (escola, posto etc.)
     if (/school|fuel|hotel|museum|park|hospital/i.test(cat)) return false;
   }
   return true;
@@ -328,7 +339,7 @@ async function fetchMapboxNearbyMarkets(
 
 /**
  * Descobre mercados na localidade.
- * Ordem: OSM (preciso) → Mapbox (só pontos novos no bbox) → seed curto.
+ * OSM e Mapbox em paralelo com timeout curto; seed só se nada vier.
  */
 export async function discoverNearbyMarkets(
   lat: number,
@@ -337,37 +348,29 @@ export async function discoverNearbyMarkets(
   mapboxToken?: string,
 ): Promise<NearbyMarketHit[]> {
   const origin = {lat, lng};
-  const merged: NearbyMarketHit[] = [];
+  const osmPromise = fetchOsmNearbyMarkets(lat, lng, radiusKm * 1000).catch(
+    () => [] as NearbyMarketHit[],
+  );
+  const mbPromise = mapboxToken
+    ? fetchMapboxNearbyMarkets(lat, lng, mapboxToken, radiusKm).catch(
+        () => [] as NearbyMarketHit[],
+      )
+    : Promise.resolve([] as NearbyMarketHit[]);
 
-  try {
-    const osm = await fetchOsmNearbyMarkets(lat, lng, radiusKm * 1000);
-    merged.push(...osm);
-  } catch {
-    // overpass lento / bloqueado
-  }
+  const [osm, mb] = await Promise.all([
+    withTimeout(osmPromise, 12000, []),
+    withTimeout(mbPromise, 8000, []),
+  ]);
 
-  // Mapbox só completa buracos — nunca sobrescreve OSM no mesmo ponto
-  if (mapboxToken) {
-    try {
-      const mb = await fetchMapboxNearbyMarkets(
-        lat,
-        lng,
-        mapboxToken,
-        radiusKm,
-      );
-      for (const h of mb) {
-        const nearOsm = merged.some(x => haversineKm(x, h) < 0.2);
-        if (!nearOsm) merged.push(h);
-      }
-    } catch {
-      // token / rede
-    }
+  const merged: NearbyMarketHit[] = [...osm];
+  for (const h of mb) {
+    const nearOsm = merged.some(x => haversineKm(x, h) < 0.2);
+    if (!nearOsm) merged.push(h);
   }
 
   const near = nearestInRadius(dedupeByGeo(merged), origin, radiusKm);
   if (near.length > 0) return near;
 
-  // Seed só se realmente perto dos pontos cadastrados (Recife)
   return seedMarketsNear(lat, lng, Math.min(radiusKm, 12));
 }
 

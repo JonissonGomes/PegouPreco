@@ -26,6 +26,7 @@ type AuthSession = {
   emailVerified: boolean;
   phoneVerified?: boolean;
   userId: string;
+  role?: 'user' | 'admin';
 };
 
 type AppState = {
