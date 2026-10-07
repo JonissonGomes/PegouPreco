@@ -7,7 +7,7 @@ App **offline-first** para registrar preços (OCR de etiquetas + QR de NFC-e), m
 ```
 PegouPreço/
   mobile/      # App React Native CLI (Android + iOS)
-  sync_api/    # API Dart (Shelf) — ponte segura até o Atlas
+  sync_api/    # API Node/TypeScript (Express) — ponte segura até o Atlas
   README.md
 ```
 
@@ -23,7 +23,7 @@ PegouPreço/
 | GPS | react-native-geolocation-service |
 | Rede | axios + react-native-config |
 | Nuvem | MongoDB Atlas **M0** (free) |
-| Sync | `sync_api` (Shelf) + LWW |
+| Sync | `sync_api` (Express/TS) + LWW |
 
 ## Começar
 
@@ -62,8 +62,8 @@ SYNC_API_BASE=http://SEU_IP_LAN:8080
 ```bash
 cd sync_api
 cp .env.example .env
-dart pub get
-dart run bin/server.dart
+npm install
+npm start
 ```
 
 ## Módulos

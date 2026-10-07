@@ -1,12 +1,20 @@
 # PegouPreço sync_api
 
-API Shelf para auth + sync LWW com MongoDB Atlas M0 (ou memória em dev).
+API Express (TypeScript) para auth + sync LWW com MongoDB Atlas M0 (ou memória em dev).
 
 ```bash
 cp .env.example .env
-dart pub get
-dart run bin/server.dart
+npm install
+npm start
 ```
+
+Desenvolvimento com reload:
+
+```bash
+npm run dev
+```
+
+Ou pela raiz do monorepo: `make api`.
 
 ### Auth
 

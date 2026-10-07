@@ -1,7 +1,13 @@
 # Gera APK release do app React Native (Windows-friendly).
 $ErrorActionPreference = 'Stop'
-$root = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot 'env.ps1')
+. (Join-Path $PSScriptRoot 'rn_windows_ninja.ps1')
+$root = Get-RepoRoot
 $android = Join-Path $root 'mobile\android'
+
+if (-not $env:ANDROID_HOME) {
+  throw 'Android SDK nao encontrado. Defina ANDROID_HOME ou instale o SDK em %LOCALAPPDATA%\Android\Sdk.'
+}
 
 if (-not (Test-Path (Join-Path $root 'mobile\node_modules'))) {
   Write-Host 'node_modules ausente. Rode: make deps' -ForegroundColor Yellow

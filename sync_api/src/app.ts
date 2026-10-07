@@ -1,0 +1,475 @@
+import {Router, type Request, type Response} from 'express';
+import {config} from './config.js';
+import {DataStore} from './store.js';
+import {sendVerificationEmail} from './email.js';
+import {sendVerificationSms} from './sms.js';
+import {JevClient} from './jev.js';
+import {
+  normalizePhone,
+  sixDigitCode,
+  sha256,
+  sendError,
+  publicUser,
+} from './util.js';
+
+async function auth(req: Request, store: DataStore): Promise<string | null> {
+  const header = req.headers.authorization;
+  if (!header?.startsWith('Bearer ')) return null;
+  return store.userIdForToken(header.slice(7));
+}
+
+export function createRouter(store: DataStore): Router {
+  const router = Router();
+  const skipEmailVerification = config.skipEmailVerification;
+  const skipSmsVerification = config.skipSmsVerification;
+  const exposeOtp =
+    config.exposeOtpInResponse || store.mode === 'memory';
+  const jev = new JevClient(config.jevApiKey);
+
+  async function sendOtp(args: {
+    channel: string;
+    target: string;
+    code: string;
+  }): Promise<Record<string, unknown>> {
+    const {channel, target, code} = args;
+    if (channel === 'email') {
+      if (skipEmailVerification) {
+        return {
+          ok: true,
+          channel: 'email',
+          skipped: true,
+          ...(exposeOtp ? {devCode: code} : {}),
+        };
+      }
+      if (!config.emailUser || !config.emailPass) {
+        if (!exposeOtp) {
+          return {
+            error: 'EMAIL_USER/EMAIL_PASS não configurados',
+            status: 500,
+          };
+        }
+        console.log(`[EMAIL] SMTP ausente — código para ${target}: ${code}`);
+        return {
+          ok: true,
+          channel: 'email',
+          devCode: code,
+          hint: 'SMTP não configurado; use devCode em dev',
+        };
+      }
+      try {
+        await sendVerificationEmail({
+          user: config.emailUser,
+          pass: config.emailPass,
+          to: target,
+          code,
+          logoUrl: config.emailLogoUrl || undefined,
+        });
+      } catch (e) {
+        return {error: `falha ao enviar e-mail: ${e}`, status: 500};
+      }
+    } else {
+      if (skipSmsVerification) {
+        return {
+          ok: true,
+          channel: 'phone',
+          skipped: true,
+          ...(exposeOtp ? {devCode: code} : {}),
+        };
+      }
+      try {
+        await sendVerificationSms({
+          toE164: target,
+          code,
+          accountSid: config.twilioSid,
+          authToken: config.twilioToken,
+          fromNumber: config.twilioFrom,
+        });
+      } catch (e) {
+        return {error: `falha ao enviar SMS: ${e}`, status: 500};
+      }
+      if (
+        exposeOtp &&
+        (!config.twilioSid || !config.twilioToken || !config.twilioFrom)
+      ) {
+        return {
+          ok: true,
+          channel: 'phone',
+          devCode: code,
+          hint: 'Twilio não configurado; use devCode em dev',
+        };
+      }
+    }
+    return {
+      ok: true,
+      channel,
+      ...(exposeOtp ? {devCode: code} : {}),
+    };
+  }
+
+  function otpResponse(res: Response, payload: Record<string, unknown>) {
+    if (payload.error != null) {
+      return sendError(
+        res,
+        Number(payload.status ?? 400),
+        String(payload.error),
+      );
+    }
+    return res.json(payload);
+  }
+
+  router.get('/health', (_req, res) => {
+    res.json({ok: true, store: store.mode});
+  });
+
+  router.post('/auth/register', async (req, res) => {
+    const body = req.body as Record<string, unknown>;
+    const email = String(body.email ?? '')
+      .trim()
+      .toLowerCase();
+    const password = String(body.password ?? '');
+    const displayName = String(body.displayName ?? 'Fiscal').trim();
+    const phone = normalizePhone(body.phone as string | undefined);
+    const uf = String(body.uf ?? '').trim() || undefined;
+    const city = String(body.city ?? '').trim() || undefined;
+    if (!email || password.length < 6) {
+      return sendError(res, 400, 'email/password inválidos');
+    }
+    if (!phone || phone.length < 12) {
+      return sendError(res, 400, 'telefone inválido (use DDD + número)');
+    }
+    if (await store.findUser(email)) {
+      return sendError(res, 409, 'usuário já existe');
+    }
+    if (await store.findUserByPhone(phone)) {
+      return sendError(res, 409, 'telefone já cadastrado');
+    }
+    const code = sixDigitCode();
+    const user = await store.createUser({
+      email,
+      phone,
+      passwordHash: sha256(password),
+      displayName: displayName || 'Fiscal',
+      uf,
+      city,
+      emailVerified: skipEmailVerification,
+      phoneVerified: skipSmsVerification,
+      verificationCodeHash: sha256(code),
+    });
+    const needsVerification =
+      (!skipEmailVerification && user.emailVerified !== true) ||
+      (!skipSmsVerification && user.phoneVerified !== true);
+
+    let delivery: Record<string, unknown> = {ok: true};
+    if (!skipSmsVerification) {
+      delivery = await sendOtp({channel: 'phone', target: phone, code});
+      if (delivery.error != null) return otpResponse(res, delivery);
+    } else if (!skipEmailVerification) {
+      delivery = await sendOtp({channel: 'email', target: email, code});
+      if (delivery.error != null) return otpResponse(res, delivery);
+    } else if (exposeOtp) {
+      delivery = {ok: true, devCode: code, skipped: true};
+    }
+
+    return res.json({
+      ok: true,
+      userId: user.id,
+      email,
+      phone,
+      needsVerification,
+      ...(!needsVerification ? {token: user.token} : {}),
+      ...(delivery.devCode != null ? {devCode: delivery.devCode} : {}),
+      ...(delivery.hint != null ? {hint: delivery.hint} : {}),
+      otpChannel: skipSmsVerification ? 'email' : 'phone',
+    });
+  });
+
+  router.post('/auth/verify', async (req, res) => {
+    const body = req.body as Record<string, unknown>;
+    const email = String(body.email ?? '')
+      .trim()
+      .toLowerCase();
+    const phone = normalizePhone(body.phone as string | undefined);
+    const code = String(body.code ?? '').trim();
+    if (!code) return sendError(res, 400, 'código obrigatório');
+    const result = await store.verifyOtp({
+      email: email || null,
+      phone,
+      codeHash: sha256(code),
+      markEmail: email.length > 0,
+      markPhone: phone != null,
+    });
+    if (result.error != null) {
+      return sendError(res, Number(result.status ?? 400), String(result.error));
+    }
+    return res.json(result);
+  });
+
+  router.post('/auth/resend-code', async (req, res) => {
+    const body = req.body as Record<string, unknown>;
+    const email = String(body.email ?? '')
+      .trim()
+      .toLowerCase();
+    const phone = normalizePhone(body.phone as string | undefined);
+    const channel = String(
+      body.channel ?? (phone != null ? 'phone' : 'email'),
+    ).toLowerCase();
+    const code = sixDigitCode();
+    const setResult = await store.setVerificationCodeFor({
+      email: email || null,
+      phone,
+      codeHash: sha256(code),
+    });
+    if (setResult.error != null) {
+      return sendError(
+        res,
+        Number(setResult.status ?? 400),
+        String(setResult.error),
+      );
+    }
+    const target =
+      channel === 'phone'
+        ? phone ?? String(setResult.phone ?? '')
+        : email || String(setResult.email ?? '');
+    if (!target) {
+      return sendError(res, 400, 'informe email ou telefone');
+    }
+    return otpResponse(
+      res,
+      await sendOtp({channel, target, code}),
+    );
+  });
+
+  router.post('/auth/otp/request', async (req, res) => {
+    const body = req.body as Record<string, unknown>;
+    const phone = normalizePhone(body.phone as string | undefined);
+    const email = String(body.email ?? '')
+      .trim()
+      .toLowerCase();
+    if (!phone && !email) {
+      return sendError(res, 400, 'informe telefone ou e-mail');
+    }
+    let user: Record<string, unknown> | null;
+    if (phone) {
+      user = await store.findUserByPhone(phone);
+      if (!user) {
+        return sendError(res, 404, 'telefone não cadastrado — crie uma conta');
+      }
+    } else {
+      user = await store.findUser(email);
+      if (!user) {
+        return sendError(res, 404, 'e-mail não cadastrado — crie uma conta');
+      }
+    }
+    const code = sixDigitCode();
+    const setResult = await store.setVerificationCodeFor({
+      email: user.email as string,
+      phone: user.phone as string,
+      codeHash: sha256(code),
+    });
+    if (setResult.error != null) {
+      return sendError(
+        res,
+        Number(setResult.status ?? 400),
+        String(setResult.error),
+      );
+    }
+    const channel = phone ? 'phone' : 'email';
+    const target = phone ?? email;
+    return otpResponse(
+      res,
+      await sendOtp({channel, target, code}),
+    );
+  });
+
+  router.post('/auth/otp/verify', async (req, res) => {
+    const body = req.body as Record<string, unknown>;
+    const phone = normalizePhone(body.phone as string | undefined);
+    const email = String(body.email ?? '')
+      .trim()
+      .toLowerCase();
+    const code = String(body.code ?? '').trim();
+    if (!code) return sendError(res, 400, 'código obrigatório');
+    const result = await store.verifyOtp({
+      email: email || null,
+      phone,
+      codeHash: sha256(code),
+      markEmail: email.length > 0 || phone == null,
+      markPhone: phone != null,
+    });
+    if (result.error != null) {
+      return sendError(res, Number(result.status ?? 400), String(result.error));
+    }
+    return res.json(result);
+  });
+
+  router.post('/auth/login', async (req, res) => {
+    const body = req.body as Record<string, unknown>;
+    const email = String(body.email ?? '')
+      .trim()
+      .toLowerCase();
+    const password = String(body.password ?? '');
+    const user = await store.findUser(email);
+    if (!user || user.passwordHash !== sha256(password)) {
+      return sendError(res, 401, 'credenciais inválidas');
+    }
+    const verified =
+      user.emailVerified === true ||
+      user.phoneVerified === true ||
+      skipEmailVerification ||
+      skipSmsVerification;
+    if (!verified) {
+      return sendError(res, 403, 'conta não confirmada — use o código OTP');
+    }
+    const token = await store.issueToken(String(user.id));
+    return res.json(publicUser(user, token));
+  });
+
+  router.get('/auth/me', async (req, res) => {
+    const userId = await auth(req, store);
+    if (!userId) return sendError(res, 401, 'unauthorized');
+    const user = await store.findUserById(userId);
+    if (!user) return sendError(res, 404, 'usuário não encontrado');
+    return res.json(publicUser(user));
+  });
+
+  router.post('/sync/push', async (req, res) => {
+    const userId = await auth(req, store);
+    if (!userId) return sendError(res, 401, 'unauthorized');
+    const user = await store.findUserById(userId);
+    if (!user || user.emailVerified !== true) {
+      return sendError(res, 403, 'conta não verificada por e-mail');
+    }
+    const result = await store.push(userId, req.body as Record<string, unknown>);
+    return res.json(result);
+  });
+
+  router.get('/sync/pull', async (req, res) => {
+    const userId = await auth(req, store);
+    if (!userId) return sendError(res, 401, 'unauthorized');
+    const sinceRaw = req.query.since as string | undefined;
+    const since = sinceRaw
+      ? new Date(Number.isNaN(Date.parse(sinceRaw)) ? 0 : sinceRaw)
+      : new Date(0);
+    const result = await store.pull(userId, since);
+    return res.json(result);
+  });
+
+  router.post('/votes/check', async (req, res) => {
+    const userId = await auth(req, store);
+    if (!userId) return sendError(res, 401, 'unauthorized');
+    const user = await store.findUserById(userId);
+    if (!user || user.emailVerified !== true) {
+      return sendError(res, 403, 'conta não verificada por e-mail');
+    }
+    const body = req.body as Record<string, unknown>;
+    const priceLogId = String(body.priceLogId ?? '');
+    const vote = String(body.vote ?? '');
+    const withPhoto = body.withPhoto === true;
+    let weight = body.weight != null ? Number(body.weight) : undefined;
+    if (weight == null || Number.isNaN(weight)) {
+      weight = await store.userVoteWeight(userId);
+    }
+    if (withPhoto) weight += 0.5;
+    if (!priceLogId || (vote !== 'confirm' && vote !== 'reject')) {
+      return sendError(res, 400, 'priceLogId/vote inválidos');
+    }
+    const result = await store.castVote({
+      userId,
+      priceLogId,
+      vote,
+      weight,
+      withPhoto,
+    });
+    if (result.error != null) {
+      return sendError(res, Number(result.status ?? 400), String(result.error));
+    }
+    return res.json(result);
+  });
+
+  router.get('/prices/:id/trust', async (req, res) => {
+    const userId = await auth(req, store);
+    if (!userId) return sendError(res, 401, 'unauthorized');
+    const trust = await store.trustFor(req.params.id);
+    if (!trust) return sendError(res, 404, 'price log não encontrado');
+    return res.json(trust);
+  });
+
+  router.get('/markets/map', async (_req, res) => {
+    const markets = await store.marketsForMap();
+    return res.json({markets});
+  });
+
+  router.post('/markets/:id/reviews', async (req, res) => {
+    const userId = await auth(req, store);
+    if (!userId) return sendError(res, 401, 'unauthorized');
+    const user = await store.findUserById(userId);
+    if (!user || user.emailVerified !== true) {
+      return sendError(res, 403, 'conta não verificada');
+    }
+    const body = req.body as Record<string, unknown>;
+    const stars = Number(body.stars ?? 0);
+    if (stars < 1 || stars > 5) return sendError(res, 400, 'stars 1–5');
+    const result = await store.upsertMarketReview({
+      marketId: req.params.id,
+      userId,
+      stars,
+      comment: body.comment as string | undefined,
+    });
+    if (result.error != null) {
+      return sendError(res, Number(result.status ?? 400), String(result.error));
+    }
+    return res.json(result);
+  });
+
+  router.get('/markets/:id/reviews', async (req, res) => {
+    const reviews = await store.listMarketReviews(req.params.id);
+    return res.json({reviews});
+  });
+
+  router.get('/me/prefs', async (req, res) => {
+    const userId = await auth(req, store);
+    if (!userId) return sendError(res, 401, 'unauthorized');
+    const prefs = await store.getUserPrefs(userId);
+    return res.json(prefs);
+  });
+
+  router.put('/me/prefs', async (req, res) => {
+    const userId = await auth(req, store);
+    if (!userId) return sendError(res, 401, 'unauthorized');
+    const prefs = await store.setUserPrefs(
+      userId,
+      req.body as Record<string, unknown>,
+    );
+    return res.json(prefs);
+  });
+
+  router.get('/me/reputation', async (req, res) => {
+    const userId = await auth(req, store);
+    if (!userId) return sendError(res, 401, 'unauthorized');
+    const rep = await store.getReputation(userId);
+    return res.json(rep);
+  });
+
+  router.post('/compare/basket', async (req, res) => {
+    const userId = await auth(req, store);
+    if (!userId) return sendError(res, 401, 'unauthorized');
+    const result = await store.compareBasket(
+      userId,
+      req.body as Record<string, unknown>,
+    );
+    return res.json(result);
+  });
+
+  router.get('/prices/community', async (req, res) => {
+    const userId = await auth(req, store);
+    if (!userId) return sendError(res, 401, 'unauthorized');
+    const productName = req.query.productName as string | undefined;
+    const city = req.query.city as string | undefined;
+    const result = await store.communityPrices({productName, city});
+    return res.json({prices: result});
+  });
+
+  store.attachJev(jev);
+
+  return router;
+}

@@ -61,7 +61,8 @@
 **/xcuserdata/
 **/Pods/
 
-# --- sync_api (Dart server) ---
+# --- sync_api (Node) ---
+sync_api/dist/
 sync_api/.dart_tool/
 sync_api/build/
 sync_api/.packages

@@ -1,15 +1,20 @@
 $ErrorActionPreference = "Stop"
-$root = Split-Path -Parent $PSScriptRoot
-Set-Location (Join-Path $root "sync_api")
+. (Join-Path $PSScriptRoot "env.ps1")
 
-if (-not (Get-Command dart -ErrorAction SilentlyContinue)) {
-  throw "Dart SDK nao encontrado no PATH (necessario para sync_api)."
+$root = Get-RepoRoot
+Set-Location (Get-ApiDir)
+
+if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+  throw "Node.js nao encontrado. Instale Node >= 18 e garanta que esteja no PATH."
 }
 
 if (-not (Test-Path ".env") -and (Test-Path ".env.example")) {
   Copy-Item ".env.example" ".env"
 }
 
-dart pub get
+if (-not (Test-Path "node_modules")) {
+  npm install
+}
+
 Write-Host "==> sync_api em http://0.0.0.0:8080" -ForegroundColor Cyan
-dart run bin/server.dart
+npm start
