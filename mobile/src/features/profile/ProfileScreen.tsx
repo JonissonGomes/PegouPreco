@@ -715,7 +715,7 @@ export function ProfileScreen() {
 const styles = StyleSheet.create({
   body: {
     paddingHorizontal: space.md,
-    gap: space.xl,
+    gap: space.xxl,
     alignItems: 'stretch',
   },
   profileHead: {

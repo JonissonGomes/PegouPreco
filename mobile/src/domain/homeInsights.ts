@@ -65,6 +65,69 @@ export function periodStart(period: InsightPeriod, now = new Date()): Date | nul
   return d;
 }
 
+export type InsightMarketScope = {
+  marketIds: Set<number>;
+  /** Favoritos parciais vs raio 25 km (todos / nenhum marcado). */
+  mode: 'favorites' | 'radius';
+  label: string;
+};
+
+/**
+ * Escopo de Insights pela localização:
+ * - alguns favoritos marcados → só esses mercados;
+ * - todos os do raio marcados (ou nenhum) → mercados a até `radiusKm`.
+ */
+export function resolveInsightMarketScope(args: {
+  markets: Market[];
+  favoriteMarketIds: number[];
+  nearbyMarketIds: number[];
+  radiusKm: number;
+}): InsightMarketScope {
+  const nearby = [...new Set(args.nearbyMarketIds)];
+  const nearbySet = new Set(nearby);
+  const favs = args.favoriteMarketIds.filter(
+    id => nearbySet.has(id) || args.markets.some(m => m.id === id),
+  );
+  const allNearbyMarked =
+    nearby.length > 0 && nearby.every(id => favs.includes(id));
+
+  if (favs.length > 0 && !allNearbyMarked) {
+    return {
+      marketIds: new Set(favs),
+      mode: 'favorites',
+      label:
+        favs.length === 1
+          ? '1 mercado marcado'
+          : `${favs.length} mercados marcados`,
+    };
+  }
+
+  return {
+    marketIds: nearbySet,
+    mode: 'radius',
+    label:
+      nearby.length > 0
+        ? `Raio ${args.radiusKm} km · ${nearby.length} mercados`
+        : `Raio ${args.radiusKm} km`,
+  };
+}
+
+export function filterLogsByMarketScope(
+  logs: PriceLog[],
+  scopeIds: Set<number>,
+): PriceLog[] {
+  if (!scopeIds.size) return [];
+  return logs.filter(l => l.marketId != null && scopeIds.has(l.marketId));
+}
+
+export function filterListsByMarketScope(
+  lists: ShoppingList[],
+  scopeIds: Set<number>,
+): ShoppingList[] {
+  if (!scopeIds.size) return [];
+  return lists.filter(l => l.marketId != null && scopeIds.has(l.marketId));
+}
+
 /**
  * Ranking de mercados mais baratos com base em preços comunitários validados.
  * Conta quantas vezes cada mercado tem o menor preço de um produto no período.

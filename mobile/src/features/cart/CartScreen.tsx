@@ -624,6 +624,22 @@ function CartRow({
   const hasWholesale = item.wholesalePrice != null;
   const useWholesale = !!item.useWholesale && hasWholesale;
 
+  const setMode = (wantWholesale: boolean) => {
+    if (wantWholesale && !hasWholesale) {
+      appAlert(
+        'Preço de atacado',
+        'Informe o preço de atacado no item para usar esse modo.',
+        [
+          {label: 'Agora não', style: 'cancel'},
+          {label: 'Editar item', style: 'primary', onPress: onEdit},
+        ],
+      );
+      return;
+    }
+    cartRepo.setUseWholesale(item.id, wantWholesale);
+    refresh();
+  };
+
   return (
     <SwipeableActions dense onEdit={onEdit} onDelete={onDelete}>
       <Pressable
@@ -642,28 +658,43 @@ function CartRow({
             </Text>
           </View>
           <View style={styles.rowMeta}>
-            <Text style={styles.metaText}>{qtyPhrase(item.quantity)} ·</Text>
-            {hasWholesale ? (
+            <Text style={styles.metaText}>{qtyPhrase(item.quantity)}</Text>
+            <View style={styles.modeSeg}>
               <Pressable
-                onPress={() => {
-                  cartRepo.setUseWholesale(item.id, !useWholesale);
-                  refresh();
-                }}
+                onPress={() => setMode(false)}
                 style={[
-                  styles.wholesalePill,
-                  useWholesale && styles.wholesalePillOn,
-                ]}>
+                  styles.modeSegBtn,
+                  !useWholesale && styles.modeSegBtnOn,
+                ]}
+                accessibilityRole="button"
+                accessibilityState={{selected: !useWholesale}}
+                accessibilityLabel="Varejo">
                 <Text
                   style={[
-                    styles.wholesalePillText,
-                    useWholesale && styles.wholesalePillTextOn,
+                    styles.modeSegText,
+                    !useWholesale && styles.modeSegTextOn,
                   ]}>
-                  {useWholesale ? 'Atacado' : 'Varejo'}
+                  Varejo
                 </Text>
               </Pressable>
-            ) : (
-              <Text style={styles.metaText}>Varejo</Text>
-            )}
+              <Pressable
+                onPress={() => setMode(true)}
+                style={[
+                  styles.modeSegBtn,
+                  useWholesale && styles.modeSegBtnOn,
+                ]}
+                accessibilityRole="button"
+                accessibilityState={{selected: useWholesale}}
+                accessibilityLabel="Atacado">
+                <Text
+                  style={[
+                    styles.modeSegText,
+                    useWholesale && styles.modeSegTextOn,
+                  ]}>
+                  Atacado
+                </Text>
+              </Pressable>
+            </View>
           </View>
         </View>
       </Pressable>
@@ -875,19 +906,25 @@ const styles = StyleSheet.create({
   },
   price: {fontWeight: '900', color: colors.navy, fontSize: 16},
   metaText: {fontSize: 12, fontWeight: '600', color: colors.muted},
-  wholesalePill: {
-    borderRadius: radii.pill,
-    paddingHorizontal: 10,
-    paddingVertical: 3,
+  modeSeg: {
+    flexDirection: 'row',
     backgroundColor: colors.bg,
+    borderRadius: radii.pill,
+    padding: 2,
+    gap: 2,
   },
-  wholesalePillOn: {backgroundColor: colors.yellow},
-  wholesalePillText: {
+  modeSegBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: radii.pill,
+  },
+  modeSegBtnOn: {backgroundColor: colors.yellow},
+  modeSegText: {
     fontSize: 11,
     fontWeight: '800',
     color: colors.muted,
   },
-  wholesalePillTextOn: {color: colors.navy},
+  modeSegTextOn: {color: colors.navy},
   modalTitle: {fontSize: 18, fontWeight: '800', color: colors.navy},
   suggestLabel: {
     marginTop: 4,

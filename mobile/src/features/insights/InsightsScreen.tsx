@@ -1,4 +1,4 @@
-import React, {useEffect, useMemo, useState} from 'react';
+import React, {useCallback, useEffect, useMemo, useState} from 'react';
 import {
   FlatList,
   Pressable,
@@ -7,7 +7,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import {useNavigation} from '@react-navigation/native';
+import {useFocusEffect, useNavigation} from '@react-navigation/native';
 import {ClipboardList, Store} from 'lucide-react-native';
 import {
   AppButton,
@@ -25,11 +25,18 @@ import {rankNearestMarkets} from '@/domain/marketUi';
 import {TrustEngine} from '@/domain/trust';
 import {
   type InsightPeriod,
+  filterListsByMarketScope,
+  filterLogsByMarketScope,
   monthsAgo,
   rankCategoryMarketWins,
   rankCheapestMarkets,
+  resolveInsightMarketScope,
   savingsSince,
 } from '@/domain/homeInsights';
+import {
+  filterMarketsInRadius,
+  NEARBY_RADIUS_KM,
+} from '@/data/remote/nearbyMarkets';
 import {
   marketRepo,
   prefs,
@@ -38,7 +45,7 @@ import {
   useMarketName,
 } from '@/store/appStore';
 import {syncApi, type ReputationRemote} from '@/data/remote/syncApi';
-import type {FiscalLevel} from '@/data/types';
+import type {FiscalLevel, PriceLog, Product} from '@/data/types';
 
 const PERIODS: Array<{id: InsightPeriod; label: string}> = [
   {id: 'week', label: 'Semana'},
@@ -80,6 +87,7 @@ export function InsightsScreen() {
   const [marketQuery, setMarketQuery] = useState('');
   const [rep, setRep] = useState<ReputationRemote | null>(null);
   const [period, setPeriod] = useState<InsightPeriod>('week');
+  const [locTick, setLocTick] = useState(0);
 
   useEffect(() => {
     if (!auth?.token) {
@@ -92,26 +100,90 @@ export function InsightsScreen() {
       .catch(() => setRep(null));
   }, [auth?.token]);
 
-  const logs = useMemo(() => priceLogRepo.all(), [lists, markets, products]);
+  useFocusEffect(
+    useCallback(() => {
+      setLocTick(t => t + 1);
+    }, []),
+  );
+
+  const origin = prefs.getLastLocation();
+  const locPrefs = prefs.getLocationPrefs();
+
+  const scope = useMemo(() => {
+    const nearby = origin
+      ? filterMarketsInRadius(markets, origin, NEARBY_RADIUS_KM)
+      : [];
+    return resolveInsightMarketScope({
+      markets,
+      favoriteMarketIds: locPrefs.favoriteMarketIds,
+      nearbyMarketIds: nearby.map(m => m.id),
+      radiusKm: NEARBY_RADIUS_KM,
+    });
+    // locTick força releitura de prefs/GPS
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [markets, locTick, locPrefs.favoriteMarketIds.join(',')]);
+
+  const scopeMarkets = useMemo(
+    () => markets.filter(m => scope.marketIds.has(m.id)),
+    [markets, scope],
+  );
+
+  const logs = useMemo(() => {
+    const all = priceLogRepo.all();
+    return filterLogsByMarketScope(all, scope.marketIds);
+  }, [lists, markets, products, scope]);
+
+  const scopedLists = useMemo(
+    () => filterListsByMarketScope(lists, scope.marketIds),
+    [lists, scope],
+  );
+
   const marketRanks = useMemo(
-    () => rankCheapestMarkets(logs, markets, products, period),
-    [logs, markets, products, period],
+    () => rankCheapestMarkets(logs, scopeMarkets, products, period),
+    [logs, scopeMarkets, products, period],
   );
   const categoryWins = useMemo(
-    () => rankCategoryMarketWins(logs, markets, products, period),
-    [logs, markets, products, period],
+    () => rankCategoryMarketWins(logs, scopeMarkets, products, period),
+    [logs, scopeMarkets, products, period],
   );
-  const saved3m = useMemo(() => savingsSince(lists, monthsAgo(3)), [lists]);
+  const saved3m = useMemo(
+    () => savingsSince(scopedLists, monthsAgo(3)),
+    [scopedLists],
+  );
 
-  const cheap = useMemo(() => priceLogRepo.cheapestNow(40), [lists, markets]);
+  const cheap = useMemo(() => {
+    const out: Array<{
+      product: Product;
+      log: PriceLog;
+      marketName: string | null;
+    }> = [];
+    for (const p of products) {
+      const plogs = logs.filter(l => l.productId === p.id);
+      if (!plogs.length) continue;
+      const best = plogs.reduce((a, b) =>
+        a.retailPrice < b.retailPrice ? a : b,
+      );
+      out.push({
+        product: p,
+        log: best,
+        marketName:
+          scopeMarkets.find(m => m.id === best.marketId)?.name ?? null,
+      });
+    }
+    return out
+      .sort((a, b) => a.log.retailPrice - b.log.retailPrice)
+      .slice(0, 40);
+  }, [logs, products, scopeMarkets]);
+
   const opps = useMemo(() => priceLogRepo.opportunities(), [lists, markets]);
-  const today = useMemo(
-    () =>
-      currentMarketId
-        ? priceLogRepo.forMarketToday(currentMarketId)
-        : [],
-    [currentMarketId, lists],
-  );
+  const today = useMemo(() => {
+    // Mercado atual do picker, se estiver no escopo; senão o 1º do escopo.
+    const focusId =
+      currentMarketId != null && scope.marketIds.has(currentMarketId)
+        ? currentMarketId
+        : [...scope.marketIds][0];
+    return focusId != null ? priceLogRepo.forMarketToday(focusId) : [];
+  }, [currentMarketId, lists, scope]);
 
   const q = query.trim().toLowerCase();
   const match = (t: string) => !q || t.toLowerCase().includes(q);
@@ -130,13 +202,12 @@ export function InsightsScreen() {
     return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0], 'pt-BR'));
   }, [cheapF]);
   const oppsF = opps.filter(o => match(o.product.name));
-  const listsF = lists.filter(
+  const listsF = scopedLists.filter(
     l => match(l.name) || match(l.marketName ?? ''),
   );
   const todayF = today.filter(i => match(i.productName));
   const alerts = cheapF.length + oppsF.length;
 
-  const origin = prefs.getLastLocation();
   const suggested = rankNearestMarkets(markets, origin, {
     query: marketQuery,
     limit: 8,
@@ -263,7 +334,13 @@ export function InsightsScreen() {
   data.push({
     type: 'section',
     key: 'list-h',
-    payload: {title: 'Listas passadas', trailing: String(listsF.length)},
+    payload: {
+      title:
+        scope.mode === 'favorites'
+          ? 'Listas nos mercados marcados'
+          : 'Listas no raio',
+      trailing: String(listsF.length),
+    },
   });
   listsF.forEach(l =>
     data.push({type: 'list', key: `l-${l.id}`, payload: l}),
@@ -274,7 +351,7 @@ export function InsightsScreen() {
       <AppScreenHeader
         showLogo={false}
         title="Insights"
-        subtitle={marketName || 'Preços e rankings'}
+        subtitle={marketName || scope.label}
         actions={
           <View style={{flexDirection: 'row'}}>
             <Pressable
@@ -284,7 +361,10 @@ export function InsightsScreen() {
             </Pressable>
             <Pressable
               style={styles.iconBtn}
-              onPress={() => setPickerOpen(true)}>
+              onPress={() => {
+                setLocTick(t => t + 1);
+                setPickerOpen(true);
+              }}>
               <Store color={colors.navy} size={20} />
             </Pressable>
           </View>
@@ -299,7 +379,9 @@ export function InsightsScreen() {
       />
       <View style={styles.heroHint}>
         <Text style={styles.heroHintText}>
-          Rankings com preços comunitários validados · filtre por período
+          {scope.mode === 'favorites'
+            ? `Mostrando só mercados marcados na localização · ${scope.label}`
+            : `Mercados a até ${NEARBY_RADIUS_KM} km · ${scope.label}`}
         </Text>
       </View>
       <TextInput

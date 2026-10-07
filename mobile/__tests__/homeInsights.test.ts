@@ -3,6 +3,7 @@ import {
   lifetimeSavings,
   monthsAgo,
   rankCheapestMarkets,
+  resolveInsightMarketScope,
   savingsSince,
 } from '../src/domain/homeInsights';
 import type {
@@ -185,5 +186,80 @@ describe('homeInsights', () => {
     const ranks = rankCheapestMarkets(logs, markets, products, 'week', now);
     expect(ranks[0].marketName).toBe('Barato');
     expect(ranks[0].winCount).toBe(1);
+  });
+
+  it('resolveInsightMarketScope usa favoritos parciais ou raio 25km', () => {
+    const markets: Market[] = [
+      {
+        id: 1,
+        name: 'A',
+        cnpj: null,
+        uf: null,
+        lat: 0,
+        lng: 0,
+        address: null,
+        avgRating: null,
+        ratingsCount: 0,
+        priceLevel: null,
+        remoteId: null,
+        updatedAt: '',
+        synced: 0,
+      },
+      {
+        id: 2,
+        name: 'B',
+        cnpj: null,
+        uf: null,
+        lat: 0,
+        lng: 0,
+        address: null,
+        avgRating: null,
+        ratingsCount: 0,
+        priceLevel: null,
+        remoteId: null,
+        updatedAt: '',
+        synced: 0,
+      },
+      {
+        id: 3,
+        name: 'C',
+        cnpj: null,
+        uf: null,
+        lat: 0,
+        lng: 0,
+        address: null,
+        avgRating: null,
+        ratingsCount: 0,
+        priceLevel: null,
+        remoteId: null,
+        updatedAt: '',
+        synced: 0,
+      },
+    ];
+    const partial = resolveInsightMarketScope({
+      markets,
+      favoriteMarketIds: [1],
+      nearbyMarketIds: [1, 2, 3],
+      radiusKm: 25,
+    });
+    expect(partial.mode).toBe('favorites');
+    expect([...partial.marketIds]).toEqual([1]);
+
+    const allMarked = resolveInsightMarketScope({
+      markets,
+      favoriteMarketIds: [1, 2, 3],
+      nearbyMarketIds: [1, 2, 3],
+      radiusKm: 25,
+    });
+    expect(allMarked.mode).toBe('radius');
+    expect(allMarked.marketIds.size).toBe(3);
+
+    const none = resolveInsightMarketScope({
+      markets,
+      favoriteMarketIds: [],
+      nearbyMarketIds: [1, 2, 3],
+      radiusKm: 25,
+    });
+    expect(none.mode).toBe('radius');
   });
 });

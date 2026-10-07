@@ -1,10 +1,9 @@
 import React, {useCallback, useEffect, useMemo, useState} from 'react';
-import {FlatList, Pressable, StyleSheet, Text, View} from 'react-native';
+import {FlatList, StyleSheet, Text, View} from 'react-native';
 import {useFocusEffect, useNavigation} from '@react-navigation/native';
 import {
   BadgeCheck,
   MapPin,
-  Star,
   ThumbsUp,
   UsersRound,
 } from 'lucide-react-native';
@@ -15,7 +14,6 @@ import {
 } from '@/ui/components';
 import {appAlert} from '@/ui/appDialog';
 import {FeatureEmptyGuide} from '@/ui/FeatureEmptyGuide';
-import {MarketReviewSheet} from '@/ui/MarketReviewSheet';
 import {
   FiscalChip,
   SavePill,
@@ -92,6 +90,20 @@ function formatDist(km: number | null): string | null {
   return `${km.toFixed(1)} km`;
 }
 
+/** Texto mínimo de frescor do preço. */
+function relativeUpdated(iso: string, now = new Date()): string {
+  const ms = now.getTime() - new Date(iso).getTime();
+  if (!Number.isFinite(ms) || ms < 0) return 'Atualizado agora';
+  const mins = Math.floor(ms / 60000);
+  if (mins < 1) return 'Atualizado agora';
+  if (mins < 60) return `Atualizado há ${mins} min`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `Atualizado há ${hours} h`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return 'Atualizado ontem';
+  return `Atualizado há ${days} dias`;
+}
+
 export function CommunityScreen() {
   const nav = useNavigation<any>();
   const auth = useAppStore(s => s.auth);
@@ -100,8 +112,6 @@ export function CommunityScreen() {
   const refresh = useAppStore(s => s.refresh);
   const loc = prefs.getLocationPrefs();
   const [busyId, setBusyId] = useState<number | null>(null);
-  const [reviewMarketId, setReviewMarketId] = useState<number | null>(null);
-  const [reviewBusy, setReviewBusy] = useState(false);
   const [rep, setRep] = useState<ReputationRemote | null>(null);
   const [burst, setBurst] = useState<Burst>(null);
   const [skipped, setSkipped] = useState<Set<number>>(() => new Set());
@@ -262,34 +272,6 @@ export function CommunityScreen() {
     [auth, refresh, level, nav],
   );
 
-  const reviewMarket = markets.find(m => m.id === reviewMarketId);
-
-  const submitReview = async (stars: number) => {
-    if (!canContribute(auth) || !auth?.token) {
-      needAccount('Verifique a conta no Perfil para avaliar mercados.');
-      return;
-    }
-    const rid = reviewMarket?.remoteId;
-    if (!rid) {
-      appAlert(
-        'Mercado ainda local',
-        'Aguarde a sincronização automática para enviar a avaliação.',
-      );
-      requestAutoSync('review');
-      return;
-    }
-    setReviewBusy(true);
-    try {
-      await syncApi.submitMarketReview(auth.token, rid, stars);
-      setReviewMarketId(null);
-      celebrate(5, `${stars}★ no ${reviewMarket?.name ?? 'mercado'}`);
-    } catch (e) {
-      appAlert('Avaliação', apiErrorMessage(e));
-    } finally {
-      setReviewBusy(false);
-    }
-  };
-
   const region =
     [loc.neighborhood, loc.city].filter(Boolean).join(', ') ||
     'Sua região';
@@ -378,6 +360,9 @@ export function CommunityScreen() {
         }
         renderItem={({item}) => {
           const dist = formatDist(item.distanceKm);
+          const fresh = relativeUpdated(
+            item.log.lastConfirmedAt || item.log.capturedAt,
+          );
           return (
             <SoftCard style={styles.validateCard}>
               <View style={styles.cardTop}>
@@ -389,12 +374,15 @@ export function CommunityScreen() {
                     {item.marketName}
                     {dist ? ` · ${dist}` : ''}
                   </Text>
+                  <Text style={styles.fresh} numberOfLines={1}>
+                    {fresh}
+                  </Text>
                 </View>
-                <View style={styles.cardSide}>
+                <View style={styles.priceRow}>
+                  {priceBadge(item.avgPct)}
                   <Text style={styles.price}>
                     {formatBrl(item.log.retailPrice)}
                   </Text>
-                  {priceBadge(item.avgPct)}
                 </View>
               </View>
 
@@ -406,26 +394,9 @@ export function CommunityScreen() {
                   setSkipped(prev => new Set(prev).add(item.log.id))
                 }
               />
-
-              {item.log.marketId != null ? (
-                <Pressable
-                  style={styles.reviewBtn}
-                  onPress={() => setReviewMarketId(item.log.marketId)}>
-                  <Star size={14} color={colors.navy} fill={colors.navy} />
-                  <Text style={styles.reviewBtnText}>Avaliar mercado</Text>
-                </Pressable>
-              ) : null}
             </SoftCard>
           );
         }}
-      />
-
-      <MarketReviewSheet
-        visible={reviewMarketId != null}
-        marketName={reviewMarket?.name ?? 'Mercado'}
-        busy={reviewBusy}
-        onClose={() => setReviewMarketId(null)}
-        onSubmit={submitReview}
       />
 
       <XpBurst
@@ -459,16 +430,14 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   cardMain: {flex: 1, minWidth: 0, gap: 2},
-  cardSide: {alignItems: 'flex-end', gap: 4},
-  name: {fontWeight: '900', color: colors.navy, fontSize: 15},
-  meta: {color: colors.muted, fontWeight: '600', fontSize: 12},
-  price: {fontWeight: '900', color: colors.navy, fontSize: 18},
-  reviewBtn: {
+  priceRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-    paddingTop: 4,
+    gap: 6,
+    flexShrink: 0,
   },
-  reviewBtnText: {fontWeight: '700', color: colors.muted, fontSize: 11},
+  name: {fontWeight: '900', color: colors.navy, fontSize: 15},
+  meta: {color: colors.muted, fontWeight: '600', fontSize: 12},
+  fresh: {color: colors.muted, fontWeight: '600', fontSize: 11, opacity: 0.85},
+  price: {fontWeight: '900', color: colors.navy, fontSize: 18},
 });
