@@ -38,6 +38,17 @@ export function createRouter(store: DataStore): Router {
     config.exposeOtpInResponse || store.mode === 'memory';
   const jev = new JevClient(config.jevApiKey);
 
+  /** Alinhado ao login: e-mail, telefone ou skips de ambiente. */
+  function accountVerified(user: Record<string, unknown> | null): boolean {
+    if (!user) return false;
+    return (
+      user.emailVerified === true ||
+      user.phoneVerified === true ||
+      skipEmailVerification ||
+      skipSmsVerification
+    );
+  }
+
   async function sendOtp(args: {
     channel: string;
     target: string;
@@ -348,8 +359,8 @@ export function createRouter(store: DataStore): Router {
     const userId = await auth(req, store);
     if (!userId) return sendError(res, 401, 'unauthorized');
     const user = await store.findUserById(userId);
-    if (!user || user.emailVerified !== true) {
-      return sendError(res, 403, 'conta não verificada por e-mail');
+    if (!accountVerified(user)) {
+      return sendError(res, 403, 'conta não confirmada — use o código OTP');
     }
     const result = await store.push(userId, req.body as Record<string, unknown>);
     return res.json(result);
@@ -370,8 +381,8 @@ export function createRouter(store: DataStore): Router {
     const userId = await auth(req, store);
     if (!userId) return sendError(res, 401, 'unauthorized');
     const user = await store.findUserById(userId);
-    if (!user || user.emailVerified !== true) {
-      return sendError(res, 403, 'conta não verificada por e-mail');
+    if (!accountVerified(user)) {
+      return sendError(res, 403, 'conta não confirmada — use o código OTP');
     }
     const body = req.body as Record<string, unknown>;
     const priceLogId = String(body.priceLogId ?? '');
@@ -421,8 +432,8 @@ export function createRouter(store: DataStore): Router {
     const userId = await auth(req, store);
     if (!userId) return sendError(res, 401, 'unauthorized');
     const user = await store.findUserById(userId);
-    if (!user || user.emailVerified !== true) {
-      return sendError(res, 403, 'conta não verificada');
+    if (!accountVerified(user)) {
+      return sendError(res, 403, 'conta não confirmada — use o código OTP');
     }
     const body = req.body as Record<string, unknown>;
     const stars = Number(body.stars ?? 0);
@@ -448,8 +459,8 @@ export function createRouter(store: DataStore): Router {
     const userId = await auth(req, store);
     if (!userId) return sendError(res, 401, 'unauthorized');
     const user = await store.findUserById(userId);
-    if (!user || user.emailVerified !== true) {
-      return sendError(res, 403, 'conta não verificada');
+    if (!accountVerified(user)) {
+      return sendError(res, 403, 'conta não confirmada — use o código OTP');
     }
     const body = req.body as Record<string, unknown>;
     const name = String(body.name ?? '').trim();
