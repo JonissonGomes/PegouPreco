@@ -1,4 +1,4 @@
-import React from 'react';
+import React, {useEffect, useState} from 'react';
 import {Pressable, StyleSheet, Text, View} from 'react-native';
 import {MapPin, Star, TrendingDown, TrendingUp, Minus} from 'lucide-react-native';
 import {KeyboardSafeSheet} from '@/ui/keyboardSheet';
@@ -35,81 +35,88 @@ export function MarketPinSheet({
   onClose: () => void;
   onUse?: (market: Market) => void;
 }) {
-  if (!market) {
-    return (
-      <KeyboardSafeSheet visible={false} onClose={onClose}>
-        <View />
-      </KeyboardSafeSheet>
-    );
-  }
-  const band = resolvePriceBand(market);
-  const rating = market.avgRating ?? 0;
+  // Mantém o último mercado durante o fade-out do sheet.
+  const [cached, setCached] = useState<Market | null>(market);
+  const [cachedDist, setCachedDist] = useState(distanceKm);
+
+  useEffect(() => {
+    if (market) {
+      setCached(market);
+      setCachedDist(distanceKm);
+    }
+  }, [market, distanceKm]);
+
+  const shown = market ?? cached;
+  const dist = market ? distanceKm : cachedDist;
+  const band = shown ? resolvePriceBand(shown) : 'unknown';
+  const rating = shown?.avgRating ?? 0;
 
   return (
-    <KeyboardSafeSheet visible onClose={onClose}>
-      <View style={styles.handle} />
-      <View style={styles.hero}>
-        <View style={styles.pinBadge}>
-          <MapPin size={22} color={colors.navy} />
-        </View>
-        <View style={{flex: 1}}>
-          <Text style={styles.title}>{market.name}</Text>
-          <Text style={styles.addr} numberOfLines={2}>
-            {market.address || 'Endereço não informado'}
-          </Text>
-        </View>
-      </View>
-
-      <View style={styles.stats}>
-        <View style={styles.stat}>
-          <Text style={styles.statLabel}>Distância</Text>
-          <Text style={styles.statValue}>{formatDistanceKm(distanceKm)}</Text>
-        </View>
-        <View style={styles.stat}>
-          <Text style={styles.statLabel}>Nota</Text>
-          <View style={styles.ratingRow}>
-            <Star size={14} color={colors.yellowBright} fill={colors.yellowBright} />
-            <Text style={styles.statValue}>
-              {rating > 0 ? rating.toFixed(1) : '—'}
-            </Text>
+    <KeyboardSafeSheet visible={!!market} onClose={onClose}>
+      {shown ? (
+        <>
+          <View style={styles.hero}>
+            <View style={styles.pinBadge}>
+              <MapPin size={22} color={colors.navy} />
+            </View>
+            <View style={{flex: 1}}>
+              <Text style={styles.title}>{shown.name}</Text>
+              <Text style={styles.addr} numberOfLines={2}>
+                {shown.address || 'Endereço não informado'}
+              </Text>
+            </View>
           </View>
-          <Text style={styles.statHint}>
-            {market.ratingsCount > 0
-              ? `${market.ratingsCount} avaliações`
-              : 'ainda sem avaliações'}
-          </Text>
-        </View>
-        <View style={[styles.stat, bandStyle(band)]}>
-          <Text style={styles.statLabel}>Preço</Text>
-          <View style={styles.ratingRow}>
-            <BandIcon band={band} />
-            <Text style={styles.statValue}>{priceBandLabel(band)}</Text>
-          </View>
-          <Text style={styles.statHint}>pela comunidade</Text>
-        </View>
-      </View>
 
-      {onUse ? (
-        <Pressable style={styles.cta} onPress={() => onUse(market)}>
-          <Text style={styles.ctaText}>Usar este mercado</Text>
-        </Pressable>
-      ) : null}
-      <Pressable style={styles.secondary} onPress={onClose}>
-        <Text style={styles.secondaryText}>Fechar</Text>
-      </Pressable>
+          <View style={styles.stats}>
+            <View style={styles.stat}>
+              <Text style={styles.statLabel}>Distância</Text>
+              <Text style={styles.statValue}>{formatDistanceKm(dist)}</Text>
+            </View>
+            <View style={styles.stat}>
+              <Text style={styles.statLabel}>Nota</Text>
+              <View style={styles.ratingRow}>
+                <Star
+                  size={14}
+                  color={colors.yellowBright}
+                  fill={colors.yellowBright}
+                />
+                <Text style={styles.statValue}>
+                  {rating > 0 ? rating.toFixed(1) : '—'}
+                </Text>
+              </View>
+              <Text style={styles.statHint}>
+                {shown.ratingsCount > 0
+                  ? `${shown.ratingsCount} avaliações`
+                  : 'ainda sem avaliações'}
+              </Text>
+            </View>
+            <View style={[styles.stat, bandStyle(band)]}>
+              <Text style={styles.statLabel}>Preço</Text>
+              <View style={styles.ratingRow}>
+                <BandIcon band={band} />
+                <Text style={styles.statValue}>{priceBandLabel(band)}</Text>
+              </View>
+              <Text style={styles.statHint}>pela comunidade</Text>
+            </View>
+          </View>
+
+          {onUse ? (
+            <Pressable style={styles.cta} onPress={() => onUse(shown)}>
+              <Text style={styles.ctaText}>Usar este mercado</Text>
+            </Pressable>
+          ) : null}
+          <Pressable style={styles.secondary} onPress={onClose}>
+            <Text style={styles.secondaryText}>Fechar</Text>
+          </Pressable>
+        </>
+      ) : (
+        <View />
+      )}
     </KeyboardSafeSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  handle: {
-    alignSelf: 'center',
-    width: 42,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.border,
-    marginBottom: 12,
-  },
   hero: {flexDirection: 'row', gap: 12, alignItems: 'flex-start'},
   pinBadge: {
     width: 48,

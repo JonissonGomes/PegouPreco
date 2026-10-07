@@ -480,6 +480,11 @@ export const cartRepo = {
     });
     saveState();
   },
+  remove(id: number) {
+    const st = getState();
+    st.cart_items = st.cart_items.filter(c => c.id !== id);
+    saveState();
+  },
   computeTotals(items: CartItem[]) {
     let subtotal = 0;
     let savings = 0;
@@ -502,6 +507,11 @@ export const shoppingListRepo = {
   },
   insert(list: Omit<ShoppingList, 'id'>) {
     getState().shopping_lists.push({...list, id: nextId('shopping_lists')});
+    saveState();
+  },
+  remove(id: number) {
+    const st = getState();
+    st.shopping_lists = st.shopping_lists.filter(l => l.id !== id);
     saveState();
   },
 };

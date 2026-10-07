@@ -1,19 +1,23 @@
 import React, {useEffect, useMemo, useRef, useState} from 'react';
 import {
   ActivityIndicator,
+  FlatList,
+  Keyboard,
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import {WebView, type WebViewMessageEvent} from 'react-native-webview';
 import Geolocation from 'react-native-geolocation-service';
-import {LocateFixed, RefreshCw} from 'lucide-react-native';
+import {LocateFixed, RefreshCw, Search, X} from 'lucide-react-native';
 import {MAPBOX_ACCESS_TOKEN} from '@/config/env';
 import {refreshPermissionFlags} from '@/app/permissions';
 import {AppScreenHeader, AppScreenNavyBar} from '@/ui/chrome';
 import {MarketPinSheet} from '@/ui/MarketPinSheet';
-import {colors} from '@/ui/theme';
+import {colors, space} from '@/ui/theme';
+import {formatDistanceKm} from '@/domain/marketUi';
 import {marketRepo, prefs, useAppStore} from '@/store/appStore';
 import {syncApi} from '@/data/remote/syncApi';
 import {
@@ -182,6 +186,15 @@ function buildMapHtml(
       center[1] = lng;
     };
 
+    window.flyToMarket = function(lat, lng, zoom) {
+      const z = zoom || 16;
+      if (map.flyTo) {
+        map.flyTo([lat, lng], z, { animate: true, duration: 1.1 });
+      } else {
+        map.setView([lat, lng], z, { animate: true });
+      }
+    };
+
     window.setMarkets = function(list) {
       renderMarkets(list || []);
     };
@@ -220,6 +233,8 @@ export function MapScreen() {
   const [selected, setSelected] = useState<Market | null>(null);
   /** IDs da última descoberta — evita pins de seed genérico fora do lugar. */
   const [pinIds, setPinIds] = useState<number[] | null>(null);
+  const [query, setQuery] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
 
   const nearby = useMemo(() => {
     if (pinIds && pinIds.length > 0) {
@@ -255,6 +270,36 @@ export function MapScreen() {
           {lat: selected.lat, lng: selected.lng},
         )
       : null;
+
+  const searchHits = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return [];
+    return nearby
+      .filter(
+        m =>
+          m.name.toLowerCase().includes(q) ||
+          (m.address ?? '').toLowerCase().includes(q),
+      )
+      .slice(0, 8)
+      .map(m => ({
+        market: m,
+        distanceKm: haversineKm(
+          {lat: center.latitude, lng: center.longitude},
+          {lat: m.lat!, lng: m.lng!},
+        ),
+      }));
+  }, [nearby, query, center.latitude, center.longitude]);
+
+  const flyToMarket = (m: Market) => {
+    if (m.lat == null || m.lng == null) return;
+    Keyboard.dismiss();
+    webRef.current?.injectJavaScript(
+      `window.flyToMarket && window.flyToMarket(${m.lat}, ${m.lng}, 16); true;`,
+    );
+    setSelected(m);
+    setSearchOpen(false);
+    setQuery('');
+  };
 
   const html = useMemo(
     () => buildMapHtml(center, markerData, MAPBOX_ACCESS_TOKEN),
@@ -403,7 +448,16 @@ export function MapScreen() {
       const msg = JSON.parse(e.nativeEvent.data) as {type?: string; id?: string};
       if (msg.type === 'market' && msg.id) {
         const m = markets.find(x => String(x.id) === String(msg.id));
-        if (m) setSelected(m);
+        if (m) {
+          setSearchOpen(false);
+          setQuery('');
+          setSelected(m);
+          if (m.lat != null && m.lng != null) {
+            webRef.current?.injectJavaScript(
+              `window.flyToMarket && window.flyToMarket(${m.lat}, ${m.lng}, 15); true;`,
+            );
+          }
+        }
       }
     } catch {
       // ignore
@@ -445,6 +499,30 @@ export function MapScreen() {
           </View>
         }
       />
+      <View style={styles.searchBar}>
+        <Search size={16} color={colors.muted} />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Buscar mercado no mapa…"
+          placeholderTextColor={colors.muted}
+          value={query}
+          onChangeText={t => {
+            setQuery(t);
+            setSearchOpen(true);
+          }}
+          onFocus={() => setSearchOpen(true)}
+        />
+        {query.length > 0 ? (
+          <Pressable
+            onPress={() => {
+              setQuery('');
+              setSearchOpen(false);
+            }}
+            hitSlop={8}>
+            <X size={16} color={colors.muted} />
+          </Pressable>
+        ) : null}
+      </View>
       <View style={{flex: 1}}>
         {loading ? (
           <ActivityIndicator style={{marginTop: 40}} color={colors.navy} />
@@ -463,6 +541,36 @@ export function MapScreen() {
             allowFileAccess
           />
         )}
+        {searchOpen && query.trim().length > 0 ? (
+          <View style={styles.searchPanel}>
+            {searchHits.length === 0 ? (
+              <Text style={styles.searchEmpty}>Nenhum mercado encontrado</Text>
+            ) : (
+              <FlatList
+                keyboardShouldPersistTaps="handled"
+                data={searchHits}
+                keyExtractor={x => String(x.market.id)}
+                renderItem={({item}) => (
+                  <Pressable
+                    style={styles.searchRow}
+                    onPress={() => flyToMarket(item.market)}>
+                    <View style={{flex: 1}}>
+                      <Text style={styles.searchName} numberOfLines={1}>
+                        {item.market.name}
+                      </Text>
+                      <Text style={styles.searchMeta} numberOfLines={1}>
+                        {formatDistanceKm(item.distanceKm)}
+                        {item.market.address
+                          ? ` · ${item.market.address}`
+                          : ''}
+                      </Text>
+                    </View>
+                  </Pressable>
+                )}
+              />
+            )}
+          </View>
+        ) : null}
         {(!mapReady && !loading) || discovering ? (
           <View style={styles.overlayLoader} pointerEvents="none">
             <ActivityIndicator color={colors.navy} />
@@ -496,6 +604,52 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   pillText: {color: colors.navy, fontWeight: '800', fontSize: 11},
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginHorizontal: space.md,
+    marginVertical: 8,
+    paddingHorizontal: 12,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  searchInput: {flex: 1, color: colors.ink, fontWeight: '600', fontSize: 14},
+  searchPanel: {
+    position: 'absolute',
+    top: 8,
+    left: space.md,
+    right: space.md,
+    maxHeight: 240,
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    zIndex: 20,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    shadowOffset: {width: 0, height: 4},
+    overflow: 'hidden',
+  },
+  searchRow: {
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  searchName: {fontWeight: '800', color: colors.navy, fontSize: 14},
+  searchMeta: {marginTop: 2, color: colors.muted, fontWeight: '600', fontSize: 12},
+  searchEmpty: {
+    padding: 16,
+    color: colors.muted,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
   overlayLoader: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'center',

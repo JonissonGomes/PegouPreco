@@ -2,6 +2,7 @@ import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   Pressable,
   StyleSheet,
   Text,
@@ -49,10 +50,60 @@ function LabelHitPreview({
   onPress: () => void;
   onDismiss: () => void;
 }) {
+  const enter = useRef(new Animated.Value(0)).current;
+  const pulse = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    enter.setValue(0);
+    Animated.spring(enter, {
+      toValue: 1,
+      friction: 7,
+      tension: 90,
+      useNativeDriver: true,
+    }).start();
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, {
+          toValue: 1.08,
+          duration: 700,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulse, {
+          toValue: 1,
+          duration: 700,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [enter, pulse, fields.productName, fields.retailPrice]);
+
   return (
-    <View style={styles.hitWrap} pointerEvents="box-none">
+    <Animated.View
+      style={[
+        styles.hitWrap,
+        {
+          opacity: enter,
+          transform: [
+            {
+              translateY: enter.interpolate({
+                inputRange: [0, 1],
+                outputRange: [28, 0],
+              }),
+            },
+            {
+              scale: enter.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0.94, 1],
+              }),
+            },
+          ],
+        },
+      ]}
+      pointerEvents="box-none">
       <Pressable style={styles.hitCard} onPress={onPress}>
-        <View style={styles.hitDot} />
+        <Animated.View style={[styles.hitDot, {transform: [{scale: pulse}]}]} />
         <View style={{flex: 1, minWidth: 0}}>
           <Text style={styles.hitName} numberOfLines={1}>
             {fields.productName || 'Etiqueta detectada'}
@@ -75,7 +126,7 @@ function LabelHitPreview({
         accessibilityLabel="Dispensar">
         <X size={14} color="#fff" />
       </Pressable>
-    </View>
+    </Animated.View>
   );
 }
 

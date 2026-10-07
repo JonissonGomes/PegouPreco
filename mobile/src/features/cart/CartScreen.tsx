@@ -1,13 +1,16 @@
-import React, {useEffect, useMemo, useState} from 'react';
+import React, {useCallback, useEffect, useMemo, useState} from 'react';
 import {
   Alert,
-  FlatList,
+  LayoutAnimation,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
+  UIManager,
   View,
 } from 'react-native';
-import {useNavigation} from '@react-navigation/native';
+import {FlatList} from 'react-native-gesture-handler';
+import {useFocusEffect, useNavigation} from '@react-navigation/native';
 import Geolocation from 'react-native-geolocation-service';
 import {
   Check,
@@ -26,7 +29,15 @@ import {
 } from '@/ui/chrome';
 import {KeyboardSafeSheet} from '@/ui/keyboardSheet';
 import {MarketSuggestRow} from '@/ui/MarketSuggestRow';
+import {SwipeableActions} from '@/ui/SwipeableActions';
 import {colors, spacing} from '@/ui/theme';
+
+if (
+  Platform.OS === 'android' &&
+  UIManager.setLayoutAnimationEnabledExperimental
+) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 import {formatBrl, formatQty, parseBrl} from '@/domain/money';
 import {effectiveUnitPrice, lineTotal} from '@/domain/pricing';
 import {rankNearestMarkets} from '@/domain/marketUi';
@@ -76,6 +87,13 @@ export function CartScreen() {
   const totals = useMemo(() => cartRepo.computeTotals(cart), [cart]);
   const pending = totals.itemCount - totals.checkedCount;
   const bottomPad = navVisible ? spacing.bottomNavClearance : 16;
+
+  useFocusEffect(
+    useCallback(() => {
+      setNavVisible(true);
+      return () => setNavVisible(true);
+    }, [setNavVisible]),
+  );
 
   useEffect(() => {
     if (!startOpen) return;
@@ -204,10 +222,34 @@ export function CartScreen() {
             }}
             scrollEventThrottle={16}
             renderItem={({item}) => (
-              <CartRow item={item} onEdit={() => setEditItem(item)} onToggle={() => {
-                cartRepo.toggleChecked(item.id);
-                refresh();
-              }} />
+              <CartRow
+                item={item}
+                onEdit={() => setEditItem(item)}
+                onDelete={() => {
+                  Alert.alert(
+                    'Excluir item?',
+                    `"${item.productName}" será removido da lista.`,
+                    [
+                      {text: 'Cancelar', style: 'cancel'},
+                      {
+                        text: 'Excluir',
+                        style: 'destructive',
+                        onPress: () => {
+                          LayoutAnimation.configureNext(
+                            LayoutAnimation.Presets.easeInEaseOut,
+                          );
+                          cartRepo.remove(item.id);
+                          refresh();
+                        },
+                      },
+                    ],
+                  );
+                }}
+                onToggle={() => {
+                  cartRepo.toggleChecked(item.id);
+                  refresh();
+                }}
+              />
             )}
           />
           <View style={[styles.finalizeBar, {paddingBottom: bottomPad}]}>
@@ -335,10 +377,12 @@ export function CartScreen() {
 function CartRow({
   item,
   onEdit,
+  onDelete,
   onToggle,
 }: {
   item: CartItem;
   onEdit: () => void;
+  onDelete: () => void;
   onToggle: () => void;
 }) {
   const refresh = useAppStore(s => s.refresh);
@@ -360,105 +404,117 @@ function CartRow({
   const swapSave = canSwap && best != null ? (unit - best) * item.quantity : 0;
 
   return (
-    <AppListCard style={canSwap ? styles.cardSwap : undefined}>
-      <View style={styles.row}>
-        <Pressable
-          onPress={onToggle}
-          style={[styles.check, item.checkedOff ? styles.checkOn : null]}>
-          {item.checkedOff ? <Check size={14} color="#fff" strokeWidth={3} /> : null}
-        </Pressable>
-        <View style={{flex: 1}}>
-          <View style={styles.itemTop}>
-            <View style={{flex: 1, minWidth: 0}}>
-              <Text
-                style={[
-                  styles.itemName,
-                  item.checkedOff
-                    ? {textDecorationLine: 'line-through', color: colors.muted}
-                    : null,
-                ]}>
-                {item.productName}
-              </Text>
-              <Text style={styles.muted}>
-                {qtyPhrase(item.quantity)} · {formatBrl(unit)}
-              </Text>
+    <SwipeableActions onEdit={onEdit} onDelete={onDelete}>
+      <AppListCard
+        style={[
+          {marginBottom: 0},
+          canSwap ? styles.cardSwap : undefined,
+        ]}>
+        <View style={styles.row}>
+          <Pressable
+            onPress={onToggle}
+            style={[styles.check, item.checkedOff ? styles.checkOn : null]}>
+            {item.checkedOff ? (
+              <Check size={14} color="#fff" strokeWidth={3} />
+            ) : null}
+          </Pressable>
+          <View style={{flex: 1}}>
+            <View style={styles.itemTop}>
+              <View style={{flex: 1, minWidth: 0}}>
+                <Text
+                  style={[
+                    styles.itemName,
+                    item.checkedOff
+                      ? {
+                          textDecorationLine: 'line-through',
+                          color: colors.muted,
+                        }
+                      : null,
+                  ]}>
+                  {item.productName}
+                </Text>
+                <Text style={styles.muted}>
+                  {qtyPhrase(item.quantity)} · {formatBrl(unit)}
+                </Text>
+                <Text style={styles.swipeHint}>Arraste ← editar / excluir</Text>
+              </View>
+              <View style={{alignItems: 'flex-end'}}>
+                <View style={{flexDirection: 'row', alignItems: 'center'}}>
+                  <Text style={styles.price}>{formatBrl(total)}</Text>
+                  <Pressable onPress={onEdit} hitSlop={8} style={{marginLeft: 4}}>
+                    <Pencil size={15} color={colors.navy} />
+                  </Pressable>
+                </View>
+                {pct != null && pct >= 1 ? (
+                  <View style={styles.badge}>
+                    <Text style={styles.badgeText}>
+                      {pct.toFixed(0)}% abaixo da última
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
             </View>
-            <View style={{alignItems: 'flex-end'}}>
-              <View style={{flexDirection: 'row', alignItems: 'center'}}>
-                <Text style={styles.price}>{formatBrl(total)}</Text>
-                <Pressable onPress={onEdit} hitSlop={8} style={{marginLeft: 4}}>
-                  <Pencil size={15} color={colors.navy} />
+
+            {(previous != null || (best != null && best + 0.009 < unit)) &&
+            !canSwap ? (
+              <View style={styles.compareRow}>
+                {previous != null ? (
+                  <View style={styles.compareBox}>
+                    <Text style={styles.compareLabel}>Compra anterior</Text>
+                    <Text style={styles.compareValue} numberOfLines={1}>
+                      {formatBrl(previous)}
+                      {ctx.previousAt
+                        ? ` · ${MONTHS[new Date(ctx.previousAt).getMonth()]}`
+                        : ''}
+                    </Text>
+                  </View>
+                ) : null}
+                {best != null && best + 0.009 < unit ? (
+                  <View style={[styles.compareBox, styles.compareHi]}>
+                    <Text style={[styles.compareLabel, {color: colors.navy}]}>
+                      Menor preço
+                    </Text>
+                    <Text
+                      style={[styles.compareValue, {fontWeight: '800'}]}
+                      numberOfLines={1}>
+                      {formatBrl(best)}
+                      {ctx.bestMarketName ? ` · ${ctx.bestMarketName}` : ''}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
+
+            {canSwap && best != null ? (
+              <View style={styles.swapBanner}>
+                <View style={{flex: 1}}>
+                  <Text style={styles.swapTitle} numberOfLines={1}>
+                    {formatBrl(best)} no {ctx.bestMarketName}
+                  </Text>
+                  <Text style={styles.swapSub}>
+                    Economize {formatBrl(swapSave)} nesta compra
+                  </Text>
+                </View>
+                <Pressable
+                  style={styles.swapBtn}
+                  onPress={() => {
+                    cartRepo.updateItem(item.id, {
+                      productName: item.productName,
+                      quantity: item.quantity,
+                      retailPrice: best,
+                      wholesalePrice: item.wholesalePrice,
+                      minWholesaleQty: item.minWholesaleQty,
+                    });
+                    refresh();
+                  }}>
+                  <Text style={styles.swapBtnText}>Trocar</Text>
                 </Pressable>
               </View>
-              {pct != null && pct >= 1 ? (
-                <View style={styles.badge}>
-                  <Text style={styles.badgeText}>
-                    {pct.toFixed(0)}% abaixo da última
-                  </Text>
-                </View>
-              ) : null}
-            </View>
+            ) : null}
           </View>
-
-          {(previous != null || (best != null && best + 0.009 < unit)) &&
-          !canSwap ? (
-            <View style={styles.compareRow}>
-              {previous != null ? (
-                <View style={styles.compareBox}>
-                  <Text style={styles.compareLabel}>Compra anterior</Text>
-                  <Text style={styles.compareValue} numberOfLines={1}>
-                    {formatBrl(previous)}
-                    {ctx.previousAt
-                      ? ` · ${MONTHS[new Date(ctx.previousAt).getMonth()]}`
-                      : ''}
-                  </Text>
-                </View>
-              ) : null}
-              {best != null && best + 0.009 < unit ? (
-                <View style={[styles.compareBox, styles.compareHi]}>
-                  <Text style={[styles.compareLabel, {color: colors.navy}]}>
-                    Menor preço
-                  </Text>
-                  <Text
-                    style={[styles.compareValue, {fontWeight: '800'}]}
-                    numberOfLines={1}>
-                    {formatBrl(best)}
-                    {ctx.bestMarketName ? ` · ${ctx.bestMarketName}` : ''}
-                  </Text>
-                </View>
-              ) : null}
-            </View>
-          ) : null}
-
-          {canSwap && best != null ? (
-            <View style={styles.swapBanner}>
-              <View style={{flex: 1}}>
-                <Text style={styles.swapTitle} numberOfLines={1}>
-                  {formatBrl(best)} no {ctx.bestMarketName}
-                </Text>
-                <Text style={styles.swapSub}>
-                  Economize {formatBrl(swapSave)} nesta compra
-                </Text>
-              </View>
-              <Pressable
-                style={styles.swapBtn}
-                onPress={() => {
-                  cartRepo.updateItem(item.id, {
-                    productName: item.productName,
-                    quantity: item.quantity,
-                    retailPrice: best,
-                    wholesalePrice: item.wholesalePrice,
-                    minWholesaleQty: item.minWholesaleQty,
-                  });
-                  refresh();
-                }}>
-                <Text style={styles.swapBtnText}>Trocar</Text>
-              </Pressable>
-            </View>
-          ) : null}
         </View>
-      </View>
-    </AppListCard>
+      </AppListCard>
+    </SwipeableActions>
   );
 }
 
@@ -561,6 +617,12 @@ const styles = StyleSheet.create({
   },
   section: {fontWeight: '800', color: colors.ink, fontSize: 18},
   muted: {color: colors.muted, fontWeight: '500', fontSize: 12, marginTop: 4},
+  swipeHint: {
+    marginTop: 4,
+    fontSize: 10,
+    fontWeight: '600',
+    color: 'rgba(107,114,128,0.75)',
+  },
   empty: {flex: 1, justifyContent: 'center', padding: 24, gap: 12},
   emptyTitle: {fontSize: 20, fontWeight: '800', color: colors.navy},
   emptyMsg: {color: colors.muted, marginBottom: 8},

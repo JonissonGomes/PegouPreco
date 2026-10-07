@@ -1,5 +1,13 @@
-import React from 'react';
-import {ActivityIndicator, StyleSheet, Text, View} from 'react-native';
+import React, {useEffect} from 'react';
+import {
+  ActivityIndicator,
+  LayoutAnimation,
+  Platform,
+  StyleSheet,
+  Text,
+  UIManager,
+  View,
+} from 'react-native';
 import {NavigationContainer} from '@react-navigation/native';
 import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
@@ -26,6 +34,13 @@ import {BrandLogo} from '@/ui/chrome';
 import {colors, spacing} from '@/ui/theme';
 import {useAppStore} from '@/store/appStore';
 
+if (
+  Platform.OS === 'android' &&
+  UIManager.setLayoutAnimationEnabledExperimental
+) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
 
@@ -34,10 +49,15 @@ function Tabs() {
   const visible = useAppStore(s => s.bottomNavVisible);
   const bottom = visible ? 0 : -140;
 
+  useEffect(() => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+  }, [visible]);
+
   return (
     <Tab.Navigator
       screenOptions={{
         headerShown: false,
+        tabBarHideOnKeyboard: true,
         tabBarStyle: {
           position: 'absolute',
           left: 0,
@@ -123,7 +143,13 @@ export function RootNavigation() {
 
   return (
     <NavigationContainer>
-      <Stack.Navigator screenOptions={{headerShown: false}}>
+      <Stack.Navigator
+        screenOptions={{
+          headerShown: false,
+          animation: 'slide_from_right',
+          animationDuration: 220,
+          contentStyle: {backgroundColor: colors.bg},
+        }}>
         {!onboardingDone ? (
           <Stack.Screen name="Onboarding" component={OnboardingScreen} />
         ) : (

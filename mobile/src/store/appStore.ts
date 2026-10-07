@@ -139,6 +139,7 @@ export {
   productRepo,
   cartRepo,
   marketRepo,
+  shoppingListRepo,
   prefs,
   canContribute,
 };
