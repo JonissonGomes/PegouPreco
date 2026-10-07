@@ -1,4 +1,4 @@
-import React, {useCallback, useMemo, useState} from 'react';
+import React, {useCallback, useEffect, useMemo, useState} from 'react';
 import {
   Alert,
   FlatList,
@@ -7,21 +7,27 @@ import {
   Text,
   View,
 } from 'react-native';
-import {AppButton, AppScreenHeader} from '@/ui/chrome';
+import {Star} from 'lucide-react-native';
+import {AppScreenHeader, AppScreenNavyBar} from '@/ui/chrome';
 import {
   EmptyState,
+  FiscalBadge,
+  MissionHero,
   PriceTrustBadge,
+  ScoreMeter,
   Screen,
   SectionHeader,
-  StarsRow,
+  VoteButtons,
+  XpBurst,
 } from '@/ui/components';
-import {colors, space} from '@/ui/theme';
+import {MarketReviewSheet} from '@/ui/MarketReviewSheet';
+import {colors, radii, space} from '@/ui/theme';
 import {formatBrl} from '@/domain/money';
 import {TrustEngine} from '@/domain/trust';
 import {canContribute, prefs, useAppStore} from '@/store/appStore';
 import {getState} from '@/data/db';
-import type {PriceLog, TrustLevel} from '@/data/types';
-import {syncApi} from '@/data/remote/syncApi';
+import type {FiscalLevel, PriceLog, TrustLevel} from '@/data/types';
+import {syncApi, type ReputationRemote} from '@/data/remote/syncApi';
 import {apiErrorMessage} from '@/data/remote/apiError';
 
 type FeedItem = {
@@ -29,6 +35,8 @@ type FeedItem = {
   productName: string;
   marketName: string;
 };
+
+type Burst = {points: number; title: string} | null;
 
 export function CommunityScreen() {
   const auth = useAppStore(s => s.auth);
@@ -38,12 +46,26 @@ export function CommunityScreen() {
   const loc = prefs.getLocationPrefs();
   const [busyId, setBusyId] = useState<number | null>(null);
   const [reviewMarketId, setReviewMarketId] = useState<number | null>(null);
+  const [reviewBusy, setReviewBusy] = useState(false);
+  const [rep, setRep] = useState<ReputationRemote | null>(null);
+  const [burst, setBurst] = useState<Burst>(null);
+
+  useEffect(() => {
+    if (!auth?.token) {
+      setRep(null);
+      return;
+    }
+    syncApi
+      .reputation(auth.token)
+      .then(setRep)
+      .catch(() => setRep(null));
+  }, [auth?.token]);
 
   const feed = useMemo(() => {
     const logs = getState().price_logs.filter(
       l => l.trustLevel === 'suspect' || l.trustLevel === 'verified',
     );
-    const items: FeedItem[] = logs
+    return logs
       .map(log => ({
         log,
         productName:
@@ -57,8 +79,22 @@ export function CommunityScreen() {
           new Date(a.log.capturedAt).getTime(),
       )
       .slice(0, 40);
-    return items;
   }, [markets, products, refresh]);
+
+  const pending = feed.filter(f => f.log.trustLevel === 'suspect').length;
+  const level =
+    (rep?.level as FiscalLevel) ??
+    TrustEngine.levelForPoints(rep?.points ?? 0);
+
+  const celebrate = (points: number, title: string) => {
+    setBurst({points, title});
+    if (auth?.token) {
+      syncApi
+        .reputation(auth.token)
+        .then(setRep)
+        .catch(() => undefined);
+    }
+  };
 
   const vote = useCallback(
     async (item: FeedItem, voteType: 'confirm' | 'reject') => {
@@ -78,15 +114,15 @@ export function CommunityScreen() {
         return;
       }
       setBusyId(item.log.id);
+      const pts = TrustEngine.pointsForVote(voteType, false);
       try {
-        const weight = TrustEngine.weightFor('bronze');
+        const weight = TrustEngine.weightFor(level);
         await syncApi.castVote(auth.token, {
           priceLogId: remoteId,
           vote: voteType,
           withPhoto: false,
           weight,
         });
-        // Atualização otimista local
         const st = getState();
         const log = st.price_logs.find(l => l.id === item.log.id);
         if (log) {
@@ -104,45 +140,81 @@ export function CommunityScreen() {
           log.synced = 0;
         }
         refresh();
-        Alert.alert('Obrigado', 'Seu voto foi registrado.');
+        celebrate(
+          pts,
+          voteType === 'confirm' ? 'Preço confirmado!' : 'Preço rejeitado!',
+        );
       } catch (e) {
         Alert.alert('Voto', apiErrorMessage(e));
       } finally {
         setBusyId(null);
       }
     },
-    [auth, refresh],
+    [auth, refresh, level],
   );
 
-  const submitReview = async (marketId: number, stars: number) => {
+  const reviewMarket = markets.find(m => m.id === reviewMarketId);
+
+  const submitReview = async (stars: number) => {
     if (!canContribute(auth) || !auth?.token) {
       Alert.alert('Conta necessária', 'Verifique o e-mail para avaliar mercados.');
       return;
     }
-    const m = markets.find(x => x.id === marketId);
-    const rid = m?.remoteId;
+    const rid = reviewMarket?.remoteId;
     if (!rid) {
       Alert.alert('Mercado', 'Sincronize o mercado antes de avaliar.');
       return;
     }
+    setReviewBusy(true);
     try {
       await syncApi.submitMarketReview(auth.token, rid, stars);
-      Alert.alert('Avaliação', 'Obrigado pela nota!');
       setReviewMarketId(null);
+      celebrate(5, `${stars}★ no ${reviewMarket?.name ?? 'mercado'}`);
     } catch (e) {
       Alert.alert('Avaliação', apiErrorMessage(e));
+    } finally {
+      setReviewBusy(false);
     }
   };
+
+  const region =
+    [loc.neighborhood, loc.city].filter(Boolean).join(', ') ||
+    'Valide preços da região';
 
   return (
     <Screen>
       <AppScreenHeader
-        title="Comunidade"
-        subtitle={
-          [loc.neighborhood, loc.city].filter(Boolean).join(', ') ||
-          'Valide preços da região'
+        stacked
+        title="Missões da comunidade"
+        subtitle={region}
+      />
+      <AppScreenNavyBar
+        value={String(pending)}
+        label="preços na fila"
+        trailing={
+          <View style={styles.pill}>
+            <Text style={styles.pillText}>
+              Fiscal {TrustEngine.fiscalLabel(level)} · {rep?.points ?? 0} pts
+            </Text>
+          </View>
         }
       />
+
+      <MissionHero
+        badge={<FiscalBadge level={level} points={rep?.points ?? 0} />}
+        title={
+          pending > 0
+            ? `${pending} missões esperando você`
+            : 'Fila limpa — bom trabalho!'
+        }
+        subtitle="Confirme ou rejeite preços suspeitos e ganhe pontos de Fiscal. Avalie mercados para subir de nível."
+        footer={
+          canContribute(auth)
+            ? 'Conta verificada · votos valem XP'
+            : 'Verifique o e-mail no Perfil para liberar missões'
+        }
+      />
+
       <SectionHeader title="Preços para validar" />
       <FlatList
         data={feed}
@@ -151,82 +223,145 @@ export function CommunityScreen() {
         ListEmptyComponent={
           <EmptyState
             title="Nada na fila"
-            message="Quando alguém capturar um preço suspeito na sua região, ele aparece aqui."
+            message="Quando alguém capturar um preço suspeito na sua região, a missão aparece aqui."
           />
         }
-        renderItem={({item}) => (
-          <View style={styles.card}>
-            <View style={styles.cardTop}>
-              <View style={{flex: 1}}>
-                <Text style={styles.name}>{item.productName}</Text>
-                <Text style={styles.meta}>{item.marketName}</Text>
-              </View>
-              <PriceTrustBadge level={item.log.trustLevel} />
-            </View>
-            <Text style={styles.price}>{formatBrl(item.log.retailPrice)}</Text>
-            <Text style={styles.meta}>
-              fonte {item.log.source} · conf {item.log.confirmScore.toFixed(0)} / rej{' '}
-              {item.log.rejectScore.toFixed(0)}
-            </Text>
-            {item.log.trustLevel === 'suspect' ? (
-              <View style={styles.actions}>
-                <AppButton
-                  label={busyId === item.log.id ? '…' : 'Confirmar'}
-                  onPress={() => vote(item, 'confirm')}
-                  disabled={busyId === item.log.id}
-                />
-                <AppButton
-                  label="Rejeitar"
-                  outlined
-                  onPress={() => vote(item, 'reject')}
-                  disabled={busyId === item.log.id}
-                />
-              </View>
-            ) : null}
-            {item.log.marketId != null ? (
-              <Pressable
-                onPress={() => setReviewMarketId(item.log.marketId)}
-                style={styles.reviewLink}>
-                <Text style={styles.reviewLinkText}>Avaliar mercado</Text>
-              </Pressable>
-            ) : null}
-            {reviewMarketId === item.log.marketId ? (
-              <View style={styles.reviewBox}>
-                <Text style={styles.meta}>Toque na nota</Text>
-                <View style={styles.starRow}>
-                  {[1, 2, 3, 4, 5].map(s => (
-                    <Pressable key={s} onPress={() => submitReview(item.log.marketId!, s)}>
-                      <StarsRow stars={s} />
-                    </Pressable>
-                  ))}
+        renderItem={({item}) => {
+          const suspect = item.log.trustLevel === 'suspect';
+          return (
+            <View style={[styles.card, suspect && styles.cardQuest]}>
+              <View style={styles.cardTop}>
+                <View style={{flex: 1, minWidth: 0}}>
+                  {suspect ? (
+                    <View style={styles.questTag}>
+                      <Text style={styles.questTagText}>Missão</Text>
+                    </View>
+                  ) : null}
+                  <Text style={styles.name} numberOfLines={2}>
+                    {item.productName}
+                  </Text>
+                  <Text style={styles.meta} numberOfLines={1}>
+                    {item.marketName}
+                  </Text>
                 </View>
+                <PriceTrustBadge level={item.log.trustLevel} />
               </View>
-            ) : null}
-          </View>
-        )}
+
+              <Text style={styles.price}>
+                {formatBrl(item.log.retailPrice)}
+              </Text>
+              <ScoreMeter
+                confirm={item.log.confirmScore}
+                reject={item.log.rejectScore}
+              />
+              <Text style={styles.source}>
+                fonte {item.log.source} · peso comunitário
+              </Text>
+
+              {suspect ? (
+                <VoteButtons
+                  busy={busyId === item.log.id}
+                  confirmPts={TrustEngine.pointsForVote('confirm', false)}
+                  rejectPts={TrustEngine.pointsForVote('reject', false)}
+                  onConfirm={() => vote(item, 'confirm')}
+                  onReject={() => vote(item, 'reject')}
+                />
+              ) : null}
+
+              {item.log.marketId != null ? (
+                <Pressable
+                  onPress={() => setReviewMarketId(item.log.marketId)}
+                  style={styles.reviewBtn}>
+                  <Star
+                    size={14}
+                    color={colors.navy}
+                    fill={colors.yellowBright}
+                  />
+                  <Text style={styles.reviewBtnText}>
+                    Avaliar {item.marketName}
+                  </Text>
+                  <View style={styles.miniPts}>
+                    <Text style={styles.miniPtsText}>+5</Text>
+                  </View>
+                </Pressable>
+              ) : null}
+            </View>
+          );
+        }}
+      />
+
+      <MarketReviewSheet
+        visible={reviewMarketId != null}
+        marketName={reviewMarket?.name ?? 'Mercado'}
+        busy={reviewBusy}
+        onClose={() => setReviewMarketId(null)}
+        onSubmit={submitReview}
+      />
+
+      <XpBurst
+        visible={!!burst}
+        points={burst?.points ?? 0}
+        title={burst?.title}
+        onDone={() => setBurst(null)}
       />
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  pill: {
+    backgroundColor: colors.yellowBright,
+    borderRadius: radii.pill,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  pillText: {color: colors.navy, fontWeight: '800', fontSize: 11},
   list: {padding: space.md, paddingBottom: 120},
   card: {
     backgroundColor: '#fff',
-    borderRadius: 16,
+    borderRadius: radii.lg,
     borderWidth: 1,
     borderColor: colors.border,
     padding: space.md,
     marginBottom: space.sm,
-    gap: 6,
+    gap: 4,
+  },
+  cardQuest: {
+    borderColor: colors.navy,
+    borderWidth: 1.5,
+    backgroundColor: '#FFFEF5',
   },
   cardTop: {flexDirection: 'row', alignItems: 'flex-start', gap: 8},
+  questTag: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.yellowBright,
+    borderRadius: radii.pill,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    marginBottom: 4,
+  },
+  questTagText: {fontSize: 10, fontWeight: '900', color: colors.navy},
   name: {fontWeight: '800', color: colors.navy, fontSize: 15},
-  meta: {color: colors.muted, fontWeight: '600', fontSize: 12},
-  price: {fontWeight: '800', color: colors.ink, fontSize: 20, marginTop: 4},
-  actions: {marginTop: 8, gap: 8},
-  reviewLink: {marginTop: 6},
-  reviewLinkText: {color: colors.navy, fontWeight: '800', fontSize: 12},
-  reviewBox: {marginTop: 8, gap: 6},
-  starRow: {gap: 6},
+  meta: {color: colors.muted, fontWeight: '600', fontSize: 12, marginTop: 2},
+  price: {fontWeight: '900', color: colors.ink, fontSize: 22, marginTop: 6},
+  source: {color: colors.muted, fontWeight: '600', fontSize: 11, marginTop: 2},
+  reviewBtn: {
+    marginTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    backgroundColor: '#EEF2FF',
+    borderRadius: radii.pill,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  reviewBtnText: {color: colors.navy, fontWeight: '800', fontSize: 12},
+  miniPts: {
+    backgroundColor: colors.yellowBright,
+    borderRadius: radii.pill,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  miniPtsText: {fontSize: 10, fontWeight: '900', color: colors.navy},
 });

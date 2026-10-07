@@ -7,6 +7,14 @@ import {TrustEngine} from '@/domain/trust';
 import {formatBrl} from '@/domain/money';
 import type {MarketBasketRank} from '@/domain/compare';
 
+export {
+  StarPicker,
+  ScoreMeter,
+  VoteButtons,
+  XpBurst,
+  MissionHero,
+} from './gamification';
+
 export function Screen({
   children,
   style,
@@ -142,13 +150,13 @@ export function MarketRankRow({
   );
 }
 
-export function StarsRow({stars}: {stars: number}) {
+export function StarsRow({stars, size = 14}: {stars: number; size?: number}) {
   return (
     <View style={{flexDirection: 'row', gap: 2}}>
       {[1, 2, 3, 4, 5].map(i => (
         <Star
           key={i}
-          size={14}
+          size={size}
           color={colors.yellowBright}
           fill={i <= stars ? colors.yellowBright : 'transparent'}
         />
@@ -205,6 +213,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.pill,
     paddingHorizontal: 10,
     paddingVertical: 5,
+    alignSelf: 'flex-start',
   },
   fiscalText: {fontWeight: '800', color: colors.navy, fontSize: 12},
   rankRow: {

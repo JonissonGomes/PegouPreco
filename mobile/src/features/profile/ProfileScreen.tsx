@@ -154,7 +154,8 @@ export function ProfileScreen() {
                     }
                   />
                 ) : null}
-                <View style={{marginTop: 12}}>
+                <View style={styles.repHero}>
+                  <Text style={styles.repKicker}>Seu progresso de Fiscal</Text>
                   <FiscalBadge
                     level={
                       (rep?.level as FiscalLevel) ??
@@ -162,6 +163,9 @@ export function ProfileScreen() {
                     }
                     points={rep?.points ?? 0}
                   />
+                  <Text style={styles.repHint}>
+                    Valide preços e avalie mercados na Comunidade para subir de nível.
+                  </Text>
                 </View>
                 {rep?.badges?.length ? (
                   <View style={styles.badgeWrap}>
@@ -176,7 +180,15 @@ export function ProfileScreen() {
                       );
                     })}
                   </View>
-                ) : null}
+                ) : (
+                  <View style={styles.badgeWrap}>
+                    <View style={[styles.badgeChip, styles.badgeLocked]}>
+                      <Text style={styles.badgeLockedText}>
+                        Badges desbloqueiam com missões
+                      </Text>
+                    </View>
+                  </View>
+                )}
               </View>
 
               <Text style={styles.section}>Região e favoritos</Text>
@@ -522,6 +534,29 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     overflow: 'hidden',
   },
+  repHero: {
+    marginTop: 12,
+    padding: 14,
+    borderRadius: 16,
+    backgroundColor: colors.yellowBright,
+    borderWidth: 2,
+    borderColor: colors.navy,
+    gap: 8,
+  },
+  repKicker: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: colors.navy,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+    opacity: 0.75,
+  },
+  repHint: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.navy,
+    lineHeight: 16,
+  },
   badgeWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -529,14 +564,19 @@ const styles = StyleSheet.create({
     marginTop: space.sm,
   },
   badgeChip: {
-    backgroundColor: colors.bg,
+    backgroundColor: colors.yellowBright,
     borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.navy,
   },
   badgeChipText: {fontSize: 11, fontWeight: '800', color: colors.navy},
+  badgeLocked: {
+    backgroundColor: colors.bg,
+    borderColor: colors.border,
+  },
+  badgeLockedText: {fontSize: 11, fontWeight: '700', color: colors.muted},
   favRow: {
     padding: 12,
     borderRadius: 12,

@@ -1,4 +1,4 @@
-import React, {useMemo, useState} from 'react';
+import React, {useEffect, useMemo, useState} from 'react';
 import {
   FlatList,
   Pressable,
@@ -16,16 +16,22 @@ import {
   AppScreenHeader,
   AppScreenNavyBar,
 } from '@/ui/chrome';
+import {FiscalBadge} from '@/ui/components';
 import {KeyboardSafeSheet} from '@/ui/keyboardSheet';
-import {colors} from '@/ui/theme';
+import {MarketSuggestRow} from '@/ui/MarketSuggestRow';
+import {colors, radii, space} from '@/ui/theme';
 import {formatBrl} from '@/domain/money';
+import {rankNearestMarkets} from '@/domain/marketUi';
 import {TrustEngine} from '@/domain/trust';
 import {
   marketRepo,
+  prefs,
   priceLogRepo,
   useAppStore,
   useMarketName,
 } from '@/store/appStore';
+import {syncApi, type ReputationRemote} from '@/data/remote/syncApi';
+import type {FiscalLevel} from '@/data/types';
 
 function miniDate(iso: string) {
   const local = new Date(iso);
@@ -44,6 +50,7 @@ export function InsightsScreen() {
   const nav = useNavigation<any>();
   const lists = useAppStore(s => s.lists);
   const markets = useAppStore(s => s.markets);
+  const auth = useAppStore(s => s.auth);
   const currentMarketId = useAppStore(s => s.currentMarketId);
   const setCurrentMarket = useAppStore(s => s.setCurrentMarket);
   const refresh = useAppStore(s => s.refresh);
@@ -51,6 +58,18 @@ export function InsightsScreen() {
   const [query, setQuery] = useState('');
   const [pickerOpen, setPickerOpen] = useState(false);
   const [marketQuery, setMarketQuery] = useState('');
+  const [rep, setRep] = useState<ReputationRemote | null>(null);
+
+  useEffect(() => {
+    if (!auth?.token) {
+      setRep(null);
+      return;
+    }
+    syncApi
+      .reputation(auth.token)
+      .then(setRep)
+      .catch(() => setRep(null));
+  }, [auth?.token]);
 
   const cheap = useMemo(() => priceLogRepo.cheapestNow(40), [lists, markets]);
   const opps = useMemo(() => priceLogRepo.opportunities(), [lists, markets]);
@@ -75,14 +94,19 @@ export function InsightsScreen() {
   const todayF = today.filter(i => match(i.productName));
   const alerts = cheapF.length + oppsF.length;
 
-  const filteredMarkets = markets.filter(m =>
-    m.name.toLowerCase().includes(marketQuery.trim().toLowerCase()),
-  );
+  const origin = prefs.getLastLocation();
+  const suggested = rankNearestMarkets(markets, origin, {
+    query: marketQuery,
+    limit: 8,
+  });
   const canCreate =
     marketQuery.trim().length > 0 &&
     !markets.some(
       m => m.name.toLowerCase() === marketQuery.trim().toLowerCase(),
     );
+  const fiscalLevel =
+    (rep?.level as FiscalLevel) ??
+    TrustEngine.levelForPoints(rep?.points ?? 0);
 
   const data: Array<{type: string; key: string; payload?: any}> = [];
   if (marketName) {
@@ -124,13 +148,14 @@ export function InsightsScreen() {
         value={String(alerts)}
         label="alertas"
         trailing={
-          <View style={styles.pill}>
-            <Text style={styles.pillText}>
-              Fiscal {TrustEngine.fiscalLabel('bronze')} · 0 pts
-            </Text>
-          </View>
+          <FiscalBadge level={fiscalLevel} points={rep?.points ?? 0} />
         }
       />
+      <View style={styles.heroHint}>
+        <Text style={styles.heroHintText}>
+          Alertas e oportunidades · suba de Fiscal validando preços na Comunidade
+        </Text>
+      </View>
       <TextInput
         style={styles.search}
         placeholder="Buscar item, mercado ou lista…"
@@ -147,7 +172,11 @@ export function InsightsScreen() {
             return (
               <View style={styles.sectionRow}>
                 <Text style={styles.section}>{item.payload.title}</Text>
-                <Text style={styles.muted}>{item.payload.trailing}</Text>
+                <View style={styles.sectionPill}>
+                  <Text style={styles.sectionPillText}>
+                    {item.payload.trailing}
+                  </Text>
+                </View>
               </View>
             );
           }
@@ -244,17 +273,17 @@ export function InsightsScreen() {
           onChangeText={setMarketQuery}
           compact
         />
-        {filteredMarkets.slice(0, 8).map(m => (
-          <Pressable
+        {suggested.map(m => (
+          <MarketSuggestRow
             key={m.id}
-            style={styles.marketRow}
+            market={m}
+            highlight={m.id === currentMarketId}
             onPress={() => {
               setCurrentMarket(m.id);
               setPickerOpen(false);
               refresh();
-            }}>
-            <Text style={styles.name}>{m.name}</Text>
-          </Pressable>
+            }}
+          />
         ))}
         {canCreate ? (
           <AppButton
@@ -280,13 +309,20 @@ export function InsightsScreen() {
 const styles = StyleSheet.create({
   root: {flex: 1, backgroundColor: colors.bg},
   iconBtn: {padding: 8},
-  pill: {
-    backgroundColor: colors.yellowBright,
-    borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+  heroHint: {
+    marginHorizontal: space.md,
+    marginTop: space.sm,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: '#EEF2FF',
+    borderRadius: radii.md,
   },
-  pillText: {color: colors.navy, fontWeight: '800', fontSize: 11},
+  heroHintText: {
+    color: colors.navy,
+    fontWeight: '700',
+    fontSize: 12,
+    lineHeight: 16,
+  },
   search: {
     margin: 16,
     marginBottom: 0,
@@ -297,24 +333,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     height: 44,
     color: colors.ink,
+    fontWeight: '600',
   },
   sectionRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 8,
     marginTop: 8,
   },
-  section: {fontWeight: '800', color: colors.navy},
+  section: {fontWeight: '800', color: colors.navy, fontSize: 15},
+  sectionPill: {
+    backgroundColor: colors.yellowBright,
+    borderRadius: radii.pill,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  sectionPillText: {fontSize: 11, fontWeight: '800', color: colors.navy},
   muted: {color: colors.muted, fontWeight: '600', fontSize: 12},
-  emptyLine: {color: colors.muted, marginBottom: 10},
+  emptyLine: {color: colors.muted, marginBottom: 10, fontWeight: '600'},
   row: {flexDirection: 'row', alignItems: 'center', gap: 8},
   name: {fontWeight: '800', color: colors.navy, fontSize: 14},
   price: {fontWeight: '800', color: colors.navy, fontSize: 15},
   modalTitle: {fontSize: 18, fontWeight: '800', color: colors.navy},
-  marketRow: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    padding: 12,
-  },
 });

@@ -1,7 +1,10 @@
 import React, {useEffect, useState} from 'react';
-import {Pressable, StyleSheet, Text, View} from 'react-native';
+import {Alert, Pressable, StyleSheet, Text, View} from 'react-native';
 import {MapPin, Star, TrendingDown, TrendingUp, Minus} from 'lucide-react-native';
+import {AppButton} from '@/ui/chrome';
 import {KeyboardSafeSheet} from '@/ui/keyboardSheet';
+import {MarketReviewSheet} from '@/ui/MarketReviewSheet';
+import {XpBurst} from '@/ui/gamification';
 import {colors} from '@/ui/theme';
 import {
   formatDistanceKm,
@@ -10,6 +13,9 @@ import {
   type PriceBand,
 } from '@/domain/marketUi';
 import type {Market} from '@/data/types';
+import {canContribute, useAppStore} from '@/store/appStore';
+import {syncApi} from '@/data/remote/syncApi';
+import {apiErrorMessage} from '@/data/remote/apiError';
 
 function BandIcon({band}: {band: PriceBand}) {
   if (band === 'low') return <TrendingDown size={16} color={colors.trustGreen} />;
@@ -35,14 +41,20 @@ export function MarketPinSheet({
   onClose: () => void;
   onUse?: (market: Market) => void;
 }) {
-  // Mantém o último mercado durante o fade-out do sheet.
+  const auth = useAppStore(s => s.auth);
   const [cached, setCached] = useState<Market | null>(market);
   const [cachedDist, setCachedDist] = useState(distanceKm);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [reviewBusy, setReviewBusy] = useState(false);
+  const [burst, setBurst] = useState<{points: number; title: string} | null>(
+    null,
+  );
 
   useEffect(() => {
     if (market) {
       setCached(market);
       setCachedDist(distanceKm);
+      setReviewOpen(false);
     }
   }, [market, distanceKm]);
 
@@ -51,68 +63,113 @@ export function MarketPinSheet({
   const band = shown ? resolvePriceBand(shown) : 'unknown';
   const rating = shown?.avgRating ?? 0;
 
-  return (
-    <KeyboardSafeSheet visible={!!market} onClose={onClose}>
-      {shown ? (
-        <>
-          <View style={styles.hero}>
-            <View style={styles.pinBadge}>
-              <MapPin size={22} color={colors.navy} />
-            </View>
-            <View style={{flex: 1}}>
-              <Text style={styles.title}>{shown.name}</Text>
-              <Text style={styles.addr} numberOfLines={2}>
-                {shown.address || 'Endereço não informado'}
-              </Text>
-            </View>
-          </View>
+  const submitReview = async (stars: number) => {
+    if (!shown) return;
+    if (!canContribute(auth) || !auth?.token) {
+      Alert.alert('Conta necessária', 'Verifique o e-mail para avaliar mercados.');
+      return;
+    }
+    if (!shown.remoteId) {
+      Alert.alert('Mercado', 'Sincronize o mercado antes de avaliar.');
+      return;
+    }
+    setReviewBusy(true);
+    try {
+      await syncApi.submitMarketReview(auth.token, shown.remoteId, stars);
+      setReviewOpen(false);
+      setBurst({points: 5, title: `${stars}★ no ${shown.name}`});
+    } catch (e) {
+      Alert.alert('Avaliação', apiErrorMessage(e));
+    } finally {
+      setReviewBusy(false);
+    }
+  };
 
-          <View style={styles.stats}>
-            <View style={styles.stat}>
-              <Text style={styles.statLabel}>Distância</Text>
-              <Text style={styles.statValue}>{formatDistanceKm(dist)}</Text>
-            </View>
-            <View style={styles.stat}>
-              <Text style={styles.statLabel}>Nota</Text>
-              <View style={styles.ratingRow}>
-                <Star
-                  size={14}
-                  color={colors.yellowBright}
-                  fill={colors.yellowBright}
-                />
-                <Text style={styles.statValue}>
-                  {rating > 0 ? rating.toFixed(1) : '—'}
+  return (
+    <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+      <KeyboardSafeSheet visible={!!market && !reviewOpen} onClose={onClose}>
+        {shown ? (
+          <>
+            <View style={styles.hero}>
+              <View style={styles.pinBadge}>
+                <MapPin size={22} color={colors.navy} />
+              </View>
+              <View style={{flex: 1}}>
+                <Text style={styles.title}>{shown.name}</Text>
+                <Text style={styles.addr} numberOfLines={2}>
+                  {shown.address || 'Endereço não informado'}
                 </Text>
               </View>
-              <Text style={styles.statHint}>
-                {shown.ratingsCount > 0
-                  ? `${shown.ratingsCount} avaliações`
-                  : 'ainda sem avaliações'}
-              </Text>
             </View>
-            <View style={[styles.stat, bandStyle(band)]}>
-              <Text style={styles.statLabel}>Preço</Text>
-              <View style={styles.ratingRow}>
-                <BandIcon band={band} />
-                <Text style={styles.statValue}>{priceBandLabel(band)}</Text>
-              </View>
-              <Text style={styles.statHint}>pela comunidade</Text>
-            </View>
-          </View>
 
-          {onUse ? (
-            <Pressable style={styles.cta} onPress={() => onUse(shown)}>
-              <Text style={styles.ctaText}>Usar este mercado</Text>
+            <View style={styles.stats}>
+              <View style={styles.stat}>
+                <Text style={styles.statLabel}>Distância</Text>
+                <Text style={styles.statValue}>{formatDistanceKm(dist)}</Text>
+              </View>
+              <View style={styles.stat}>
+                <Text style={styles.statLabel}>Nota</Text>
+                <View style={styles.ratingRow}>
+                  <Star
+                    size={14}
+                    color={colors.yellowBright}
+                    fill={colors.yellowBright}
+                  />
+                  <Text style={styles.statValue}>
+                    {rating > 0 ? rating.toFixed(1) : '—'}
+                  </Text>
+                </View>
+                <Text style={styles.statHint}>
+                  {shown.ratingsCount > 0
+                    ? `${shown.ratingsCount} avaliações`
+                    : 'ainda sem avaliações'}
+                </Text>
+              </View>
+              <View style={[styles.stat, bandStyle(band)]}>
+                <Text style={styles.statLabel}>Preço</Text>
+                <View style={styles.ratingRow}>
+                  <BandIcon band={band} />
+                  <Text style={styles.statValue}>{priceBandLabel(band)}</Text>
+                </View>
+                <Text style={styles.statHint}>pela comunidade</Text>
+              </View>
+            </View>
+
+            {onUse ? (
+              <AppButton
+                label="Usar este mercado"
+                onPress={() => onUse(shown)}
+              />
+            ) : null}
+            <AppButton
+              label="Avaliar mercado · +5 pts"
+              outlined
+              onPress={() => setReviewOpen(true)}
+            />
+            <Pressable style={styles.secondary} onPress={onClose}>
+              <Text style={styles.secondaryText}>Fechar</Text>
             </Pressable>
-          ) : null}
-          <Pressable style={styles.secondary} onPress={onClose}>
-            <Text style={styles.secondaryText}>Fechar</Text>
-          </Pressable>
-        </>
-      ) : (
-        <View />
-      )}
-    </KeyboardSafeSheet>
+          </>
+        ) : (
+          <View />
+        )}
+      </KeyboardSafeSheet>
+
+      <MarketReviewSheet
+        visible={reviewOpen && !!shown}
+        marketName={shown?.name ?? 'Mercado'}
+        busy={reviewBusy}
+        onClose={() => setReviewOpen(false)}
+        onSubmit={submitReview}
+      />
+
+      <XpBurst
+        visible={!!burst}
+        points={burst?.points ?? 0}
+        title={burst?.title}
+        onDone={() => setBurst(null)}
+      />
+    </View>
   );
 }
 
@@ -133,7 +190,7 @@ const styles = StyleSheet.create({
     letterSpacing: -0.3,
   },
   addr: {marginTop: 4, color: colors.muted, fontWeight: '600', fontSize: 13},
-  stats: {flexDirection: 'row', gap: 8, marginTop: 16},
+  stats: {flexDirection: 'row', gap: 8, marginTop: 16, marginBottom: 8},
   stat: {
     flex: 1,
     backgroundColor: colors.bg,
@@ -161,17 +218,8 @@ const styles = StyleSheet.create({
   },
   statHint: {marginTop: 2, fontSize: 10, color: colors.muted, fontWeight: '600'},
   ratingRow: {flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4},
-  cta: {
-    marginTop: 16,
-    backgroundColor: colors.navy,
-    borderRadius: 16,
-    height: 52,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  ctaText: {color: '#fff', fontWeight: '800', fontSize: 15},
   secondary: {
-    marginTop: 8,
+    marginTop: 4,
     height: 44,
     alignItems: 'center',
     justifyContent: 'center',

@@ -1,4 +1,4 @@
-import React, {useEffect, useRef, useState} from 'react';
+import React from 'react';
 import {
   Animated,
   KeyboardAvoidingView,
@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {colors} from './theme';
+import {useAnimatedSheet} from './useAnimatedSheet';
 
 /** Bottom sheet que sobe com o teclado e permite scroll dos campos. */
 export function KeyboardSafeSheet({
@@ -23,49 +24,7 @@ export function KeyboardSafeSheet({
   children: React.ReactNode;
 }) {
   const insets = useSafeAreaInsets();
-  const backdrop = useRef(new Animated.Value(0)).current;
-  const sheetY = useRef(new Animated.Value(48)).current;
-  const [mounted, setMounted] = useState(visible);
-
-  useEffect(() => {
-    if (visible) setMounted(true);
-  }, [visible]);
-
-  useEffect(() => {
-    if (!mounted) return;
-    if (visible) {
-      backdrop.setValue(0);
-      sheetY.setValue(48);
-      Animated.parallel([
-        Animated.timing(backdrop, {
-          toValue: 1,
-          duration: 180,
-          useNativeDriver: true,
-        }),
-        Animated.spring(sheetY, {
-          toValue: 0,
-          friction: 9,
-          tension: 80,
-          useNativeDriver: true,
-        }),
-      ]).start();
-      return;
-    }
-    Animated.parallel([
-      Animated.timing(backdrop, {
-        toValue: 0,
-        duration: 160,
-        useNativeDriver: true,
-      }),
-      Animated.timing(sheetY, {
-        toValue: 48,
-        duration: 160,
-        useNativeDriver: true,
-      }),
-    ]).start(({finished}) => {
-      if (finished) setMounted(false);
-    });
-  }, [visible, mounted, backdrop, sheetY]);
+  const {mounted, backdropStyle, sheetStyle} = useAnimatedSheet(visible);
 
   if (!mounted) return null;
 
@@ -81,26 +40,13 @@ export function KeyboardSafeSheet({
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose}>
-          <Animated.View
-            style={[
-              styles.backdrop,
-              {
-                opacity: backdrop.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [0, 0.45],
-                }),
-              },
-            ]}
-          />
+          <Animated.View style={[styles.backdrop, backdropStyle]} />
         </Pressable>
         <Animated.View
           style={[
             styles.sheet,
-            {
-              paddingBottom: Math.max(insets.bottom, 16),
-              transform: [{translateY: sheetY}],
-              opacity: backdrop,
-            },
+            sheetStyle,
+            {paddingBottom: Math.max(insets.bottom, 16)},
           ]}>
           <View style={styles.handle} />
           <ScrollView
