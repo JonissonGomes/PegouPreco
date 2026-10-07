@@ -17,11 +17,12 @@ import {appAlert} from '@/ui/appDialog';
 import {FeatureEmptyGuide} from '@/ui/FeatureEmptyGuide';
 import {MarketReviewSheet} from '@/ui/MarketReviewSheet';
 import {
+  FiscalChip,
   SavePill,
   SoftCard,
   SoftHeader,
 } from '@/ui/screenChrome';
-import {colors, radii, space, spacing} from '@/ui/theme';
+import {colors, space, spacing} from '@/ui/theme';
 import {runFullSync} from '@/data/syncWorker';
 import {formatBrl} from '@/domain/money';
 import {TrustEngine} from '@/domain/trust';
@@ -278,12 +279,11 @@ export function CommunityScreen() {
         title="Comunidade"
         location={region}
         trailing={
-          <View style={styles.fiscalInline} accessibilityLabel={fiscal.hint}>
-            <Text style={styles.fiscalInlineLevel}>
-              {TrustEngine.fiscalLabel(fiscal.level)}
-            </Text>
-            <Text style={styles.fiscalInlinePts}>{points} pts</Text>
-          </View>
+          <FiscalChip
+            level={fiscal.level}
+            points={points}
+            accessibilityLabel={fiscal.hint}
+          />
         }
       />
 
@@ -397,27 +397,6 @@ export function CommunityScreen() {
 }
 
 const styles = StyleSheet.create({
-  fiscalInline: {
-    alignItems: 'flex-end',
-    backgroundColor: colors.yellow,
-    borderRadius: radii.pill,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    minWidth: 64,
-  },
-  fiscalInlineLevel: {
-    fontWeight: '900',
-    color: colors.navy,
-    fontSize: 12,
-    lineHeight: 14,
-  },
-  fiscalInlinePts: {
-    fontWeight: '700',
-    color: colors.navy,
-    fontSize: 11,
-    opacity: 0.8,
-    marginTop: 1,
-  },
   sectionHead: {
     flexDirection: 'row',
     alignItems: 'center',

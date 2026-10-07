@@ -21,8 +21,8 @@ import {
   TrendingDown,
 } from 'lucide-react-native';
 import {AppButton, AppField} from '@/ui/chrome';
-import {FiscalBadge, Screen} from '@/ui/components';
-import {ScreenScrollPad, SoftHeader} from '@/ui/screenChrome';
+import {Screen} from '@/ui/components';
+import {FiscalChip, ScreenScrollPad, SoftHeader} from '@/ui/screenChrome';
 import {colors, radii, space} from '@/ui/theme';
 import {prefs, useAppStore} from '@/store/appStore';
 import {syncApi, type AuthResponse, type ReputationRemote} from '@/data/remote/syncApi';
@@ -324,11 +324,18 @@ export function ProfileScreen() {
         location={headerLocation}
         title={auth ? 'Perfil' : title}
         subtitle={
-          auth
-            ? auth.displayName
-            : mode === 'login'
-              ? 'Acesse sua conta'
-              : undefined
+          !auth && mode === 'login' ? 'Acesse sua conta' : undefined
+        }
+        trailing={
+          auth ? (
+            <FiscalChip
+              level={
+                (rep?.level as FiscalLevel) ??
+                TrustEngine.levelForPoints(rep?.points ?? 0)
+              }
+              points={rep?.points ?? 0}
+            />
+          ) : undefined
         }
       />
       <KeyboardAvoidingView
@@ -342,60 +349,67 @@ export function ProfileScreen() {
           {auth ? (
             <>
               <View style={styles.profileHead}>
-                <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>
-                    {initials(auth.displayName || auth.email)}
-                  </Text>
-                </View>
-                <Text style={styles.displayName}>{auth.displayName}</Text>
-                <Text style={styles.contactLine} numberOfLines={1}>
-                  {[auth.email, auth.phone].filter(Boolean).join(' · ')}
-                </Text>
-                <View
-                  style={[
-                    styles.verifyChip,
-                    auth.emailVerified
-                      ? styles.verifyOk
-                      : styles.verifyPending,
-                  ]}>
-                  <Text
-                    style={[
-                      styles.verifyChipText,
-                      auth.emailVerified
-                        ? styles.verifyOkText
-                        : styles.verifyPendingText,
-                    ]}>
-                    {auth.emailVerified
-                      ? 'Conta verificada'
-                      : 'Verifique o e-mail para votar'}
-                  </Text>
-                </View>
-                {!auth.emailVerified ? (
-                  <Pressable
-                    style={styles.linkBtn}
-                    onPress={() =>
-                      withBusy(async () => {
-                        const data = await syncApi.resendCode({
-                          email: auth.email,
-                          channel: 'email',
-                        });
-                        noteDevCode(data);
-                        setMode('verify');
-                        setEmail(auth.email);
-                        Alert.alert('Código', data.hint ?? 'Enviado');
-                      })
-                    }>
-                    <Text style={styles.linkBtnText}>Reenviar código</Text>
-                  </Pressable>
-                ) : null}
-                <View style={styles.fiscalRow}>
-                  <FiscalBadge
-                    level={
-                      (rep?.level as FiscalLevel) ??
-                      TrustEngine.levelForPoints(rep?.points ?? 0)
-                    }
-                    points={rep?.points ?? 0}
-                  />
+                <View style={styles.profileRow}>
+                  <View style={styles.avatarWrap}>
+                    <View style={styles.avatar}>
+                      <Text style={styles.avatarText}>
+                        {initials(auth.displayName || auth.email)}
+                      </Text>
+                    </View>
+                    <View
+                      style={[
+                        styles.verifyChip,
+                        auth.emailVerified
+                          ? styles.verifyOk
+                          : styles.verifyPending,
+                      ]}>
+                      <Text
+                        style={[
+                          styles.verifyChipText,
+                          auth.emailVerified
+                            ? styles.verifyOkText
+                            : styles.verifyPendingText,
+                        ]}
+                        numberOfLines={1}>
+                        {auth.emailVerified
+                          ? 'Conta verificada'
+                          : 'Confirme o e-mail'}
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={styles.profileMeta}>
+                    <Text style={styles.displayName} numberOfLines={1}>
+                      {auth.displayName}
+                    </Text>
+                    {auth.email ? (
+                      <Text style={styles.contactLine} numberOfLines={1}>
+                        {auth.email}
+                      </Text>
+                    ) : null}
+                    {auth.phone ? (
+                      <Text style={styles.contactLine} numberOfLines={1}>
+                        {auth.phone}
+                      </Text>
+                    ) : null}
+                    {!auth.emailVerified ? (
+                      <Pressable
+                        style={styles.linkBtn}
+                        onPress={() =>
+                          withBusy(async () => {
+                            const data = await syncApi.resendCode({
+                              email: auth.email,
+                              channel: 'email',
+                            });
+                            noteDevCode(data);
+                            setMode('verify');
+                            setEmail(auth.email);
+                            Alert.alert('Código', data.hint ?? 'Enviado');
+                          })
+                        }>
+                        <Text style={styles.linkBtnText}>Reenviar código</Text>
+                      </Pressable>
+                    ) : null}
+                  </View>
                 </View>
                 {rep?.badges?.length ? (
                   <View style={styles.badgeWrap}>
@@ -719,62 +733,79 @@ export function ProfileScreen() {
 const styles = StyleSheet.create({
   body: {
     paddingHorizontal: space.md,
-    gap: 12,
+    gap: space.lg,
     alignItems: 'stretch',
   },
   profileHead: {
-    alignItems: 'center',
     backgroundColor: colors.white,
     borderRadius: radii.lg,
     borderWidth: 1,
     borderColor: colors.border,
-    padding: space.lg,
-    gap: 6,
+    padding: space.md,
+    paddingBottom: space.lg,
+    gap: space.sm,
+  },
+  profileRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: space.md,
+  },
+  profileMeta: {
+    flex: 1,
+    minWidth: 0,
+    gap: 3,
+    paddingTop: 4,
+    paddingBottom: 10,
+  },
+  avatarWrap: {
+    width: 76,
+    alignItems: 'center',
+    paddingBottom: 12,
   },
   avatar: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     backgroundColor: colors.yellow,
     borderWidth: 3,
     borderColor: colors.navy,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarText: {fontSize: 26, fontWeight: '900', color: colors.navy},
-  displayName: {fontSize: 20, fontWeight: '800', color: colors.navy},
+  avatarText: {fontSize: 22, fontWeight: '900', color: colors.navy},
+  displayName: {fontSize: 17, fontWeight: '800', color: colors.navy},
   contactLine: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
     color: colors.muted,
-    maxWidth: '100%',
-    textAlign: 'center',
   },
   verifyChip: {
-    marginTop: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
+    position: 'absolute',
+    bottom: 4,
+    zIndex: 2,
+    maxWidth: 112,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
     borderRadius: radii.pill,
+    borderWidth: 1.5,
+    borderColor: colors.white,
   },
   verifyOk: {backgroundColor: '#DCFCE7'},
   verifyPending: {backgroundColor: '#FEF9C3'},
-  verifyChipText: {fontSize: 11, fontWeight: '800'},
+  verifyChipText: {fontSize: 10, fontWeight: '800', textAlign: 'center'},
   verifyOkText: {color: colors.trustGreen},
   verifyPendingText: {color: colors.trustYellow},
-  linkBtn: {paddingVertical: 4},
+  linkBtn: {paddingVertical: 2, alignSelf: 'flex-start', marginTop: 2},
   linkBtnText: {
     color: colors.navy,
     fontWeight: '800',
     fontSize: 12,
     textDecorationLine: 'underline',
   },
-  fiscalRow: {marginTop: space.sm, width: '100%', alignItems: 'center'},
   badgeWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 6,
-    marginTop: space.xs,
-    justifyContent: 'center',
   },
   badgeChip: {
     backgroundColor: colors.yellow,

@@ -7,6 +7,8 @@ import {
   type ViewStyle,
 } from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import {TrustEngine} from '@/domain/trust';
+import type {FiscalLevel} from '@/data/types';
 import {colors, radii, space, spacing, typography} from './theme';
 
 export function SoftCard({
@@ -34,6 +36,31 @@ export function SoftCard({
     );
   }
   return inner;
+}
+
+/** Chip compacto do nível Fiscal (header à direita). */
+export function FiscalChip({
+  level,
+  points,
+  accessibilityLabel,
+}: {
+  level: FiscalLevel;
+  points: number;
+  accessibilityLabel?: string;
+}) {
+  return (
+    <View
+      style={styles.fiscalChip}
+      accessibilityLabel={
+        accessibilityLabel ??
+        `Fiscal ${TrustEngine.fiscalLabel(level)}, ${points} pontos`
+      }>
+      <Text style={styles.fiscalChipLevel}>
+        {TrustEngine.fiscalLabel(level)}
+      </Text>
+      <Text style={styles.fiscalChipPts}>{points} pts</Text>
+    </View>
+  );
 }
 
 export function SoftHeader({
@@ -173,6 +200,28 @@ const styles = StyleSheet.create({
   },
   titleBlock: {flex: 1, minWidth: 0},
   trailing: {paddingTop: 4, alignItems: 'flex-end'},
+  fiscalChip: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.yellow,
+    borderRadius: radii.pill,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    minWidth: 88,
+  },
+  fiscalChipLevel: {
+    fontWeight: '900',
+    color: colors.navy,
+    fontSize: 13,
+    lineHeight: 16,
+  },
+  fiscalChipPts: {
+    fontWeight: '700',
+    color: colors.navy,
+    fontSize: 11,
+    opacity: 0.8,
+    marginTop: 1,
+  },
   location: {
     marginTop: 2,
     fontSize: 13,
