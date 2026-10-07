@@ -2,7 +2,7 @@ import {Db, Collection, MongoClient} from 'mongodb';
 import {v4 as uuidv4} from 'uuid';
 import {config} from './config.js';
 import {JevClient} from './jev.js';
-import {resolveRole, sha256} from './util.js';
+import {haversineKm, resolveRole, sha256} from './util.js';
 
 type MemMap = Record<string, Record<string, unknown>>;
 
@@ -21,6 +21,7 @@ export class DataStore {
   private readonly _memReputation: MemMap = {};
   private readonly _memReviews: MemMap = {};
   private readonly _memPrefs: MemMap = {};
+  private readonly _memMarketSuggestions: MemMap = {};
   private _jev?: JevClient;
 
   private constructor(mode: 'memory' | 'mongo', db?: Db, client?: MongoClient) {
@@ -296,7 +297,11 @@ export class DataStore {
     }
   }
 
-  async marketsForMap(): Promise<Record<string, unknown>[]> {
+  async marketsForMap(opts?: {
+    lat?: number;
+    lng?: number;
+    radiusKm?: number;
+  }): Promise<Record<string, unknown>[]> {
     this.ensureDemoMarkets();
     let markets: Record<string, unknown>[];
     if (this.mode === 'memory') {
@@ -307,10 +312,34 @@ export class DataStore {
         unknown
       >[];
     }
+    const lat = opts?.lat;
+    const lng = opts?.lng;
+    const radiusKm =
+      opts?.radiusKm != null && Number.isFinite(opts.radiusKm)
+        ? opts.radiusKm
+        : null;
+    const filterByRadius =
+      lat != null &&
+      lng != null &&
+      Number.isFinite(lat) &&
+      Number.isFinite(lng) &&
+      radiusKm != null &&
+      radiusKm > 0;
+
     const out: Record<string, unknown>[] = [];
     for (const m of markets) {
       const id = m.id as string | undefined;
       if (!id) continue;
+      const mLat = m.lat != null ? Number(m.lat) : NaN;
+      const mLng = m.lng != null ? Number(m.lng) : NaN;
+      if (!Number.isFinite(mLat) || !Number.isFinite(mLng)) continue;
+      if (filterByRadius) {
+        const dist = haversineKm(
+          {lat: lat!, lng: lng!},
+          {lat: mLat, lng: mLng},
+        );
+        if (dist > radiusKm!) continue;
+      }
       const agg = await this._aggregateReviews(id);
       out.push({
         ...m,
@@ -1227,5 +1256,108 @@ export class DataStore {
     }
     const r = await this.col('markets').deleteOne({id});
     return r.deletedCount > 0;
+  }
+
+  async createMarketSuggestion(body: {
+    userId: string;
+    name: string;
+    lat: number;
+    lng: number;
+    address?: string | null;
+    cnpj?: string | null;
+    kind: 'add' | 'fix' | 'confirm';
+    targetMarketId?: string | null;
+    note?: string | null;
+  }): Promise<Record<string, unknown>> {
+    const now = new Date().toISOString();
+    const doc: Record<string, unknown> = {
+      id: uuidv4(),
+      name: body.name.trim(),
+      lat: body.lat,
+      lng: body.lng,
+      address: body.address ?? null,
+      cnpj: body.cnpj ?? null,
+      kind: body.kind,
+      targetMarketId: body.targetMarketId ?? null,
+      note: body.note ?? null,
+      userId: body.userId,
+      status: 'pending',
+      createdAt: now,
+      updatedAt: now,
+    };
+    if (this.mode === 'memory') {
+      this._memMarketSuggestions[String(doc.id)] = doc;
+      return doc;
+    }
+    await this.col('market_suggestions').insertOne(doc);
+    return doc;
+  }
+
+  async listMarketSuggestions(
+    status?: string,
+  ): Promise<Record<string, unknown>[]> {
+    const filter = status ? {status} : {};
+    if (this.mode === 'memory') {
+      return Object.values(this._memMarketSuggestions)
+        .filter(s => !status || s.status === status)
+        .sort((a, b) =>
+          String(b.createdAt ?? '').localeCompare(String(a.createdAt ?? '')),
+        );
+    }
+    return (await this.col('market_suggestions')
+      .find(filter)
+      .sort({createdAt: -1})
+      .toArray()) as Record<string, unknown>[];
+  }
+
+  async resolveMarketSuggestion(args: {
+    id: string;
+    approve: boolean;
+    adminUserId: string;
+  }): Promise<{ok: boolean; error?: string; market?: Record<string, unknown>}> {
+    let suggestion: Record<string, unknown> | null = null;
+    if (this.mode === 'memory') {
+      suggestion = this._memMarketSuggestions[args.id] ?? null;
+    } else {
+      suggestion = (await this.col('market_suggestions').findOne({
+        id: args.id,
+      })) as Record<string, unknown> | null;
+    }
+    if (!suggestion) return {ok: false, error: 'sugestão não encontrada'};
+    if (suggestion.status !== 'pending') {
+      return {ok: false, error: 'sugestão já resolvida'};
+    }
+    const now = new Date().toISOString();
+    suggestion.status = args.approve ? 'approved' : 'rejected';
+    suggestion.resolvedAt = now;
+    suggestion.resolvedBy = args.adminUserId;
+    suggestion.updatedAt = now;
+
+    let market: Record<string, unknown> | undefined;
+    if (args.approve) {
+      const kind = String(suggestion.kind ?? 'add');
+      const targetId =
+        kind === 'fix' || kind === 'confirm'
+          ? (suggestion.targetMarketId as string | null)
+          : null;
+      market = await this.adminUpsertMarket({
+        id: targetId,
+        name: String(suggestion.name ?? ''),
+        lat: Number(suggestion.lat),
+        lng: Number(suggestion.lng),
+        address: (suggestion.address as string) ?? null,
+        cnpj: (suggestion.cnpj as string) ?? null,
+      });
+    }
+
+    if (this.mode === 'memory') {
+      this._memMarketSuggestions[args.id] = suggestion;
+    } else {
+      await this.col('market_suggestions').replaceOne(
+        {id: args.id},
+        suggestion,
+      );
+    }
+    return {ok: true, market};
   }
 }

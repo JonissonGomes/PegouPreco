@@ -406,8 +406,14 @@ export function createRouter(store: DataStore): Router {
     return res.json(trust);
   });
 
-  router.get('/markets/map', async (_req, res) => {
-    const markets = await store.marketsForMap();
+  router.get('/markets/map', async (req, res) => {
+    const lat =
+      req.query.lat != null ? Number(req.query.lat) : undefined;
+    const lng =
+      req.query.lng != null ? Number(req.query.lng) : undefined;
+    const radiusKm =
+      req.query.radiusKm != null ? Number(req.query.radiusKm) : undefined;
+    const markets = await store.marketsForMap({lat, lng, radiusKm});
     return res.json({markets});
   });
 
@@ -436,6 +442,63 @@ export function createRouter(store: DataStore): Router {
   router.get('/markets/:id/reviews', async (req, res) => {
     const reviews = await store.listMarketReviews(req.params.id);
     return res.json({reviews});
+  });
+
+  router.post('/markets/suggestions', async (req, res) => {
+    const userId = await auth(req, store);
+    if (!userId) return sendError(res, 401, 'unauthorized');
+    const user = await store.findUserById(userId);
+    if (!user || user.emailVerified !== true) {
+      return sendError(res, 403, 'conta não verificada');
+    }
+    const body = req.body as Record<string, unknown>;
+    const name = String(body.name ?? '').trim();
+    const lat = Number(body.lat);
+    const lng = Number(body.lng);
+    const kindRaw = String(body.kind ?? 'add');
+    const kind =
+      kindRaw === 'fix' || kindRaw === 'confirm' ? kindRaw : 'add';
+    if (!name || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return sendError(res, 400, 'name/lat/lng obrigatórios');
+    }
+    const suggestion = await store.createMarketSuggestion({
+      userId,
+      name,
+      lat,
+      lng,
+      address: body.address != null ? String(body.address) : null,
+      cnpj: body.cnpj != null ? String(body.cnpj) : null,
+      kind,
+      targetMarketId:
+        body.targetMarketId != null ? String(body.targetMarketId) : null,
+      note: body.note != null ? String(body.note) : null,
+    });
+    return res.json({suggestion});
+  });
+
+  router.get('/admin/market-suggestions', async (req, res) => {
+    const admin = await requireAdmin(req, store);
+    if (!admin) return sendError(res, 403, 'admin only');
+    const status =
+      typeof req.query.status === 'string' ? req.query.status : 'pending';
+    const suggestions = await store.listMarketSuggestions(status);
+    return res.json({suggestions});
+  });
+
+  router.post('/admin/market-suggestions/:id/resolve', async (req, res) => {
+    const admin = await requireAdmin(req, store);
+    if (!admin) return sendError(res, 403, 'admin only');
+    const body = req.body as Record<string, unknown>;
+    const approve = body.approve === true || body.approve === 'true';
+    const result = await store.resolveMarketSuggestion({
+      id: req.params.id,
+      approve,
+      adminUserId: admin.userId,
+    });
+    if (!result.ok) {
+      return sendError(res, 400, result.error ?? 'falha ao resolver');
+    }
+    return res.json(result);
   });
 
   router.get('/me/prefs', async (req, res) => {
