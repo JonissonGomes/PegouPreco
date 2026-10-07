@@ -141,15 +141,20 @@ export function runDemoSeed() {
 
   const cartIndexes = [0, 1, 2, 4, 6, 10, 11, 12];
   for (const idx of cartIndexes) {
+    const qty = idx === 0 ? 1.2 : idx === 1 ? 2 : 1;
+    const wholesale = CATALOG[idx].wholesale;
+    const minQty = CATALOG[idx].minQty;
     const item: CartItem = {
       id: nextId('cart_items'),
       productId: products[idx].id,
       productName: CATALOG[idx].name,
-      quantity: idx === 0 ? 1.2 : idx === 1 ? 2 : 1,
+      quantity: qty,
       retailPrice: CATALOG[idx].retail,
-      wholesalePrice: CATALOG[idx].wholesale,
-      minWholesaleQty: CATALOG[idx].minQty,
-      checkedOff: idx === 1 ? 1 : 0,
+      wholesalePrice: wholesale,
+      minWholesaleQty: minQty,
+      checkedOff: 1,
+      useWholesale:
+        wholesale != null && minQty != null && qty >= minQty ? 1 : 0,
       updatedAt: nowIso,
     };
     st.cart_items.push(item);

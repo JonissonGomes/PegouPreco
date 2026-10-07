@@ -116,21 +116,35 @@ export function AppScreenNavyBar({
   );
 }
 
-/** Faixa navy do carrinho: TOTAL DA LISTA + economia + contagem. */
+/** Faixa navy do carrinho: total da compra (selecionados) + varejo/atacado. */
 export function AppCartTotalsBar({
   value,
+  retailLabel,
+  wholesaleLabel,
   savingsLabel,
   itemsLabel,
 }: {
   value: string;
+  retailLabel?: string;
+  wholesaleLabel?: string;
   savingsLabel: string;
   itemsLabel: string;
 }) {
   return (
     <View style={styles.navyTotals}>
       <View style={{flex: 1}}>
-        <Text style={styles.navyTotalsLabel}>TOTAL DA LISTA</Text>
+        <Text style={styles.navyTotalsLabel}>TOTAL DA COMPRA</Text>
         <Text style={styles.navyTotalsValue}>{value}</Text>
+        {retailLabel || wholesaleLabel ? (
+          <View style={styles.navySplitRow}>
+            {retailLabel ? (
+              <Text style={styles.navySplit}>Varejo {retailLabel}</Text>
+            ) : null}
+            {wholesaleLabel ? (
+              <Text style={styles.navySplit}>Atacado {wholesaleLabel}</Text>
+            ) : null}
+          </View>
+        ) : null}
       </View>
       <View style={styles.navyTotalsRight}>
         <View style={styles.pill}>
@@ -311,6 +325,17 @@ const styles = StyleSheet.create({
     letterSpacing: -0.5,
     lineHeight: 32,
     marginTop: 2,
+  },
+  navySplitRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 6,
+  },
+  navySplit: {
+    color: 'rgba(255,255,255,0.78)',
+    fontSize: 11,
+    fontWeight: '700',
   },
   navyTotalsRight: {alignItems: 'flex-end', gap: 6},
   navyItems: {

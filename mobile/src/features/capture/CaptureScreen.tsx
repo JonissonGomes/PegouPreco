@@ -8,6 +8,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import {useFocusEffect, useNavigation} from '@react-navigation/native';
 import {Camera, useCameraDevice} from 'react-native-vision-camera';
 import {ChevronRight, FileText, QrCode, ScanLine, X} from 'lucide-react-native';
 import {AppButton, AppField, AppScreenHeader} from '@/ui/chrome';
@@ -131,11 +132,14 @@ function LabelHitPreview({
 }
 
 export function CaptureScreen() {
+  const nav = useNavigation<any>();
   const activeListName = useAppStore(s => s.activeListName);
   const activeMarketId = useAppStore(s => s.activeMarketId);
   const refresh = useAppStore(s => s.refresh);
   const cameraGranted = useAppStore(s => s.permissions.camera);
-  const marketName = useMarketName(activeMarketId);
+  const marketName = useMarketName(
+    activeListName ? activeMarketId : null,
+  );
   const device = useCameraDevice('back');
   const cameraRef = useRef<Camera>(null);
   const busyRef = useRef(false);
@@ -157,6 +161,10 @@ export function CaptureScreen() {
       Alert.alert(
         'Lista necessária',
         'Inicie uma lista na aba Listas antes de capturar.',
+        [
+          {text: 'Cancelar', style: 'cancel'},
+          {text: 'Ir para Listas', onPress: () => nav.navigate('Lists')},
+        ],
       );
       return false;
     }
@@ -236,7 +244,7 @@ export function CaptureScreen() {
     [device],
   );
 
-  const ensureCamera = async () => {
+  const ensureCamera = useCallback(async () => {
     const flags = await refreshPermissionFlags();
     useAppStore.setState({permissions: flags});
     if (flags.camera) {
@@ -255,7 +263,16 @@ export function CaptureScreen() {
     }
     setCameraOn(true);
     return true;
-  };
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      void ensureCamera();
+      return () => {
+        // Mantém permissão; preview pode pausar via isActive
+      };
+    }, [ensureCamera]),
+  );
 
   const liveScanActive =
     cameraOn &&
@@ -282,6 +299,7 @@ export function CaptureScreen() {
   }, [liveScanActive, scanFrame]);
 
   const saveToCart = () => {
+    if (!ensureList()) return;
     if (!fields?.productName || fields.retailPrice == null) {
       Alert.alert('Preencha produto e preço varejo');
       return;
@@ -381,20 +399,22 @@ export function CaptureScreen() {
 
   const onShutter = async () => {
     if (!ensureList()) return;
-    if (!cameraOn) {
+    if (!cameraOn || !cameraGranted) {
       const ok = await ensureCamera();
       if (!ok) return;
-      return;
     }
     await scanFrame({manual: true});
   };
 
+  const subtitle = activeListName
+    ? marketName
+      ? `${activeListName} · ${marketName}`
+      : activeListName
+    : status;
+
   return (
     <View style={styles.root}>
-      <AppScreenHeader
-        title="Capturar"
-        subtitle={marketName || activeListName || status}
-      />
+      <AppScreenHeader title="Capturar" subtitle={subtitle} />
 
       <View style={styles.stage}>
         {cameraOn && cameraGranted && device ? (
@@ -402,17 +422,24 @@ export function CaptureScreen() {
             ref={cameraRef}
             style={StyleSheet.absoluteFill}
             device={device}
-            isActive={cameraOn && !fields}
+            isActive={cameraOn && !fields && extra === 'none'}
             photo
             enableZoomGesture
           />
         ) : (
           <View style={styles.stageIdle}>
             <ScanLine size={36} color={colors.yellowBright} strokeWidth={2} />
-            <Text style={styles.stageTitle}>Enquadre a etiqueta</Text>
-            <Text style={styles.stageHint}>
-              A câmera lê sozinha — toque no preview para adicionar
+            <Text style={styles.stageTitle}>
+              {cameraGranted ? 'Preparando câmera…' : 'Permissão de câmera'}
             </Text>
+            <Text style={styles.stageHint}>
+              {cameraGranted
+                ? 'Abrindo o preview para enquadrar a etiqueta'
+                : 'Toque em Capturar agora para liberar a câmera'}
+            </Text>
+            {!cameraGranted ? (
+              <AppButton label="Liberar câmera" onPress={() => void ensureCamera()} />
+            ) : null}
           </View>
         )}
 

@@ -1,5 +1,10 @@
 import {similarity} from '@/domain/levenshtein';
-import {lineSavings, lineTotal} from '@/domain/pricing';
+import {
+  lineRetailTotal,
+  lineSavings,
+  lineTotal,
+  lineWholesaleTotal,
+} from '@/domain/pricing';
 import {haversineKm} from '@/data/remote/nearbyMarkets';
 import {
   getState,
@@ -32,6 +37,13 @@ export const prefs = {
   clearActiveList: () => {
     metaSet('activeListName', '');
     metaSet('activeMarketId', '');
+  },
+  /** Evita mercado “fantasma” sem lista ativa. */
+  ensureActiveListConsistency: () => {
+    const name = metaGet('activeListName');
+    if (!name) {
+      metaSet('activeMarketId', '');
+    }
   },
   getCurrentMarketId: () => {
     const v = metaGet('currentMarketId');
@@ -425,6 +437,14 @@ export const cartRepo = {
     item.updatedAt = nowIso();
     saveState();
   },
+  setUseWholesale(id: number, useWholesale: boolean) {
+    const item = getState().cart_items.find(c => c.id === id);
+    if (!item) return;
+    if (useWholesale && item.wholesalePrice == null) return;
+    item.useWholesale = useWholesale ? 1 : 0;
+    item.updatedAt = nowIso();
+    saveState();
+  },
   upsert(item: {
     productId: number;
     productName: string;
@@ -432,7 +452,17 @@ export const cartRepo = {
     retailPrice: number;
     wholesalePrice?: number | null;
     minWholesaleQty?: number | null;
+    useWholesale?: number | null;
+    checkedOff?: number;
   }) {
+    const wholesale = item.wholesalePrice ?? null;
+    const minQty = item.minWholesaleQty ?? null;
+    const useWholesale =
+      item.useWholesale != null
+        ? item.useWholesale
+        : wholesale != null && minQty != null && item.quantity >= minQty
+          ? 1
+          : 0;
     const existing = getState().cart_items.find(
       c => c.productId === item.productId,
     );
@@ -441,8 +471,9 @@ export const cartRepo = {
         productName: item.productName,
         quantity: item.quantity,
         retailPrice: item.retailPrice,
-        wholesalePrice: item.wholesalePrice ?? null,
-        minWholesaleQty: item.minWholesaleQty ?? null,
+        wholesalePrice: wholesale,
+        minWholesaleQty: minQty,
+        useWholesale,
         updatedAt: nowIso(),
       });
     } else {
@@ -452,9 +483,10 @@ export const cartRepo = {
         productName: item.productName,
         quantity: item.quantity,
         retailPrice: item.retailPrice,
-        wholesalePrice: item.wholesalePrice ?? null,
-        minWholesaleQty: item.minWholesaleQty ?? null,
-        checkedOff: 0,
+        wholesalePrice: wholesale,
+        minWholesaleQty: minQty,
+        useWholesale,
+        checkedOff: item.checkedOff ?? 1,
         updatedAt: nowIso(),
       });
     }
@@ -468,14 +500,19 @@ export const cartRepo = {
       retailPrice: number;
       wholesalePrice?: number | null;
       minWholesaleQty?: number | null;
+      useWholesale?: number | null;
     },
   ) {
     const item = getState().cart_items.find(c => c.id === id);
     if (!item) return;
     Object.assign(item, {
-      ...data,
+      productName: data.productName,
+      quantity: data.quantity,
+      retailPrice: data.retailPrice,
       wholesalePrice: data.wholesalePrice ?? null,
       minWholesaleQty: data.minWholesaleQty ?? null,
+      useWholesale:
+        data.useWholesale != null ? data.useWholesale : item.useWholesale ?? 0,
       updatedAt: nowIso(),
     });
     saveState();
@@ -487,14 +524,26 @@ export const cartRepo = {
   },
   computeTotals(items: CartItem[]) {
     let subtotal = 0;
+    let retailTotal = 0;
+    let wholesaleTotal = 0;
     let savings = 0;
     let checkedCount = 0;
     for (const i of items) {
+      if (!i.checkedOff) continue;
+      checkedCount += 1;
       subtotal += lineTotal(i);
+      retailTotal += lineRetailTotal(i);
+      wholesaleTotal += lineWholesaleTotal(i);
       savings += lineSavings(i);
-      if (i.checkedOff) checkedCount += 1;
     }
-    return {subtotal, savings, checkedCount, itemCount: items.length};
+    return {
+      subtotal,
+      retailTotal,
+      wholesaleTotal,
+      savings,
+      checkedCount,
+      itemCount: items.length,
+    };
   },
 };
 
@@ -518,7 +567,8 @@ export const shoppingListRepo = {
 
 export function finalizeActiveList() {
   const items = cartRepo.all();
-  if (!items.length) return false;
+  const selected = items.filter(i => i.checkedOff);
+  if (!selected.length) return false;
   const name = prefs.getActiveListName() || 'Lista';
   const marketId = prefs.getActiveMarketId();
   const market = marketId ? marketRepo.getById(marketId) : null;
@@ -528,10 +578,10 @@ export function finalizeActiveList() {
     name,
     marketId,
     marketName: market?.name ?? null,
-    itemsJson: JSON.stringify(items),
+    itemsJson: JSON.stringify(selected),
     subtotal: totals.subtotal,
     savings: totals.savings,
-    itemCount: totals.itemCount,
+    itemCount: selected.length,
     finishedAt,
     remoteId: null,
     updatedAt: finishedAt,

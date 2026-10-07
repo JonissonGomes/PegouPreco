@@ -82,6 +82,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     const raw = prefs.getAuthJson();
     const auth = raw ? (JSON.parse(raw) as AuthSession) : null;
+    prefs.ensureActiveListConsistency();
     set({
       ready: true,
       bootStatus: 'Pronto',
@@ -92,6 +93,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     get().refresh();
   },
   refresh: () => {
+    prefs.ensureActiveListConsistency();
     set({
       cart: cartRepo.all(),
       markets: marketRepo.all(),

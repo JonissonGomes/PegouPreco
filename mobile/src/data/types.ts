@@ -64,7 +64,10 @@ export type CartItem = {
   retailPrice: number;
   wholesalePrice: number | null;
   minWholesaleQty: number | null;
+  /** 1 = incluir no total da compra; 0 = fora do total. */
   checkedOff: number;
+  /** 1 = preço de atacado; 0 = varejo. */
+  useWholesale: number;
   updatedAt: string;
 };
 

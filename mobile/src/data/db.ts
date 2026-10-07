@@ -56,6 +56,21 @@ async function persist() {
   );
 }
 
+function migrateCartItems() {
+  for (const c of state.cart_items) {
+    const row = c as CartItem & {useWholesale?: number};
+    if (row.useWholesale == null) {
+      const auto =
+        row.wholesalePrice != null &&
+        row.minWholesaleQty != null &&
+        row.quantity >= row.minWholesaleQty
+          ? 1
+          : 0;
+      row.useWholesale = auto;
+    }
+  }
+}
+
 export async function initDb() {
   if (hydrated) return;
   try {
@@ -64,6 +79,7 @@ export async function initDb() {
       const parsed = JSON.parse(raw) as {state: Tables; seq: typeof seq};
       state = {...empty(), ...parsed.state};
       seq = {...seq, ...parsed.seq};
+      migrateCartItems();
     }
   } catch {
     state = empty();

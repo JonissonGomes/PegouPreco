@@ -118,6 +118,27 @@ describe('pricing', () => {
       }),
     ).toBe(6);
   });
+
+  it('respeita toggle useWholesale', () => {
+    expect(
+      effectiveUnitPrice({
+        quantity: 1,
+        retailPrice: 10,
+        wholesalePrice: 8,
+        minWholesaleQty: 3,
+        useWholesale: 1,
+      }),
+    ).toBe(8);
+    expect(
+      effectiveUnitPrice({
+        quantity: 5,
+        retailPrice: 10,
+        wholesalePrice: 8,
+        minWholesaleQty: 3,
+        useWholesale: 0,
+      }),
+    ).toBe(10);
+  });
 });
 
 describe('money', () => {

@@ -18,6 +18,7 @@ import {
   History,
   Pencil,
   RefreshCw,
+  ScanLine,
   Trash2,
 } from 'lucide-react-native';
 import {
@@ -85,8 +86,16 @@ export function CartScreen() {
   const [pickedMarketId, setPickedMarketId] = useState<number | null>(null);
 
   const totals = useMemo(() => cartRepo.computeTotals(cart), [cart]);
-  const pending = totals.itemCount - totals.checkedCount;
+  const selectedCount = totals.checkedCount;
   const bottomPad = navVisible ? spacing.bottomNavClearance : 16;
+
+  const goCapture = () => {
+    if (!activeListName || !activeMarketId) {
+      setStartOpen(true);
+      return;
+    }
+    nav.navigate('Capture');
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -135,9 +144,19 @@ export function CartScreen() {
       <AppScreenHeader
         stacked
         title={activeListName || 'Nova lista'}
-        subtitle={marketName || 'Mercado não definido'}
+        subtitle={
+          activeListName
+            ? marketName || 'Mercado não definido'
+            : 'Inicie uma lista para capturar'
+        }
         actions={
           <View style={styles.headerActions}>
+            <Pressable
+              onPress={goCapture}
+              style={styles.headerIcon}
+              accessibilityLabel="Escanear item">
+              <ScanLine color={colors.navy} size={20} />
+            </Pressable>
             <Pressable
               onPress={() => nav.navigate('ShoppingLists')}
               style={styles.headerIcon}
@@ -183,8 +202,10 @@ export function CartScreen() {
       {cart.length > 0 ? (
         <AppCartTotalsBar
           value={formatBrl(totals.subtotal)}
+          retailLabel={formatBrl(totals.retailTotal)}
+          wholesaleLabel={formatBrl(totals.wholesaleTotal)}
           savingsLabel={`${formatBrl(totals.savings)} economizados`}
-          itemsLabel={`${totals.checkedCount} / ${totals.itemCount} ITENS`}
+          itemsLabel={`${selectedCount} / ${totals.itemCount} SELEC.`}
         />
       ) : null}
 
@@ -199,17 +220,20 @@ export function CartScreen() {
               : 'Inicie uma lista de compras para começar.'}
           </Text>
           <AppButton
-            label={activeListName ? 'Ir para Capturar' : 'Nova lista'}
-            onPress={() =>
-              activeListName ? nav.navigate('Capture') : setStartOpen(true)
+            icon={
+              activeListName ? (
+                <ScanLine size={20} color="#fff" />
+              ) : undefined
             }
+            label={activeListName ? 'Escanear item' : 'Nova lista'}
+            onPress={goCapture}
           />
         </View>
       ) : (
         <>
           <View style={styles.sectionRow}>
             <Text style={styles.section}>Itens da lista</Text>
-            <Text style={styles.muted}>{pending} pendentes</Text>
+            <Text style={styles.muted}>{selectedCount} no total</Text>
           </View>
           <FlatList
             data={cart}
@@ -254,24 +278,41 @@ export function CartScreen() {
           />
           <View style={[styles.finalizeBar, {paddingBottom: bottomPad}]}>
             <AppButton
+              icon={<ScanLine size={20} color={colors.navy} />}
+              label="Escanear novo item"
+              outlined
+              onPress={goCapture}
+            />
+            <AppButton
               icon={<Check size={20} color="#fff" />}
-              label={`Finalizar compras · ${formatBrl(totals.subtotal)}`}
+              label={`Finalizar · ${formatBrl(totals.subtotal)}`}
               onPress={() => {
                 if (!activeListName) {
                   setStartOpen(true);
                   return;
                 }
-                Alert.alert('Finalizar compras?', 'A lista será salva no histórico.', [
-                  {text: 'Cancelar', style: 'cancel'},
-                  {
-                    text: 'Finalizar',
-                    onPress: () => {
-                      if (finalize()) {
-                        Alert.alert('Pronto', 'Lista salva no histórico');
-                      }
+                if (!selectedCount) {
+                  Alert.alert(
+                    'Nada selecionado',
+                    'Marque os itens que entram no total da compra.',
+                  );
+                  return;
+                }
+                Alert.alert(
+                  'Finalizar compras?',
+                  `${selectedCount} item(ns) selecionado(s) · ${formatBrl(totals.subtotal)}`,
+                  [
+                    {text: 'Cancelar', style: 'cancel'},
+                    {
+                      text: 'Finalizar',
+                      onPress: () => {
+                        if (finalize()) {
+                          Alert.alert('Pronto', 'Lista salva no histórico');
+                        }
+                      },
                     },
-                  },
-                ]);
+                  ],
+                );
               }}
             />
           </View>
@@ -387,6 +428,7 @@ function CartRow({
 }) {
   const refresh = useAppStore(s => s.refresh);
   const activeMarketId = useAppStore(s => s.activeMarketId);
+  const selected = !!item.checkedOff;
   const unit = effectiveUnitPrice(item);
   const total = lineTotal(item);
   const ctx = priceLogRepo.cartContext(item.productId, unit, activeMarketId);
@@ -402,6 +444,8 @@ function CartRow({
     best + 0.05 < unit &&
     (ctx.bestMarketId == null || ctx.bestMarketId !== activeMarketId);
   const swapSave = canSwap && best != null ? (unit - best) * item.quantity : 0;
+  const hasWholesale = item.wholesalePrice != null;
+  const useWholesale = !!item.useWholesale && hasWholesale;
 
   return (
     <SwipeableActions onEdit={onEdit} onDelete={onDelete}>
@@ -409,12 +453,16 @@ function CartRow({
         style={[
           {marginBottom: 0},
           canSwap ? styles.cardSwap : undefined,
+          !selected ? styles.cardDim : undefined,
         ]}>
         <View style={styles.row}>
           <Pressable
             onPress={onToggle}
-            style={[styles.check, item.checkedOff ? styles.checkOn : null]}>
-            {item.checkedOff ? (
+            style={[styles.check, selected ? styles.checkOn : null]}
+            accessibilityLabel={
+              selected ? 'Remover do total' : 'Incluir no total'
+            }>
+            {selected ? (
               <Check size={14} color="#fff" strokeWidth={3} />
             ) : null}
           </Pressable>
@@ -424,23 +472,21 @@ function CartRow({
                 <Text
                   style={[
                     styles.itemName,
-                    item.checkedOff
-                      ? {
-                          textDecorationLine: 'line-through',
-                          color: colors.muted,
-                        }
-                      : null,
+                    !selected ? {color: colors.muted} : null,
                   ]}>
                   {item.productName}
                 </Text>
                 <Text style={styles.muted}>
                   {qtyPhrase(item.quantity)} · {formatBrl(unit)}
+                  {useWholesale ? ' (atacado)' : ' (varejo)'}
                 </Text>
                 <Text style={styles.swipeHint}>Arraste ← editar / excluir</Text>
               </View>
               <View style={{alignItems: 'flex-end'}}>
                 <View style={{flexDirection: 'row', alignItems: 'center'}}>
-                  <Text style={styles.price}>{formatBrl(total)}</Text>
+                  <Text style={[styles.price, !selected && {opacity: 0.45}]}>
+                    {formatBrl(total)}
+                  </Text>
                   <Pressable onPress={onEdit} hitSlop={8} style={{marginLeft: 4}}>
                     <Pencil size={15} color={colors.navy} />
                   </Pressable>
@@ -454,6 +500,42 @@ function CartRow({
                 ) : null}
               </View>
             </View>
+
+            {hasWholesale ? (
+              <View style={styles.modeRow}>
+                <Pressable
+                  style={[styles.modeChip, !useWholesale && styles.modeChipOn]}
+                  onPress={() => {
+                    cartRepo.setUseWholesale(item.id, false);
+                    refresh();
+                  }}>
+                  <Text
+                    style={[
+                      styles.modeChipText,
+                      !useWholesale && styles.modeChipTextOn,
+                    ]}>
+                    Varejo {formatBrl(item.retailPrice)}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.modeChip, useWholesale && styles.modeChipOnAt]}
+                  onPress={() => {
+                    cartRepo.setUseWholesale(item.id, true);
+                    refresh();
+                  }}>
+                  <Text
+                    style={[
+                      styles.modeChipText,
+                      useWholesale && styles.modeChipTextOn,
+                    ]}>
+                    Atacado {formatBrl(item.wholesalePrice!)}
+                    {item.minWholesaleQty
+                      ? ` · mín. ${item.minWholesaleQty}`
+                      : ''}
+                  </Text>
+                </Pressable>
+              </View>
+            ) : null}
 
             {(previous != null || (best != null && best + 0.009 < unit)) &&
             !canSwap ? (
@@ -504,6 +586,7 @@ function CartRow({
                       retailPrice: best,
                       wholesalePrice: item.wholesalePrice,
                       minWholesaleQty: item.minWholesaleQty,
+                      useWholesale: item.useWholesale,
                     });
                     refresh();
                   }}>
@@ -630,7 +713,37 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 8,
     backgroundColor: colors.bg,
+    gap: 8,
   },
+  cardDim: {opacity: 0.72},
+  modeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 10,
+  },
+  modeChip: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.bg,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  modeChipOn: {
+    backgroundColor: '#EEF2FF',
+    borderColor: colors.navy,
+  },
+  modeChipOnAt: {
+    backgroundColor: colors.yellowBright,
+    borderColor: colors.navy,
+  },
+  modeChipText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.muted,
+  },
+  modeChipTextOn: {color: colors.navy, fontWeight: '800'},
   row: {flexDirection: 'row', alignItems: 'flex-start', gap: 12},
   itemTop: {flexDirection: 'row', alignItems: 'flex-start', gap: 12},
   check: {
