@@ -36,6 +36,17 @@ import {badgeById} from '@/domain/badges';
 import {TrustEngine} from '@/domain/trust';
 import {formatBrl} from '@/domain/money';
 import {
+  isValidEmail,
+  isValidOtp,
+  isValidPassword,
+  isValidPhoneBr,
+  maskOtpTyping,
+  maskPhoneBrTyping,
+  normalizeDisplayName,
+  normalizeEmail,
+  phoneToApi,
+} from '@/domain/authFields';
+import {
   lifetimeSavings,
   monthsAgo,
   savingsSince,
@@ -289,8 +300,17 @@ export function ProfileScreen() {
       : mode === 'register'
         ? 'Criar conta'
         : mode === 'otp'
-          ? 'Entrar com SMS'
-          : 'Confirmar código';
+          ? 'Código no e-mail'
+          : 'Confirmar e-mail';
+
+  const authSubtitle =
+    mode === 'login'
+      ? 'Acesse sua conta no PegouPreço'
+      : mode === 'register'
+        ? 'Junte-se aos fiscais de preço'
+        : mode === 'otp' && !otpSent
+          ? 'Entre sem senha, só com o e-mail'
+          : 'Digite o código que chegou no e-mail';
 
   async function withBusy(fn: () => Promise<void>) {
     if (busy) return;
@@ -301,9 +321,12 @@ export function ProfileScreen() {
       const msg = apiErrorMessage(e);
       if (msg.includes('não confirmada') || msg.includes('código OTP')) {
         setMode('verify');
-        Alert.alert('Confirme a conta', msg);
+        Alert.alert(
+          'Confirme seu e-mail',
+          'Sua conta ainda não foi confirmada. Enviamos (ou reenvie) o código para o e-mail cadastrado.',
+        );
       } else {
-        Alert.alert('Auth', msg);
+        Alert.alert('PegouPreço', msg);
       }
     } finally {
       setBusy(false);
@@ -324,9 +347,7 @@ export function ProfileScreen() {
       <SoftHeader
         location={headerLocation}
         title={auth ? 'Perfil' : title}
-        subtitle={
-          !auth && mode === 'login' ? 'Acesse sua conta' : undefined
-        }
+        subtitle={!auth ? authSubtitle : undefined}
         trailing={
           auth ? (
             <FiscalChip
@@ -404,10 +425,16 @@ export function ProfileScreen() {
                             noteDevCode(data);
                             setMode('verify');
                             setEmail(auth.email);
-                            Alert.alert('Código', data.hint ?? 'Enviado');
+                            Alert.alert(
+                              'Código no e-mail',
+                              data.hint ??
+                                'Enviamos um novo código para o seu e-mail.',
+                            );
                           })
                         }>
-                        <Text style={styles.linkBtnText}>Reenviar código</Text>
+                        <Text style={styles.linkBtnText}>
+                          Reenviar código no e-mail
+                        </Text>
                       </Pressable>
                     ) : null}
                   </View>
@@ -527,88 +554,124 @@ export function ProfileScreen() {
               </View>
             </View>
           ) : (
-            <View style={styles.stack}>
-
-              {mode === 'login' || mode === 'register' ? (
+            <View style={styles.authStack}>
+              {mode === 'login' || mode === 'otp' ? (
                 <View style={styles.tabs}>
                   <Pressable
                     style={[styles.tab, mode === 'login' && styles.tabOn]}
-                    onPress={() => setMode('login')}>
+                    onPress={() => {
+                      setMode('login');
+                      setOtpSent(false);
+                      setDevHint(null);
+                      setCode('');
+                    }}>
                     <Text
                       style={[
                         styles.tabText,
                         mode === 'login' && styles.tabTextOn,
                       ]}>
-                      Senha
+                      Com senha
                     </Text>
                   </Pressable>
                   <Pressable
-                    style={styles.tab}
+                    style={[styles.tab, mode === 'otp' && styles.tabOn]}
                     onPress={() => {
                       setMode('otp');
+                      setOtpSent(false);
                       setDevHint(null);
+                      setCode('');
                     }}>
-                    <Text style={styles.tabText}>SMS / OTP</Text>
+                    <Text
+                      style={[
+                        styles.tabText,
+                        mode === 'otp' && styles.tabTextOn,
+                      ]}>
+                      Código no e-mail
+                    </Text>
                   </Pressable>
                 </View>
               ) : null}
 
               {mode === 'register' ? (
-                <AppField label="Nome" value={name} onChangeText={setName} />
+                <AppField
+                  label="Como te chamamos"
+                  value={name}
+                  onChangeText={t => setName(t.slice(0, 60))}
+                  placeholder="Seu nome ou apelido"
+                  autoCapitalize="words"
+                  autoCorrect
+                  textContentType="name"
+                  autoComplete="name"
+                  maxLength={60}
+                />
+              ) : null}
+
+              {mode === 'login' || mode === 'register' || mode === 'otp' ? (
+                <AppField
+                  label="Seu e-mail"
+                  value={email}
+                  onChangeText={t => setEmail(normalizeEmail(t))}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="email-address"
+                  textContentType="emailAddress"
+                  autoComplete="email"
+                  placeholder="voce@email.com"
+                  maxLength={120}
+                />
+              ) : null}
+
+              {mode === 'register' ? (
+                <AppField
+                  label="Celular com DDD"
+                  value={phone}
+                  onChangeText={t => setPhone(maskPhoneBrTyping(t))}
+                  keyboardType="phone-pad"
+                  textContentType="telephoneNumber"
+                  autoComplete="tel"
+                  placeholder="(81) 99999-0000"
+                  maxLength={15}
+                />
               ) : null}
 
               {mode === 'login' || mode === 'register' ? (
-                <>
-                  <AppField
-                    label="E-mail"
-                    value={email}
-                    onChangeText={setEmail}
-                    autoCapitalize="none"
-                    keyboardType="email-address"
-                  />
-                  {mode === 'register' ? (
-                    <AppField
-                      label="Telefone"
-                      value={phone}
-                      onChangeText={setPhone}
-                      keyboardType="phone-pad"
-                      placeholder="(11) 99999-0000"
-                    />
-                  ) : null}
-                  <AppField
-                    label="Senha"
-                    value={password}
-                    onChangeText={setPassword}
-                    secureTextEntry
-                  />
-                </>
-              ) : null}
-
-              {mode === 'otp' ? (
                 <AppField
-                  label="Telefone"
-                  value={phone}
-                  onChangeText={setPhone}
-                  keyboardType="phone-pad"
-                  placeholder="(11) 99999-0000"
+                  label={mode === 'register' ? 'Crie uma senha' : 'Sua senha'}
+                  value={password}
+                  onChangeText={t => setPassword(t.slice(0, 72))}
+                  secureTextEntry
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  textContentType={
+                    mode === 'register' ? 'newPassword' : 'password'
+                  }
+                  autoComplete={
+                    mode === 'register' ? 'password-new' : 'password'
+                  }
+                  placeholder="Mínimo 6 caracteres"
+                  maxLength={72}
                 />
               ) : null}
 
               {mode === 'verify' || (mode === 'otp' && otpSent) ? (
-                <AppField
-                  label="Código OTP"
-                  value={code}
-                  onChangeText={setCode}
-                  keyboardType="number-pad"
-                  maxLength={6}
-                />
-              ) : null}
-
-              {mode === 'verify' ? (
-                <Text style={styles.hint}>
-                  Enviamos um código para {phone || email}. Em dev, o código
-                  pode aparecer abaixo.
-                </Text>
+                <>
+                  <AppField
+                    label="Código de 6 dígitos"
+                    value={code}
+                    onChangeText={t => setCode(maskOtpTyping(t))}
+                    keyboardType="number-pad"
+                    textContentType="oneTimeCode"
+                    autoComplete="one-time-code"
+                    maxLength={6}
+                    placeholder="000000"
+                  />
+                  <Text style={styles.hint}>
+                    {email
+                      ? `Enviamos o código para ${email}.`
+                      : 'Enviamos o código para o e-mail da sua conta.'}{' '}
+                    Confira também a caixa de spam.
+                  </Text>
+                </>
               ) : null}
 
               {devHint ? <Text style={styles.devHint}>{devHint}</Text> : null}
@@ -621,37 +684,72 @@ export function ProfileScreen() {
                     : mode === 'login'
                       ? 'Entrar'
                       : mode === 'register'
-                        ? 'Registrar'
+                        ? 'Criar minha conta'
                         : mode === 'otp' && !otpSent
-                          ? 'Enviar código SMS'
-                          : 'Confirmar código'
+                          ? 'Enviar código no e-mail'
+                          : 'Confirmar e entrar'
                 }
                 onPress={() =>
                   withBusy(async () => {
+                    const emailNorm = normalizeEmail(email);
+                    const nameNorm = normalizeDisplayName(name);
+                    const phoneApi = phoneToApi(phone);
                     const fallback = {
-                      email: email.trim(),
-                      phone: phone.trim(),
-                      name: name.trim(),
+                      email: emailNorm,
+                      phone: phoneApi ?? phone,
+                      name: nameNorm,
                     };
                     if (mode === 'login') {
-                      const data = await syncApi.login(
-                        email.trim(),
-                        password,
-                      );
+                      if (!isValidEmail(emailNorm)) {
+                        Alert.alert(
+                          'PegouPreço',
+                          'Informe um e-mail válido.',
+                        );
+                        return;
+                      }
+                      if (!password) {
+                        Alert.alert('PegouPreço', 'Informe a sua senha.');
+                        return;
+                      }
+                      const data = await syncApi.login(emailNorm, password);
                       if (!data.token) throw new Error('Token ausente');
                       setAuth(sessionFrom(data, fallback));
                       return;
                     }
                     if (mode === 'register') {
-                      if (!phone.trim()) {
-                        Alert.alert('Informe o telefone');
+                      if (!nameNorm) {
+                        Alert.alert(
+                          'PegouPreço',
+                          'Como devemos te chamar?',
+                        );
+                        return;
+                      }
+                      if (!isValidEmail(emailNorm)) {
+                        Alert.alert(
+                          'PegouPreço',
+                          'Informe um e-mail válido.',
+                        );
+                        return;
+                      }
+                      if (!isValidPhoneBr(phone)) {
+                        Alert.alert(
+                          'PegouPreço',
+                          'Informe o celular com DDD, ex.: (81) 99999-0000.',
+                        );
+                        return;
+                      }
+                      if (!isValidPassword(password)) {
+                        Alert.alert(
+                          'PegouPreço',
+                          'A senha precisa ter entre 6 e 72 caracteres.',
+                        );
                         return;
                       }
                       const data = await syncApi.register({
-                        email: email.trim(),
+                        email: emailNorm,
                         password,
-                        displayName: name.trim() || email.trim(),
-                        phone: phone.trim(),
+                        displayName: nameNorm,
+                        phone: phoneApi!,
                       });
                       noteDevCode(data);
                       if (data.token && !data.needsVerification) {
@@ -661,38 +759,45 @@ export function ProfileScreen() {
                       setOtpSent(true);
                       setMode('verify');
                       Alert.alert(
-                        'Código enviado',
-                        data.otpChannel === 'phone'
-                          ? 'Confirme o SMS (ou use o código de dev).'
-                          : 'Confirme o e-mail (ou use o código de dev).',
+                        'Confirme seu e-mail',
+                        'Enviamos um código de 6 dígitos para o e-mail informado.',
                       );
                       return;
                     }
                     if (mode === 'otp' && !otpSent) {
-                      if (!phone.trim()) {
-                        Alert.alert('Informe o telefone');
+                      if (!isValidEmail(emailNorm)) {
+                        Alert.alert(
+                          'PegouPreço',
+                          'Informe um e-mail válido.',
+                        );
                         return;
                       }
                       const data = await syncApi.requestOtp({
-                        phone: phone.trim(),
+                        email: emailNorm,
                       });
                       noteDevCode(data);
                       setOtpSent(true);
                       Alert.alert(
                         'Código enviado',
-                        'Digite o OTP recebido por SMS.',
+                        'Confira o e-mail e digite o código de 6 dígitos.',
+                      );
+                      return;
+                    }
+                    if (!isValidOtp(code)) {
+                      Alert.alert(
+                        'PegouPreço',
+                        'Digite o código de 6 dígitos.',
                       );
                       return;
                     }
                     const data =
                       mode === 'otp'
                         ? await syncApi.verifyOtp({
-                            phone: phone.trim(),
+                            email: emailNorm,
                             code: code.trim(),
                           })
                         : await syncApi.verify({
-                            email: email.trim() || undefined,
-                            phone: phone.trim() || undefined,
+                            email: emailNorm || undefined,
                             code: code.trim(),
                           });
                     if (!data.token) throw new Error('Token ausente');
@@ -703,18 +808,28 @@ export function ProfileScreen() {
 
               {mode === 'verify' || (mode === 'otp' && otpSent) ? (
                 <AppButton
-                  label="Reenviar código"
+                  label="Reenviar código no e-mail"
                   outlined
                   disabled={busy}
                   onPress={() =>
                     withBusy(async () => {
+                      const emailNorm = normalizeEmail(email);
+                      if (!isValidEmail(emailNorm)) {
+                        Alert.alert(
+                          'PegouPreço',
+                          'Informe um e-mail válido.',
+                        );
+                        return;
+                      }
                       const data = await syncApi.resendCode({
-                        email: email.trim() || undefined,
-                        phone: phone.trim() || undefined,
-                        channel: phone.trim() ? 'phone' : 'email',
+                        email: emailNorm,
+                        channel: 'email',
                       });
                       noteDevCode(data);
-                      Alert.alert('Código reenviado');
+                      Alert.alert(
+                        'Código reenviado',
+                        'Confira a caixa de entrada e o spam.',
+                      );
                     })
                   }
                 />
@@ -722,8 +837,8 @@ export function ProfileScreen() {
 
               <AppButton
                 label={
-                  mode === 'login'
-                    ? 'Criar conta'
+                  mode === 'login' || mode === 'otp'
+                    ? 'Quero criar conta'
                     : mode === 'register'
                       ? 'Já tenho conta'
                       : 'Voltar'
@@ -733,7 +848,7 @@ export function ProfileScreen() {
                   setDevHint(null);
                   setCode('');
                   setOtpSent(false);
-                  if (mode === 'login') setMode('register');
+                  if (mode === 'login' || mode === 'otp') setMode('register');
                   else setMode('login');
                 }}
               />
@@ -754,6 +869,10 @@ const styles = StyleSheet.create({
   /** Gap aqui — ScreenScrollPad é filho único do ScrollView. */
   stack: {
     gap: 28,
+    alignItems: 'stretch',
+  },
+  authStack: {
+    gap: 14,
     alignItems: 'stretch',
   },
   profileHead: {
