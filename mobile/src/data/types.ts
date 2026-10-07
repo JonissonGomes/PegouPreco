@@ -115,5 +115,12 @@ export type UserReputation = {
   points: number;
   level: FiscalLevel;
   validationsCount: number;
+  badges: string[];
   updatedAt: string;
+};
+
+export type UserLocationPrefs = {
+  city: string;
+  neighborhood: string;
+  favoriteMarketIds: number[];
 };

@@ -197,15 +197,13 @@ function ingestHits(
     lng: number;
     address?: string | null;
   }>,
-) {
+): number[] {
+  const ids: number[] = [];
   for (const h of hits) {
-    const m = marketRepo.resolveOrCreateNear(h.name, h.lat, h.lng);
-    marketRepo.upsertGeo(m.id, {
-      lat: h.lat,
-      lng: h.lng,
-      address: h.address ?? m.address,
-    });
+    const m = marketRepo.upsertFromDiscovery(h);
+    ids.push(m.id);
   }
+  return ids;
 }
 
 export function MapScreen() {
@@ -220,16 +218,22 @@ export function MapScreen() {
   const [mapReady, setMapReady] = useState(false);
   const [status, setStatus] = useState('Buscando mercados próximos…');
   const [selected, setSelected] = useState<Market | null>(null);
+  /** IDs da última descoberta — evita pins de seed genérico fora do lugar. */
+  const [pinIds, setPinIds] = useState<number[] | null>(null);
 
-  const nearby = useMemo(
-    () =>
-      filterMarketsInRadius(
-        markets,
-        {lat: center.latitude, lng: center.longitude},
-        NEARBY_RADIUS_KM,
-      ),
-    [markets, center.latitude, center.longitude],
-  );
+  const nearby = useMemo(() => {
+    if (pinIds && pinIds.length > 0) {
+      const set = new Set(pinIds);
+      return markets.filter(
+        m => set.has(m.id) && m.lat != null && m.lng != null,
+      );
+    }
+    return filterMarketsInRadius(
+      markets,
+      {lat: center.latitude, lng: center.longitude},
+      NEARBY_RADIUS_KM,
+    );
+  }, [markets, center.latitude, center.longitude, pinIds]);
   const rated = nearby.filter(m => (m.avgRating ?? 0) > 0).length;
 
   const markerData = useMemo(
@@ -269,18 +273,20 @@ export function MapScreen() {
     setDiscovering(true);
     setStatus('Buscando mercados próximos…');
     try {
-      await loadRemote(point);
       const hits = await discoverNearbyMarkets(
         point.latitude,
         point.longitude,
         NEARBY_RADIUS_KM,
         MAPBOX_ACCESS_TOKEN,
       );
-      ingestHits(hits);
+      const ids = ingestHits(hits);
+      // API remota só enriquece nota/preço dos pontos já descobertos
+      await loadRemote(point, ids);
+      setPinIds(ids);
       refresh();
       setStatus(
         hits.length
-          ? `${hits.length} mercados próximos`
+          ? `${hits.length} mercados nesta localidade`
           : 'Nenhum mercado próximo encontrado',
       );
     } catch {
@@ -323,12 +329,16 @@ export function MapScreen() {
     );
   };
 
-  const loadRemote = async (origin: GeoPoint = center) => {
+  const loadRemote = async (
+    origin: GeoPoint = center,
+    discoveredIds?: number[],
+  ) => {
     try {
       const raw = prefs.getAuthJson();
       const token = raw ? (JSON.parse(raw) as {token: string}).token : null;
       const remote = await syncApi.marketsMap(token);
       const originPt = {lat: origin.latitude, lng: origin.longitude};
+      const allow = discoveredIds?.length ? new Set(discoveredIds) : null;
       for (const r of remote) {
         const name = String(r.name ?? '');
         if (!name) continue;
@@ -342,14 +352,31 @@ export function MapScreen() {
           lng,
           (r.cnpj as string) ?? null,
         );
+        // Não cria pin remoto fora da descoberta local (evita nome/lugar errados)
+        if (allow && !allow.has(m.id)) {
+          const nearDiscover = discoveredIds!.some(id => {
+            const d = marketRepo.getById(id);
+            return (
+              d?.lat != null &&
+              d?.lng != null &&
+              haversineKm(
+                {lat: d.lat, lng: d.lng},
+                {lat, lng},
+              ) < 0.25
+            );
+          });
+          if (!nearDiscover) continue;
+        }
         marketRepo.upsertGeo(m.id, {
-          lat,
-          lng,
-          address: (r.address as string) ?? null,
-          avgRating: r.avgRating != null ? Number(r.avgRating) : null,
-          ratingsCount: r.ratingsCount != null ? Number(r.ratingsCount) : 0,
-          priceLevel: (r.priceLevel as string) ?? null,
-          remoteId: (r.id as string) ?? null,
+          // só enriquece meta; geo da descoberta local prevalece se já existir
+          lat: m.lat ?? lat,
+          lng: m.lng ?? lng,
+          address: m.address ?? (r.address as string) ?? null,
+          avgRating: r.avgRating != null ? Number(r.avgRating) : m.avgRating,
+          ratingsCount:
+            r.ratingsCount != null ? Number(r.ratingsCount) : m.ratingsCount,
+          priceLevel: (r.priceLevel as string) ?? m.priceLevel,
+          remoteId: (r.id as string) ?? m.remoteId,
         });
       }
       refresh();
@@ -400,10 +427,7 @@ export function MapScreen() {
               <LocateFixed color={colors.navy} size={20} />
             </Pressable>
             <Pressable
-              onPress={async () => {
-                await loadRemote(center);
-                await discoverAround(center);
-              }}
+              onPress={() => discoverAround(center)}
               style={styles.iconBtn}>
               <RefreshCw color={colors.navy} size={20} />
             </Pressable>

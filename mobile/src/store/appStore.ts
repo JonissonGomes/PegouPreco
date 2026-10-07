@@ -7,6 +7,7 @@ import {
   productRepo,
   shoppingListRepo,
   finalizeActiveList,
+  canContribute,
 } from '@/data/repositories';
 import type {CartItem, Market, Product, ShoppingList} from '@/data/types';
 import {clearDemoSeed, runDemoSeed} from '@/data/seed/demoSeed';
@@ -133,4 +134,11 @@ export function useMarketName(id: number | null | undefined) {
   return markets.find(m => m.id === id)?.name ?? null;
 }
 
-export {priceLogRepo, productRepo, cartRepo, marketRepo, prefs};
+export {
+  priceLogRepo,
+  productRepo,
+  cartRepo,
+  marketRepo,
+  prefs,
+  canContribute,
+};

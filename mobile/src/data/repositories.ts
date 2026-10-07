@@ -65,7 +65,48 @@ export const prefs = {
     }
     return id;
   },
+  getLocationPrefs: (): {
+    city: string;
+    neighborhood: string;
+    favoriteMarketIds: number[];
+  } => {
+    const city = metaGet('prefCity') || '';
+    const neighborhood = metaGet('prefNeighborhood') || '';
+    let favoriteMarketIds: number[] = [];
+    try {
+      const raw = metaGet('prefFavoriteMarketIds');
+      if (raw) {
+        const parsed = JSON.parse(raw) as number[];
+        if (Array.isArray(parsed)) favoriteMarketIds = parsed.map(Number);
+      }
+    } catch {
+      favoriteMarketIds = [];
+    }
+    return {city, neighborhood, favoriteMarketIds};
+  },
+  setLocationPrefs: (prefsIn: {
+    city: string;
+    neighborhood: string;
+    favoriteMarketIds: number[];
+  }) => {
+    metaSet('prefCity', prefsIn.city.trim());
+    metaSet('prefNeighborhood', prefsIn.neighborhood.trim());
+    metaSet(
+      'prefFavoriteMarketIds',
+      JSON.stringify(prefsIn.favoriteMarketIds ?? []),
+    );
+  },
+  getLastSyncAt: () => metaGet('lastSyncAt') || new Date(0).toISOString(),
+  setLastSyncAt: (iso: string) => metaSet('lastSyncAt', iso),
 };
+
+/** Conta verificada por e-mail pode contribuir/votar. */
+export function canContribute(auth: {
+  emailVerified?: boolean;
+  token?: string;
+} | null): boolean {
+  return !!auth?.token && !!auth.emailVerified;
+}
 
 export const marketRepo = {
   all(): Market[] {
@@ -96,6 +137,16 @@ export const marketRepo = {
     maxKm = 0.35,
   ): Market {
     const trimmed = name.trim();
+    // 1) Mesmo ponto físico (qualquer nome) — corrige seed/Mapbox errado
+    const byGeo = getState().markets.find(
+      m =>
+        m.lat != null &&
+        m.lng != null &&
+        haversineKm({lat: m.lat, lng: m.lng}, {lat, lng}) <= 0.2,
+    );
+    if (byGeo) return byGeo;
+
+    // 2) Mesmo nome só se estiver perto (ou ainda sem geo)
     const sameName = getState().markets.filter(
       m => m.name.toLowerCase() === trimmed.toLowerCase(),
     );
@@ -105,6 +156,30 @@ export const marketRepo = {
     });
     if (near) return near;
     return marketRepo.create(trimmed, cnpj);
+  },
+  /** Atualiza nome+geo a partir da descoberta local (OSM/Mapbox). */
+  upsertFromDiscovery(hit: {
+    name: string;
+    lat: number;
+    lng: number;
+    address?: string | null;
+    cnpj?: string | null;
+  }): Market {
+    const m = marketRepo.resolveOrCreateNear(
+      hit.name,
+      hit.lat,
+      hit.lng,
+      hit.cnpj,
+    );
+    const nextName = hit.name.trim();
+    // Nome da descoberta local prevalece (corrige seed/geocode genérico)
+    if (nextName) m.name = nextName;
+    marketRepo.upsertGeo(m.id, {
+      lat: hit.lat,
+      lng: hit.lng,
+      address: hit.address ?? m.address,
+    });
+    return m;
   },
   create(name: string, cnpj?: string | null): Market {
     const market: Market = {
@@ -454,5 +529,6 @@ export function finalizeActiveList() {
   });
   cartRepo.clear();
   prefs.clearActiveList();
+  metaSet('badge_lista_completa', '1');
   return true;
 }

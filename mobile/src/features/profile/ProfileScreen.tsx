@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useEffect, useState} from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
@@ -10,12 +10,16 @@ import {
   View,
 } from 'react-native';
 import {AppButton, AppField, AppScreenHeader} from '@/ui/chrome';
-import {colors} from '@/ui/theme';
-import {useAppStore} from '@/store/appStore';
-import {syncApi, type AuthResponse} from '@/data/remote/syncApi';
+import {FiscalBadge} from '@/ui/components';
+import {colors, space} from '@/ui/theme';
+import {prefs, useAppStore} from '@/store/appStore';
+import {syncApi, type AuthResponse, type ReputationRemote} from '@/data/remote/syncApi';
 import {apiErrorMessage} from '@/data/remote/apiError';
 import {runFullSync} from '@/data/syncWorker';
 import {runDemoSeed} from '@/data/seed/demoSeed';
+import {badgeById} from '@/domain/badges';
+import {TrustEngine} from '@/domain/trust';
+import type {FiscalLevel} from '@/data/types';
 
 type Mode = 'login' | 'register' | 'verify' | 'otp';
 
@@ -39,6 +43,7 @@ export function ProfileScreen() {
   const auth = useAppStore(s => s.auth);
   const setAuth = useAppStore(s => s.setAuth);
   const refresh = useAppStore(s => s.refresh);
+  const markets = useAppStore(s => s.markets);
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
@@ -48,6 +53,22 @@ export function ProfileScreen() {
   const [busy, setBusy] = useState(false);
   const [devHint, setDevHint] = useState<string | null>(null);
   const [otpSent, setOtpSent] = useState(false);
+  const loc = prefs.getLocationPrefs();
+  const [city, setCity] = useState(loc.city);
+  const [neighborhood, setNeighborhood] = useState(loc.neighborhood);
+  const [favorites, setFavorites] = useState<number[]>(loc.favoriteMarketIds);
+  const [rep, setRep] = useState<ReputationRemote | null>(null);
+
+  useEffect(() => {
+    if (!auth?.token) {
+      setRep(null);
+      return;
+    }
+    syncApi
+      .reputation(auth.token)
+      .then(setRep)
+      .catch(() => setRep(null));
+  }, [auth?.token]);
 
   const title =
     mode === 'login'
@@ -107,21 +128,132 @@ export function ProfileScreen() {
                   style={{
                     marginTop: 8,
                     fontWeight: '700',
-                    color:
-                      auth.emailVerified || auth.phoneVerified
-                        ? colors.trustGreen
-                        : colors.trustYellow,
+                    color: auth.emailVerified
+                      ? colors.trustGreen
+                      : colors.trustYellow,
                   }}>
-                  {auth.emailVerified || auth.phoneVerified
-                    ? 'Conta confirmada'
-                    : 'Confirmação pendente'}
+                  {auth.emailVerified
+                    ? 'E-mail verificado — pode contribuir'
+                    : 'Verifique o e-mail para contribuir/votar'}
                 </Text>
+                {!auth.emailVerified ? (
+                  <AppButton
+                    label="Reenviar código de e-mail"
+                    outlined
+                    onPress={() =>
+                      withBusy(async () => {
+                        const data = await syncApi.resendCode({
+                          email: auth.email,
+                          channel: 'email',
+                        });
+                        noteDevCode(data);
+                        setMode('verify');
+                        setEmail(auth.email);
+                        Alert.alert('Código', data.hint ?? 'Enviado');
+                      })
+                    }
+                  />
+                ) : null}
+                <View style={{marginTop: 12}}>
+                  <FiscalBadge
+                    level={
+                      (rep?.level as FiscalLevel) ??
+                      TrustEngine.levelForPoints(rep?.points ?? 0)
+                    }
+                    points={rep?.points ?? 0}
+                  />
+                </View>
+                {rep?.badges?.length ? (
+                  <View style={styles.badgeWrap}>
+                    {rep.badges.map(id => {
+                      const b = badgeById(id);
+                      return (
+                        <View key={id} style={styles.badgeChip}>
+                          <Text style={styles.badgeChipText}>
+                            {b?.title ?? id}
+                          </Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+                ) : null}
               </View>
+
+              <Text style={styles.section}>Região e favoritos</Text>
+              <AppField
+                label="Cidade"
+                value={city}
+                onChangeText={setCity}
+                compact
+              />
+              <AppField
+                label="Bairro"
+                value={neighborhood}
+                onChangeText={setNeighborhood}
+                compact
+              />
+              <Text style={styles.muted}>
+                Toque para marcar favoritos (até 8)
+              </Text>
+              {markets.slice(0, 16).map(m => {
+                const on = favorites.includes(m.id);
+                return (
+                  <Pressable
+                    key={m.id}
+                    style={[styles.favRow, on && styles.favOn]}
+                    onPress={() =>
+                      setFavorites(prev =>
+                        on
+                          ? prev.filter(x => x !== m.id)
+                          : [...prev, m.id].slice(0, 8),
+                      )
+                    }>
+                    <Text style={[styles.favText, on && {color: '#fff'}]}>
+                      {m.name}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+              <AppButton
+                label="Salvar região"
+                onPress={async () => {
+                  prefs.setLocationPrefs({
+                    city,
+                    neighborhood,
+                    favoriteMarketIds: favorites,
+                  });
+                  if (auth.token && auth.emailVerified) {
+                    try {
+                      await syncApi.putPrefs(auth.token, {
+                        city,
+                        neighborhood,
+                        favoriteMarketIds: favorites
+                          .map(
+                            id =>
+                              markets.find(m => m.id === id)?.remoteId,
+                          )
+                          .filter(Boolean) as string[],
+                      });
+                    } catch {
+                      // offline ok
+                    }
+                  }
+                  Alert.alert('Salvo', 'Preferências de região atualizadas');
+                }}
+              />
+
               <AppButton
                 label="Sincronizar agora"
                 onPress={async () => {
                   const r = await runFullSync();
                   Alert.alert(r.ok ? 'Sync' : 'Falha', r.message);
+                  if (r.ok && auth.token) {
+                    try {
+                      setRep(await syncApi.reputation(auth.token));
+                    } catch {
+                      // ignore
+                    }
+                  }
                 }}
               />
               <AppButton
@@ -390,4 +522,29 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     overflow: 'hidden',
   },
+  badgeWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: space.sm,
+  },
+  badgeChip: {
+    backgroundColor: colors.bg,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  badgeChipText: {fontSize: 11, fontWeight: '800', color: colors.navy},
+  favRow: {
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: '#fff',
+    marginBottom: 6,
+  },
+  favOn: {backgroundColor: colors.navy, borderColor: colors.navy},
+  favText: {fontWeight: '700', color: colors.navy},
 });

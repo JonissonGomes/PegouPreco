@@ -13,7 +13,12 @@ import {AppButton, AppField, AppScreenHeader} from '@/ui/chrome';
 import {KeyboardSafeSheet} from '@/ui/keyboardSheet';
 import {colors} from '@/ui/theme';
 import {parseLabel, type LabelFields} from '@/domain/labelParser';
-import {formatBrl, parseBrl} from '@/domain/money';
+import {
+  formatBrl,
+  formatMoneyInput,
+  maskMoneyTyping,
+  parseBrl,
+} from '@/domain/money';
 import {recognizeLabelFromPhoto} from '@/data/ocr/labelOcr';
 import {refreshPermissionFlags} from '@/app/permissions';
 import {
@@ -54,10 +59,10 @@ function LabelHitPreview({
           </Text>
           <Text style={styles.hitPrice}>
             {fields.retailPrice != null
-              ? formatBrl(fields.retailPrice)
+              ? `Varejo ${formatBrl(fields.retailPrice)}`
               : 'Preço ?'}
             {fields.wholesalePrice != null
-              ? ` · atac. ${formatBrl(fields.wholesalePrice)}`
+              ? ` · Atacado ${formatBrl(fields.wholesalePrice)}`
               : ''}
           </Text>
         </View>
@@ -94,11 +99,13 @@ export function CaptureScreen() {
   const [scanning, setScanning] = useState(false);
   const [status, setStatus] = useState('Aponte para a etiqueta');
 
+  const auth = useAppStore(s => s.auth);
+
   const ensureList = () => {
     if (!activeListName || !activeMarketId) {
       Alert.alert(
         'Lista necessária',
-        'Inicie uma lista no Carrinho antes de capturar.',
+        'Inicie uma lista na aba Listas antes de capturar.',
       );
       return false;
     }
@@ -227,6 +234,12 @@ export function CaptureScreen() {
     if (!fields?.productName || fields.retailPrice == null) {
       Alert.alert('Preencha produto e preço varejo');
       return;
+    }
+    if (auth && !auth.emailVerified) {
+      Alert.alert(
+        'Conta sem verificação',
+        'O preço será salvo na lista local. Verifique o e-mail no Perfil para alimentar o comparador comunitário.',
+      );
     }
     const product = productRepo.resolveOrCreate(fields.productName);
     const marketId = prefs.getActiveMarketId();
@@ -477,7 +490,9 @@ export function CaptureScreen() {
           setStatus('Buscando etiqueta…');
         }}>
         <Text style={styles.modalTitle}>Confirmar leitura</Text>
-        <Text style={styles.hint}>Revise antes de salvar no carrinho</Text>
+        <Text style={styles.hint}>
+          Confira nome e preços antes de salvar
+        </Text>
         <AppField
           label="Produto"
           compact
@@ -486,42 +501,51 @@ export function CaptureScreen() {
             setFields(f => (f ? {...f, productName: t} : f))
           }
         />
+        {fields?.barcode ? (
+          <Text style={styles.barcodeHint}>EAN {fields.barcode}</Text>
+        ) : null}
         <View style={{flexDirection: 'row', gap: 10}}>
           <View style={[styles.fieldAccent, styles.retail]}>
             <AppField
-              label="Varejo"
+              label="Preço varejo"
               compact
-              keyboardType="decimal-pad"
-              value={
-                fields?.retailPrice != null ? String(fields.retailPrice) : ''
-              }
-              onChangeText={t =>
-                setFields(f => (f ? {...f, retailPrice: parseBrl(t)} : f))
-              }
+              keyboardType="number-pad"
+              placeholder="0,00"
+              value={formatMoneyInput(fields?.retailPrice)}
+              onChangeText={t => {
+                const masked = maskMoneyTyping(t);
+                setFields(f =>
+                  f ? {...f, retailPrice: parseBrl(masked)} : f,
+                );
+              }}
             />
           </View>
           <View style={[styles.fieldAccent, styles.wholesale]}>
             <AppField
-              label="Atacado"
+              label="Preço atacado"
               compact
-              keyboardType="decimal-pad"
-              value={
-                fields?.wholesalePrice != null
-                  ? String(fields.wholesalePrice)
-                  : ''
-              }
-              onChangeText={t =>
+              keyboardType="number-pad"
+              placeholder="0,00"
+              value={formatMoneyInput(fields?.wholesalePrice)}
+              onChangeText={t => {
+                const masked = maskMoneyTyping(t);
                 setFields(f =>
-                  f ? {...f, wholesalePrice: parseBrl(t)} : f,
-                )
-              }
+                  f
+                    ? {
+                        ...f,
+                        wholesalePrice: masked ? parseBrl(masked) : null,
+                      }
+                    : f,
+                );
+              }}
             />
           </View>
         </View>
         <AppField
           label="Qtd mín. atacado"
           compact
-          keyboardType="decimal-pad"
+          keyboardType="number-pad"
+          placeholder="ex.: 2"
           value={
             fields?.minWholesaleQty != null
               ? String(fields.minWholesaleQty)
@@ -533,7 +557,7 @@ export function CaptureScreen() {
                 ? {
                     ...f,
                     minWholesaleQty: t
-                      ? Number.parseFloat(t.replace(',', '.'))
+                      ? Number.parseInt(t.replace(/\D/g, ''), 10) || null
                       : null,
                   }
                 : f,
@@ -542,9 +566,9 @@ export function CaptureScreen() {
         />
         {fields?.retailPrice != null ? (
           <Text style={styles.preview}>
-            Varejo {formatBrl(fields.retailPrice)}
+            Preço varejo {formatBrl(fields.retailPrice)}
             {fields.wholesalePrice != null
-              ? ` · Atacado ${formatBrl(fields.wholesalePrice)}`
+              ? ` · Preço atacado ${formatBrl(fields.wholesalePrice)}`
               : ''}
           </Text>
         ) : null}
@@ -716,6 +740,12 @@ const styles = StyleSheet.create({
   altTextOn: {color: colors.navy},
   modalTitle: {fontSize: 18, fontWeight: '800', color: colors.navy},
   hint: {color: colors.muted, marginBottom: 4, fontWeight: '600'},
+  barcodeHint: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.muted,
+    marginBottom: 8,
+  },
   fieldAccent: {flex: 1, borderRadius: 12, padding: 4},
   retail: {backgroundColor: '#EFF6FF'},
   wholesale: {backgroundColor: '#FFFBEB'},

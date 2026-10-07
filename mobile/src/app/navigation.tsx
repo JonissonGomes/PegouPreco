@@ -4,17 +4,19 @@ import {NavigationContainer} from '@react-navigation/native';
 import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
 import {
-  ChartNoAxesColumnIncreasing,
-  Map as MapIcon,
+  Home,
   ScanLine,
   ShoppingCart,
+  UsersRound,
   UserRound,
 } from 'lucide-react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import {HomeScreen} from '@/features/home/HomeScreen';
 import {CartScreen} from '@/features/cart/CartScreen';
 import {ShoppingListsScreen} from '@/features/cart/ShoppingListsScreen';
 import {MapScreen} from '@/features/map/MapScreen';
 import {CaptureScreen} from '@/features/capture/CaptureScreen';
+import {CommunityScreen} from '@/features/community/CommunityScreen';
 import {InsightsScreen} from '@/features/insights/InsightsScreen';
 import {ProductDetailScreen} from '@/features/insights/ProductDetailScreen';
 import {ProfileScreen} from '@/features/profile/ProfileScreen';
@@ -56,19 +58,19 @@ function Tabs() {
         tabBarItemStyle: {paddingTop: 2},
       }}>
       <Tab.Screen
-        name="Cart"
-        component={CartScreen}
+        name="Home"
+        component={HomeScreen}
         options={{
-          title: 'Carrinho',
-          tabBarIcon: ({color}) => <ShoppingCart size={20} color={color} />,
+          title: 'Início',
+          tabBarIcon: ({color}) => <Home size={20} color={color} />,
         }}
       />
       <Tab.Screen
-        name="Map"
-        component={MapScreen}
+        name="Lists"
+        component={CartScreen}
         options={{
-          title: 'Mapa',
-          tabBarIcon: ({color}) => <MapIcon size={20} color={color} />,
+          title: 'Listas',
+          tabBarIcon: ({color}) => <ShoppingCart size={20} color={color} />,
         }}
       />
       <Tab.Screen
@@ -84,13 +86,11 @@ function Tabs() {
         }}
       />
       <Tab.Screen
-        name="Insights"
-        component={InsightsScreen}
+        name="Community"
+        component={CommunityScreen}
         options={{
-          title: 'Insights',
-          tabBarIcon: ({color}) => (
-            <ChartNoAxesColumnIncreasing size={20} color={color} />
-          ),
+          title: 'Comunidade',
+          tabBarIcon: ({color}) => <UsersRound size={20} color={color} />,
         }}
       />
       <Tab.Screen
@@ -128,10 +128,12 @@ export function RootNavigation() {
           <Stack.Screen name="Onboarding" component={OnboardingScreen} />
         ) : (
           <>
-            <Stack.Screen name="Home" component={Tabs} />
+            <Stack.Screen name="Main" component={Tabs} />
             <Stack.Screen name="ShoppingLists" component={ShoppingListsScreen} />
             <Stack.Screen name="History" component={HistoryScreen} />
             <Stack.Screen name="ProductDetail" component={ProductDetailScreen} />
+            <Stack.Screen name="Map" component={MapScreen} />
+            <Stack.Screen name="Insights" component={InsightsScreen} />
           </>
         )}
       </Stack.Navigator>

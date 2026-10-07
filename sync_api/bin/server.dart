@@ -11,6 +11,7 @@ import 'package:shelf_router/shelf_router.dart';
 import 'package:uuid/uuid.dart';
 import 'package:pegou_preco_sync_api/email_sender.dart';
 import 'package:pegou_preco_sync_api/sms_sender.dart';
+import 'package:pegou_preco_sync_api/jev_client.dart';
 
 /// Sync API mínima: auth + push/pull LWW para Atlas (ou memória se sem URI).
 Future<void> main(List<String> args) async {
@@ -45,6 +46,7 @@ Router createRouter(DataStore store, DotEnv env) {
   final twilioSid = env['TWILIO_ACCOUNT_SID'] ?? '';
   final twilioToken = env['TWILIO_AUTH_TOKEN'] ?? '';
   final twilioFrom = env['TWILIO_FROM_NUMBER'] ?? '';
+  final jev = JevClient(apiKey: env['JEV_API_KEY'] ?? '');
 
   Future<Map<String, dynamic>> _sendOtp({
     required String channel,
@@ -363,6 +365,10 @@ Router createRouter(DataStore store, DotEnv env) {
   router.post('/sync/push', (Request req) async {
     final userId = await _auth(req, store);
     if (userId == null) return _error(401, 'unauthorized');
+    final user = await store.findUserById(userId);
+    if (user == null || user['emailVerified'] != true) {
+      return _error(403, 'conta não verificada por e-mail');
+    }
     final body = jsonDecode(await req.readAsString()) as Map<String, dynamic>;
     final result = await store.push(userId, body);
     return Response.ok(
@@ -389,10 +395,17 @@ Router createRouter(DataStore store, DotEnv env) {
   router.post('/votes/check', (Request req) async {
     final userId = await _auth(req, store);
     if (userId == null) return _error(401, 'unauthorized');
+    final user = await store.findUserById(userId);
+    if (user == null || user['emailVerified'] != true) {
+      return _error(403, 'conta não verificada por e-mail');
+    }
     final body = jsonDecode(await req.readAsString()) as Map<String, dynamic>;
     final priceLogId = body['priceLogId'] as String? ?? '';
     final vote = body['vote'] as String? ?? '';
-    final weight = (body['weight'] as num?)?.toDouble() ?? 1.0;
+    final withPhoto = body['withPhoto'] == true;
+    var weight = (body['weight'] as num?)?.toDouble();
+    weight ??= await store.userVoteWeight(userId);
+    if (withPhoto) weight += 0.5;
     if (priceLogId.isEmpty || (vote != 'confirm' && vote != 'reject')) {
       return _error(400, 'priceLogId/vote inválidos');
     }
@@ -401,6 +414,7 @@ Router createRouter(DataStore store, DotEnv env) {
       priceLogId: priceLogId,
       vote: vote,
       weight: weight,
+      withPhoto: withPhoto,
     );
     if (result['error'] != null) {
       return _error(result['status'] as int? ?? 400, result['error'] as String);
@@ -463,6 +477,66 @@ Router createRouter(DataStore store, DotEnv env) {
     );
   });
 
+  router.get('/me/prefs', (Request req) async {
+    final userId = await _auth(req, store);
+    if (userId == null) return _error(401, 'unauthorized');
+    final prefs = await store.getUserPrefs(userId);
+    return Response.ok(
+      jsonEncode(prefs),
+      headers: {'Content-Type': 'application/json'},
+    );
+  });
+
+  router.put('/me/prefs', (Request req) async {
+    final userId = await _auth(req, store);
+    if (userId == null) return _error(401, 'unauthorized');
+    final body = jsonDecode(await req.readAsString()) as Map<String, dynamic>;
+    final prefs = await store.setUserPrefs(userId, body);
+    return Response.ok(
+      jsonEncode(prefs),
+      headers: {'Content-Type': 'application/json'},
+    );
+  });
+
+  router.get('/me/reputation', (Request req) async {
+    final userId = await _auth(req, store);
+    if (userId == null) return _error(401, 'unauthorized');
+    final rep = await store.getReputation(userId);
+    return Response.ok(
+      jsonEncode(rep),
+      headers: {'Content-Type': 'application/json'},
+    );
+  });
+
+  router.post('/compare/basket', (Request req) async {
+    final userId = await _auth(req, store);
+    if (userId == null) return _error(401, 'unauthorized');
+    final body = jsonDecode(await req.readAsString()) as Map<String, dynamic>;
+    final result = await store.compareBasket(userId, body);
+    return Response.ok(
+      jsonEncode(result),
+      headers: {'Content-Type': 'application/json'},
+    );
+  });
+
+  router.get('/prices/community', (Request req) async {
+    final userId = await _auth(req, store);
+    if (userId == null) return _error(401, 'unauthorized');
+    final productName = req.url.queryParameters['productName'];
+    final city = req.url.queryParameters['city'];
+    final result = await store.communityPrices(
+      productName: productName,
+      city: city,
+    );
+    return Response.ok(
+      jsonEncode({'prices': result}),
+      headers: {'Content-Type': 'application/json'},
+    );
+  });
+
+  // Guarda Jev no store para o push classificar logs novos
+  store.attachJev(jev);
+
   return router;
 }
 
@@ -520,6 +594,8 @@ class DataStore {
   final _memVotes = <String, Map<String, dynamic>>{};
   final _memReputation = <String, Map<String, dynamic>>{};
   final _memReviews = <String, Map<String, dynamic>>{};
+  final _memPrefs = <String, Map<String, dynamic>>{};
+  JevClient? _jev;
 
   static Future<DataStore> open({String? mongoUri, required String dbName}) async {
     if (mongoUri == null || mongoUri.isEmpty) {
@@ -538,6 +614,10 @@ class DataStore {
   }
 
   DbCollection _col(String name) => db!.collection(name);
+
+  void attachJev(JevClient client) => _jev = client;
+
+  Future<double> userVoteWeight(String userId) => _userWeight(userId);
 
   Future<Map<String, dynamic>?> findUser(String email) async {
     if (mode == 'memory') {
@@ -1003,6 +1083,32 @@ class DataStore {
           ? null
           : marketIdMap['${l['marketLocalId']}'];
 
+      final source = (l['source'] as String?) ?? 'label';
+      var trustLevel = (l['trustLevel'] as String?) ?? 'suspect';
+      var confirmScore = (l['confirmScore'] as num?)?.toDouble() ?? 0;
+      // NFC-e começa com boost
+      if (source == 'nfce' && confirmScore < 1) confirmScore = 1;
+
+      final classified = await _classifyWithJev(
+        productId: productRemote,
+        marketId: marketRemote,
+        retailPrice: (l['retailPrice'] as num?)?.toDouble() ?? 0,
+        source: source,
+        userId: userId,
+      );
+      if (classified['action'] == 'reject') {
+        trustLevel = 'hidden';
+      } else if (classified['action'] == 'accept' && source == 'nfce') {
+        trustLevel = _computeTrust(
+          confirmScore: confirmScore + 2,
+          rejectScore: (l['rejectScore'] as num?)?.toDouble() ?? 0,
+          lastConfirmedAt: DateTime.now().toUtc(),
+        );
+        confirmScore = confirmScore + 2;
+      } else {
+        trustLevel = 'suspect';
+      }
+
       final remoteId = await _upsertLww(
         collection: 'price_logs',
         mem: _memLogs,
@@ -1013,19 +1119,25 @@ class DataStore {
           'retailPrice': l['retailPrice'],
           'wholesalePrice': l['wholesalePrice'],
           'minWholesaleQty': l['minWholesaleQty'],
-          'source': l['source'],
+          'source': source,
           'capturedAt': l['capturedAt'],
           'nfceKey': l['nfceKey'],
-          'confirmScore': l['confirmScore'] ?? 0,
+          'confirmScore': confirmScore,
           'rejectScore': l['rejectScore'] ?? 0,
-          'trustLevel': l['trustLevel'] ?? 'suspect',
+          'trustLevel': trustLevel,
           'lastConfirmedAt': l['lastConfirmedAt'],
+          'jevAction': classified['action'],
+          'jevRisk': classified['risk'],
           'updatedAt': l['updatedAt'],
           'contributorId': l['contributorId'] ?? userId,
         },
         matchKeys: ['nfceKey'],
       );
       priceLogIdMap['${l['localId']}'] = remoteId;
+      await _awardContributionBadges(
+        userId: userId,
+        source: source,
+      );
     }
 
     for (final raw in (body['shoppingLists'] as List? ?? const [])) {
@@ -1191,11 +1303,315 @@ class DataStore {
     return 'suspect';
   }
 
+  Future<Map<String, dynamic>> _classifyWithJev({
+    required String? productId,
+    required String? marketId,
+    required double retailPrice,
+    required String source,
+    required String userId,
+  }) async {
+    final jev = _jev;
+    if (jev == null) {
+      return {'action': 'quarantine', 'risk': 1.0, 'fallback': true};
+    }
+    String productName = productId ?? 'produto';
+    String marketName = marketId ?? 'mercado';
+    if (mode == 'memory') {
+      productName =
+          _memProducts[productId]?['name'] as String? ?? productName;
+      marketName = _memMarkets[marketId]?['name'] as String? ?? marketName;
+    } else {
+      if (productId != null) {
+        final p = await _col('products').findOne(where.eq('id', productId));
+        productName = p?['name'] as String? ?? productName;
+      }
+      if (marketId != null) {
+        final m = await _col('markets').findOne(where.eq('id', marketId));
+        marketName = m?['name'] as String? ?? marketName;
+      }
+    }
+    final prefs = await getUserPrefs(userId);
+    return jev.classifyPrice(
+      productName: productName,
+      marketName: marketName,
+      retailPrice: retailPrice,
+      source: source,
+      city: prefs['city'] as String?,
+    );
+  }
+
+  Future<void> _awardContributionBadges({
+    required String userId,
+    required String source,
+  }) async {
+    final rep = await getReputation(userId);
+    final badges = List<String>.from(rep['badges'] as List? ?? []);
+    if (source == 'nfce' && !badges.contains('primeira_nfce')) {
+      badges.add('primeira_nfce');
+    }
+    if ((source == 'label' || source == 'manual') &&
+        !badges.contains('primeira_captura')) {
+      badges.add('primeira_captura');
+    }
+    rep['badges'] = badges;
+    await _saveReputation(userId, rep);
+  }
+
+  Future<Map<String, dynamic>> getUserPrefs(String userId) async {
+    if (mode == 'memory') {
+      return Map<String, dynamic>.from(
+        _memPrefs[userId] ??
+            {
+              'city': '',
+              'neighborhood': '',
+              'favoriteMarketIds': <String>[],
+            },
+      );
+    }
+    final doc =
+        await _col('user_prefs').findOne(where.eq('userId', userId));
+    return {
+      'city': doc?['city'] ?? '',
+      'neighborhood': doc?['neighborhood'] ?? '',
+      'favoriteMarketIds':
+          List<String>.from(doc?['favoriteMarketIds'] as List? ?? const []),
+    };
+  }
+
+  Future<Map<String, dynamic>> setUserPrefs(
+    String userId,
+    Map<String, dynamic> body,
+  ) async {
+    final doc = {
+      'userId': userId,
+      'city': (body['city'] as String?)?.trim() ?? '',
+      'neighborhood': (body['neighborhood'] as String?)?.trim() ?? '',
+      'favoriteMarketIds': List<String>.from(
+        (body['favoriteMarketIds'] as List? ?? const []).map((e) => '$e'),
+      ),
+      'updatedAt': DateTime.now().toUtc().toIso8601String(),
+    };
+    if (mode == 'memory') {
+      _memPrefs[userId] = doc;
+      return doc;
+    }
+    await _col('user_prefs').replaceOne(
+          where.eq('userId', userId),
+          doc,
+          upsert: true,
+        );
+    return doc;
+  }
+
+  Future<Map<String, dynamic>> getReputation(String userId) async {
+    Map<String, dynamic>? rep;
+    if (mode == 'memory') {
+      rep = _memReputation[userId];
+    } else {
+      rep = await _col('user_reputation').findOne(where.eq('userId', userId));
+    }
+    rep ??= {
+      'userId': userId,
+      'points': 0,
+      'level': 'bronze',
+      'validationsCount': 0,
+      'badges': <String>[],
+      'updatedAt': DateTime.now().toUtc().toIso8601String(),
+    };
+    rep['badges'] = List<String>.from(rep['badges'] as List? ?? const []);
+    return Map<String, dynamic>.from(rep);
+  }
+
+  Future<void> _saveReputation(
+    String userId,
+    Map<String, dynamic> rep,
+  ) async {
+    rep['updatedAt'] = DateTime.now().toUtc().toIso8601String();
+    if (mode == 'memory') {
+      _memReputation[userId] = rep;
+      return;
+    }
+    await _col('user_reputation').replaceOne(
+          where.eq('userId', userId),
+          rep,
+          upsert: true,
+        );
+  }
+
+  Future<Map<String, dynamic>> compareBasket(
+    String userId,
+    Map<String, dynamic> body,
+  ) async {
+    final items = (body['items'] as List? ?? const [])
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+    var favIds = List<String>.from(
+      (body['favoriteMarketIds'] as List? ?? const []).map((e) => '$e'),
+    );
+    final prefs = await getUserPrefs(userId);
+    if (favIds.isEmpty) {
+      favIds = List<String>.from(
+        prefs['favoriteMarketIds'] as List? ?? const [],
+      );
+    }
+
+    final markets = mode == 'memory'
+        ? _memMarkets.values.toList()
+        : await _col('markets').find().toList();
+    final logs = mode == 'memory'
+        ? _memLogs.values.toList()
+        : await _col('price_logs').find().toList();
+
+    final pool = markets.where((m) {
+      if (favIds.isEmpty) return true;
+      return favIds.contains(m['id']);
+    }).toList();
+
+    final now = DateTime.now().toUtc();
+    bool usable(Map<String, dynamic> log) {
+      final trust = log['trustLevel'] as String? ?? 'suspect';
+      if (trust == 'hidden') return false;
+      if (trust == 'verified') return true;
+      if (log['source'] == 'nfce') {
+        final t = DateTime.tryParse(log['capturedAt'] as String? ?? '');
+        if (t == null) return false;
+        return now.difference(t).inDays <= 7;
+      }
+      return false;
+    }
+
+    final community = logs.where(usable).toList();
+    final ranks = <Map<String, dynamic>>[];
+
+    for (final market in pool) {
+      var total = 0.0;
+      var covered = 0;
+      final missing = <String>[];
+      for (final item in items) {
+        final name = (item['productName'] as String? ?? '').toLowerCase();
+        final qty = (item['quantity'] as num?)?.toDouble() ?? 1;
+        final productRemote = item['productRemoteId'] as String?;
+        final candidates = community.where((l) {
+          if (l['marketId'] != market['id']) return false;
+          if (productRemote != null && l['productId'] == productRemote) {
+            return true;
+          }
+          // match by product name via mem/mongo product
+          return false;
+        }).toList();
+
+        Map<String, dynamic>? best;
+        if (candidates.isNotEmpty) {
+          candidates.sort((a, b) {
+            final ta = DateTime.tryParse(a['capturedAt'] as String? ?? '') ??
+                DateTime.fromMillisecondsSinceEpoch(0);
+            final tb = DateTime.tryParse(b['capturedAt'] as String? ?? '') ??
+                DateTime.fromMillisecondsSinceEpoch(0);
+            return tb.compareTo(ta);
+          });
+          best = candidates.first;
+        } else if (name.isNotEmpty) {
+          // fallback: any community log for same product name
+          for (final l in community) {
+            if (l['marketId'] != market['id']) continue;
+            final pid = l['productId'] as String?;
+            Map<String, dynamic>? p;
+            if (mode == 'memory') {
+              p = _memProducts[pid];
+            } else if (pid != null) {
+              p = await _col('products').findOne(where.eq('id', pid));
+            }
+            final pname = (p?['name'] as String? ?? '').toLowerCase();
+            if (pname == name || pname.contains(name) || name.contains(pname)) {
+              best = l;
+              break;
+            }
+          }
+        }
+
+        if (best == null) {
+          missing.add(item['productName'] as String? ?? 'item');
+          continue;
+        }
+        final unit = (best['retailPrice'] as num?)?.toDouble() ?? 0;
+        total += unit * qty;
+        covered += 1;
+      }
+      final coverage = items.isEmpty ? 0.0 : covered / items.length;
+      if (covered == 0) continue;
+      ranks.add({
+        'marketId': market['id'],
+        'marketName': market['name'],
+        'total': total,
+        'coveredItems': covered,
+        'totalItems': items.length,
+        'coverage': coverage,
+        'missingNames': missing,
+      });
+    }
+
+    ranks.sort((a, b) {
+      final c = (b['coverage'] as num).compareTo(a['coverage'] as num);
+      if (c != 0) return c;
+      return (a['total'] as num).compareTo(b['total'] as num);
+    });
+
+    return {
+      'markets': ranks.take(12).toList(),
+      'coldStart': ranks.isEmpty ||
+          ranks.every((r) => (r['coverage'] as num) < 0.34),
+    };
+  }
+
+  Future<List<Map<String, dynamic>>> communityPrices({
+    String? productName,
+    String? city,
+  }) async {
+    final logs = mode == 'memory'
+        ? _memLogs.values.toList()
+        : await _col('price_logs').find().toList();
+    final now = DateTime.now().toUtc();
+    final out = <Map<String, dynamic>>[];
+    for (final l in logs) {
+      final trust = l['trustLevel'] as String? ?? 'suspect';
+      var ok = trust == 'verified';
+      if (!ok && l['source'] == 'nfce') {
+        final t = DateTime.tryParse(l['capturedAt'] as String? ?? '');
+        ok = t != null && now.difference(t).inDays <= 7;
+      }
+      if (!ok || trust == 'hidden') continue;
+      if (productName != null && productName.isNotEmpty) {
+        final pid = l['productId'] as String?;
+        Map<String, dynamic>? p;
+        if (mode == 'memory') {
+          p = _memProducts[pid];
+        } else if (pid != null) {
+          p = await _col('products').findOne(where.eq('id', pid));
+        }
+        final pname = (p?['name'] as String? ?? '').toLowerCase();
+        if (!pname.contains(productName.toLowerCase())) continue;
+      }
+      out.add({
+        'priceLogId': l['id'],
+        'productId': l['productId'],
+        'marketId': l['marketId'],
+        'retailPrice': l['retailPrice'],
+        'trustLevel': trust,
+        'capturedAt': l['capturedAt'],
+        'city': city,
+      });
+    }
+    out.sort((a, b) =>
+        (a['retailPrice'] as num).compareTo(b['retailPrice'] as num));
+    return out.take(40).toList();
+  }
+
   Future<Map<String, dynamic>> castVote({
     required String userId,
     required String priceLogId,
     required String vote,
     required double weight,
+    bool withPhoto = false,
   }) async {
     final log = await _findLog(priceLogId);
     if (log == null) return {'error': 'price log não encontrado', 'status': 404};
@@ -1263,43 +1679,27 @@ class DataStore {
       await _col('price_votes').insertOne(voteDoc);
     }
 
-    // Reputation
-    final pts = vote == 'confirm' ? 10 : 5;
-    Map<String, dynamic>? rep;
-    if (mode == 'memory') {
-      rep = _memReputation[userId] ??
-          {
-            'userId': userId,
-            'points': 0,
-            'level': 'bronze',
-            'validationsCount': 0,
-          };
-      rep['points'] = (rep['points'] as int) + pts;
-      rep['validationsCount'] = (rep['validationsCount'] as int) + 1;
-      final p = rep['points'] as int;
-      rep['level'] = p >= 300 ? 'gold' : (p >= 100 ? 'silver' : 'bronze');
-      rep['updatedAt'] = now.toIso8601String();
-      _memReputation[userId] = rep;
-    } else {
-      rep = await _col('user_reputation').findOne(where.eq('userId', userId));
-      rep ??= {
-        'userId': userId,
-        'points': 0,
-        'level': 'bronze',
-        'validationsCount': 0,
-      };
-      rep['points'] = ((rep['points'] as num?)?.toInt() ?? 0) + pts;
-      rep['validationsCount'] =
-          ((rep['validationsCount'] as num?)?.toInt() ?? 0) + 1;
-      final p = rep['points'] as int;
-      rep['level'] = p >= 300 ? 'gold' : (p >= 100 ? 'silver' : 'bronze');
-      rep['updatedAt'] = now.toIso8601String();
-      await _col('user_reputation').replaceOne(
-            where.eq('userId', userId),
-            rep,
-            upsert: true,
-          );
+    // Reputation + badges
+    final pts = vote == 'confirm' ? 10 : (withPhoto ? 25 : 5);
+    final rep = await getReputation(userId);
+    rep['points'] = ((rep['points'] as num?)?.toInt() ?? 0) + pts;
+    rep['validationsCount'] =
+        ((rep['validationsCount'] as num?)?.toInt() ?? 0) + 1;
+    final p = rep['points'] as int;
+    rep['level'] = p >= 300 ? 'gold' : (p >= 100 ? 'silver' : 'bronze');
+    final badges = List<String>.from(rep['badges'] as List? ?? []);
+    if ((rep['validationsCount'] as int) >= 10 &&
+        !badges.contains('comunidade_ativa')) {
+      badges.add('comunidade_ativa');
     }
+    if (p >= 100 && !badges.contains('fiscal_prata')) {
+      badges.add('fiscal_prata');
+    }
+    if (p >= 300 && !badges.contains('fiscal_ouro')) {
+      badges.add('fiscal_ouro');
+    }
+    rep['badges'] = badges;
+    await _saveReputation(userId, rep);
 
     return {
       'ok': true,

@@ -27,6 +27,21 @@ export type AuthResponse = {
   ok?: boolean;
 };
 
+export type UserPrefsRemote = {
+  city?: string;
+  neighborhood?: string;
+  favoriteMarketIds?: string[];
+};
+
+export type ReputationRemote = {
+  userId: string;
+  points: number;
+  level: string;
+  validationsCount: number;
+  badges: string[];
+  updatedAt?: string;
+};
+
 export const syncApi = {
   health: () => client.get('/health').then(r => r.data),
   register: (body: {
@@ -54,6 +69,43 @@ export const syncApi = {
       .then(r => r.data),
   me: (token: string) =>
     client.get('/auth/me', {headers: auth(token)}).then(r => r.data),
+  getPrefs: (token: string) =>
+    client
+      .get<UserPrefsRemote>('/me/prefs', {headers: auth(token)})
+      .then(r => r.data),
+  putPrefs: (token: string, body: UserPrefsRemote) =>
+    client
+      .put('/me/prefs', body, {headers: auth(token)})
+      .then(r => r.data as UserPrefsRemote),
+  reputation: (token: string) =>
+    client
+      .get<ReputationRemote>('/me/reputation', {headers: auth(token)})
+      .then(r => r.data),
+  compareBasket: (
+    token: string,
+    body: {
+      city?: string;
+      neighborhood?: string;
+      favoriteMarketIds?: string[];
+      items: Array<{productName: string; quantity: number; productRemoteId?: string}>;
+    },
+  ) =>
+    client
+      .post('/compare/basket', body, {headers: auth(token)})
+      .then(
+        r =>
+          r.data as {
+            markets: Array<Record<string, unknown>>;
+            coldStart?: boolean;
+          },
+      ),
+  communityPrices: (
+    token: string,
+    params?: {city?: string; productName?: string},
+  ) =>
+    client
+      .get('/prices/community', {headers: auth(token), params})
+      .then(r => r.data),
   pushBatch: (token: string, payload: Record<string, unknown>) =>
     client
       .post('/sync/push', payload, {headers: auth(token)})
@@ -76,11 +128,7 @@ export const syncApi = {
     client
       .get(`/markets/${marketId}/reviews`)
       .then(r => r.data as Array<Record<string, unknown>>),
-  submitMarketReview: (
-    token: string,
-    marketId: string,
-    stars: number,
-  ) =>
+  submitMarketReview: (token: string, marketId: string, stars: number) =>
     client
       .post(
         `/markets/${marketId}/reviews`,
@@ -90,7 +138,12 @@ export const syncApi = {
       .then(r => r.data),
   castVote: (
     token: string,
-    body: {priceLogId: string; vote: string; withPhoto?: boolean},
+    body: {
+      priceLogId: string;
+      vote: string;
+      withPhoto?: boolean;
+      weight?: number;
+    },
   ) =>
     client.post('/votes/check', body, {headers: auth(token)}).then(r => r.data),
 };
