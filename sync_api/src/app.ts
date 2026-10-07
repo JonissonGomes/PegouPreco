@@ -171,26 +171,23 @@ export function createRouter(store: DataStore): Router {
       email,
       phone,
       passwordHash: sha256(password),
-      displayName: displayName || 'Fiscal',
+      displayName: displayName || email.split('@')[0] || 'Fiscal',
       uf,
       city,
       emailVerified: skipEmailVerification,
-      phoneVerified: skipSmsVerification,
+      // Confirmação do produto é por e-mail; celular fica só como contato.
+      phoneVerified: true,
       verificationCodeHash: sha256(code),
     });
     const needsVerification =
-      (!skipEmailVerification && user.emailVerified !== true) ||
-      (!skipSmsVerification && user.phoneVerified !== true);
+      !skipEmailVerification && user.emailVerified !== true;
 
     let delivery: Record<string, unknown> = {ok: true};
-    if (!skipSmsVerification) {
-      delivery = await sendOtp({channel: 'phone', target: phone, code});
-      if (delivery.error != null) return otpResponse(res, delivery);
-    } else if (!skipEmailVerification) {
+    if (!skipEmailVerification) {
       delivery = await sendOtp({channel: 'email', target: email, code});
       if (delivery.error != null) return otpResponse(res, delivery);
     } else if (exposeOtp) {
-      delivery = {ok: true, devCode: code, skipped: true};
+      delivery = {ok: true, devCode: code, skipped: true, channel: 'email'};
     }
 
     return res.json({
@@ -202,7 +199,7 @@ export function createRouter(store: DataStore): Router {
       ...(!needsVerification ? {token: user.token} : {}),
       ...(delivery.devCode != null ? {devCode: delivery.devCode} : {}),
       ...(delivery.hint != null ? {hint: delivery.hint} : {}),
-      otpChannel: skipSmsVerification ? 'email' : 'phone',
+      otpChannel: 'email',
     });
   });
 
@@ -233,9 +230,8 @@ export function createRouter(store: DataStore): Router {
       .trim()
       .toLowerCase();
     const phone = normalizePhone(body.phone as string | undefined);
-    const channel = String(
-      body.channel ?? (phone != null ? 'phone' : 'email'),
-    ).toLowerCase();
+    // Canal padrão do produto: e-mail (SMS só se pedido explicitamente).
+    const channel = String(body.channel ?? 'email').toLowerCase();
     const code = sixDigitCode();
     const setResult = await store.setVerificationCodeFor({
       email: email || null,
@@ -254,7 +250,7 @@ export function createRouter(store: DataStore): Router {
         ? phone ?? String(setResult.phone ?? '')
         : email || String(setResult.email ?? '');
     if (!target) {
-      return sendError(res, 400, 'informe email ou telefone');
+      return sendError(res, 400, 'informe o e-mail');
     }
     return otpResponse(
       res,
@@ -296,8 +292,9 @@ export function createRouter(store: DataStore): Router {
         String(setResult.error),
       );
     }
-    const channel = phone ? 'phone' : 'email';
-    const target = phone ?? email;
+    // Preferência do produto: OTP por e-mail quando ambos vierem.
+    const channel = email ? 'email' : 'phone';
+    const target = email || phone!;
     return otpResponse(
       res,
       await sendOtp({channel, target, code}),
@@ -341,7 +338,11 @@ export function createRouter(store: DataStore): Router {
       skipEmailVerification ||
       skipSmsVerification;
     if (!verified) {
-      return sendError(res, 403, 'conta não confirmada — use o código OTP');
+      return sendError(
+        res,
+        403,
+        'conta não confirmada — confira o código enviado por e-mail',
+      );
     }
     const token = await store.issueToken(String(user.id));
     return res.json(publicUser(user, token));
