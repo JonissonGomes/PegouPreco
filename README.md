@@ -1,104 +1,85 @@
-# PegouPreço (MVP)
+# PegouPreço (React Native)
 
-App Flutter **offline-first** para registrar preços (OCR de etiquetas + QR de NFC-e), montar carrinho com cálculo atacado/varejo e sincronizar preços compartilhados via MongoDB Atlas (tier gratuito M0).
+App **offline-first** para registrar preços (OCR de etiquetas + QR de NFC-e), montar carrinho com cálculo atacado/varejo e sincronizar via MongoDB Atlas (tier gratuito M0).
 
 ## Estrutura
 
 ```
 PegouPreço/
-  app/         # App Flutter (Android + iOS)
-  sync_api/    # API Dart (Shelf) — ponte segura até o Atlas
+  mobile/      # App React Native CLI (Android + iOS)
+  sync_api/    # API Node/TypeScript (Express) — ponte segura até o Atlas
   README.md
 ```
 
-## Stack (100% gratuita no MVP)
+## Stack
 
 | Camada | Tecnologia |
 |--------|------------|
-| Mobile | Flutter |
-| DB local | Isar 3.x |
-| OCR | Google ML Kit Text Recognition (on-device) |
-| QR | mobile_scanner |
-| Rede | connectivity_plus + http |
+| Mobile | React Native 0.76 (CLI / TypeScript) |
+| Estado | Zustand |
+| Persistência | AsyncStorage (store tipado offline) |
+| OCR | Vision Camera + ML Kit Text Recognition |
+| Mapa | WebView + Leaflet (tiles Mapbox ResenhaFC ou OSM) |
+| GPS | react-native-geolocation-service |
+| Rede | axios + react-native-config |
 | Nuvem | MongoDB Atlas **M0** (free) |
-| Sync | `sync_api` própria (Shelf) + LWW |
+| Sync | `sync_api` (Express/TS) + LWW |
 
-Sem APIs fiscais pagas: a NFC-e é buscada **direto no aparelho** pela URL do QR (SEFAZ).
-
-## Começar do zero (recomendado)
-
-Guia curto: **[SETUP.md](SETUP.md)**
-
-Na raiz do projeto:
+## Começar
 
 ```powershell
-make setup    # Android Studio/SDK + licenças (só na 1ª vez)
-make deps     # dependências do app
-make apk      # gera o APK
-# ou:
-make run      # sobe emulador e abre o app
+make deps     # npm install em mobile/
+make run      # emulador/device Android (New Architecture)
+make apk      # APK release (arm64-v8a)
+make seed        # banco demo (mercados com geo, preços, carrinho, listas)
+make seed-clear  # remove dados do seed (preserva login)
+make api         # sync_api na porta 8080
+make test        # testes de domínio
 ```
 
-Se o Flutter não estiver no PATH, o projeto usa `C:\src\flutter\bin`.
+No Windows, o primeiro build New Arch pode exigir Ninja ≥ 1.12 (o `make run` / `make apk` atualizam automaticamente). Se o Gradle cair por falta de memória, feche outros processos Java e rode de novo.
 
-## App Flutter (manual)
+### Variáveis (`mobile/.env`)
 
-```bash
-cd app
-flutter pub get
-dart run build_runner build --delete-conflicting-outputs
-dart run flutter_launcher_icons
-flutter test
-flutter run
+```env
+# Mesmo valor de REACT_APP_MAPBOX_ACCESS_TOKEN do ResenhaFC
+MAPBOX_ACCESS_TOKEN=
+# Emulador: http://10.0.2.2:8080
+# Device USB: http://127.0.0.1:8080  (make api / make run fazem adb reverse)
+SYNC_API_BASE=http://127.0.0.1:8080
+SEED_DEMO=false
+CLEAR_SEED_DEMO=false
 ```
 
-### URL da sync_api
+`react-native-config` embute o `.env` no build nativo: depois de alterar `SYNC_API_BASE` ou o token, rode `make run` (ou reinstale o APK). Só reiniciar o Metro não atualiza.
 
-Por padrão o app aponta para o emulador Android (`10.0.2.2:8080`):
-
-```bash
-flutter run --dart-define=SYNC_API_BASE=http://10.0.2.2:8080
-```
-
-Em dispositivo físico na mesma rede:
-
-```bash
-flutter run --dart-define=SYNC_API_BASE=http://SEU_IP_LAN:8080
-```
-
+**Importante:** `10.0.2.2` só funciona no emulador. Em celular USB use `127.0.0.1:8080` + `adb reverse tcp:8080 tcp:8080` (já feito por `make api` / `make run`). Na mesma Wi‑Fi, use o IP LAN do PC.
 ## sync_api
 
 ```bash
 cd sync_api
 cp .env.example .env
-# Edite MONGODB_URI ou deixe vazio para store em memória (dev)
-dart pub get
-dart run bin/server.dart
+npm install
+npm start
 ```
 
-Endpoints:
+Admin (CRUD de supermercados no app): no `sync_api/.env` defina
 
-- `GET /health`
-- `POST /auth/register` `{ "email", "password" }`
-- `POST /auth/login` `{ "email", "password" }`
-- `POST /sync/push` (Bearer) — lotes de products/markets/priceLogs
-- `GET /sync/pull?since=ISO` (Bearer) — dados compartilhados (LWW)
+```env
+ADMIN_EMAILS=seu@email.com
+```
 
-Credenciais do Atlas ficam **somente** no `.env` da API — nunca no app.
+Contas com esse e-mail recebem `role=admin` no login e veem **Admin · Mercados** no Perfil.
 
-## Módulos do MVP
+## Módulos
 
-1. **Vision** — câmera com guia; OCR de etiqueta; QR NFC-e → `pending_receipts` → fetch SEFAZ → **lista de conferência** antes de salvar  
-2. **Carrinho** — qtd, check-off, preço efetivo atacado/varejo, subtotal e economia  
-3. **Histórico** — Isar + fuzzy (Levenshtein); menor/último/média  
-4. **Sync** — fila offline, worker com `connectivity_plus`, push/pull compartilhado  
+1. **Captura** — OCR com campos mapeados (Produto / Varejo / Atacado / Qtd mín.) + NFC-e SEFAZ  
+2. **Carrinho** — lista ativa, editar item, finalizar, economia atacado/varejo  
+3. **Mapa** — GPS + pins de mercados (Mapbox se token; senão OSM)  
+4. **Comparar** — busca, hoje no mercado, menor/média/maior, histórico  
+5. **Perfil** — auth + sync  
 
 ## Branding
 
 - Nome: **PegouPreço**
-- Ícone/logo: `app/assets/branding/`
 - Cores: amarelo `#FFD400`, navy `#0B2A6B`, ciano `#00C2FF`
-
-## Notas SEFAZ
-
-Layouts HTML variam por UF e alguns portais usam CAPTCHA. O parser é genérico (tabelas + regex `Qtd x Unit = Total`). Em falha, a nota fica `failed` na fila e o usuário pode usar OCR de etiqueta ou edição manual na conferência.

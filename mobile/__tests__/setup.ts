@@ -1,0 +1,6 @@
+jest.mock('react-native-config', () => ({
+  MAPBOX_ACCESS_TOKEN: '',
+  SYNC_API_BASE: 'http://10.0.2.2:8080',
+  SEED_DEMO: 'false',
+  CLEAR_SEED_DEMO: 'false',
+}));

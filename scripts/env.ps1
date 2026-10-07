@@ -1,5 +1,23 @@
-# Ambiente comum PegouPreço (Flutter + Android SDK)
+# Ambiente comum PegouPreço (React Native + Android SDK)
 $ErrorActionPreference = "Stop"
+
+function Get-RepoRoot {
+  Split-Path -Parent $PSScriptRoot
+}
+
+function Get-AppDir {
+  Join-Path (Get-RepoRoot) "app"
+}
+
+function Get-ApiDir {
+  Join-Path (Get-RepoRoot) "sync_api"
+}
+
+function Assert-Flutter {
+  if (-not (Get-Command flutter -ErrorAction SilentlyContinue)) {
+    throw "Flutter nao encontrado. Instale em C:\src\flutter ou defina FLUTTER_ROOT."
+  }
+}
 
 $FlutterRoot = if (Test-Path "C:\src\flutter\bin\flutter.bat") {
   "C:\src\flutter"
@@ -50,22 +68,17 @@ if ($AndroidSdk) {
   )
   if ($cmdline) { $extra += (Join-Path $cmdline.FullName "bin") }
   $env:PATH = (($extra + $env:PATH) -join ";")
-}
 
-function Assert-Flutter {
-  if (-not (Get-Command flutter -ErrorAction SilentlyContinue)) {
-    throw "Flutter nao encontrado. Instale em C:\src\flutter ou defina FLUTTER_ROOT."
+  # Gradle no Windows costuma exigir sdk.dir mesmo com ANDROID_HOME no shell.
+  $localProps = Join-Path (Get-RepoRoot) "mobile\android\local.properties"
+  $sdkDirProp = ($AndroidSdk -replace '\\', '/')
+  $desired = "sdk.dir=$sdkDirProp"
+  $needsWrite = $true
+  if (Test-Path $localProps) {
+    $current = Get-Content $localProps -Raw -ErrorAction SilentlyContinue
+    if ($current -match [regex]::Escape("sdk.dir=$sdkDirProp")) { $needsWrite = $false }
   }
-}
-
-function Get-RepoRoot {
-  Split-Path -Parent $PSScriptRoot
-}
-
-function Get-AppDir {
-  Join-Path (Get-RepoRoot) "app"
-}
-
-function Get-ApiDir {
-  Join-Path (Get-RepoRoot) "sync_api"
+  if ($needsWrite) {
+    Set-Content -Path $localProps -Value "## This file is machine-specific and gitignored.`nsdk.dir=$sdkDirProp`n" -Encoding ascii
+  }
 }

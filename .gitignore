@@ -2,6 +2,7 @@
 **/.env
 **/.env.*
 !**/.env.example
+!**/.env.seed
 **/credentials.json
 **/google-services.json
 **/GoogleService-Info.plist
@@ -60,7 +61,8 @@
 **/xcuserdata/
 **/Pods/
 
-# --- sync_api (Dart server) ---
+# --- sync_api (Node) ---
+sync_api/dist/
 sync_api/.dart_tool/
 sync_api/build/
 sync_api/.packages
