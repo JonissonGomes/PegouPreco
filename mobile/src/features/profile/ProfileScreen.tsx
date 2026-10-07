@@ -15,7 +15,6 @@ import {
   ChevronRight,
   Database,
   LogOut,
-  RefreshCw,
   Shield,
   Sparkles,
   TrendingDown,
@@ -28,7 +27,6 @@ import {prefs, useAppStore} from '@/store/appStore';
 import {syncApi, type AuthResponse, type ReputationRemote} from '@/data/remote/syncApi';
 import {apiErrorMessage} from '@/data/remote/apiError';
 import {reverseGeocode} from '@/data/remote/reverseGeocode';
-import {runFullSync} from '@/data/syncWorker';
 import {runDemoSeed} from '@/data/seed/demoSeed';
 import {badgeById} from '@/domain/badges';
 import {TrustEngine} from '@/domain/trust';
@@ -359,21 +357,21 @@ export function ProfileScreen() {
                     <View
                       style={[
                         styles.verifyChip,
-                        auth.emailVerified
+                        auth.emailVerified || auth.phoneVerified
                           ? styles.verifyOk
                           : styles.verifyPending,
                       ]}>
                       <Text
                         style={[
                           styles.verifyChipText,
-                          auth.emailVerified
+                          auth.emailVerified || auth.phoneVerified
                             ? styles.verifyOkText
                             : styles.verifyPendingText,
                         ]}
-                        numberOfLines={1}>
-                        {auth.emailVerified
+                        numberOfLines={2}>
+                        {auth.emailVerified || auth.phoneVerified
                           ? 'Conta verificada'
-                          : 'Confirme o e-mail'}
+                          : 'Confirme a conta'}
                       </Text>
                     </View>
                   </View>
@@ -391,7 +389,7 @@ export function ProfileScreen() {
                         {auth.phone}
                       </Text>
                     ) : null}
-                    {!auth.emailVerified ? (
+                    {!auth.emailVerified && !auth.phoneVerified ? (
                       <Pressable
                         style={styles.linkBtn}
                         onPress={() =>
@@ -467,22 +465,6 @@ export function ProfileScreen() {
               </Pressable>
 
               <View style={styles.actionsCard}>
-                <ActionRow
-                  icon={<RefreshCw size={20} color={colors.navy} />}
-                  label="Sincronizar"
-                  hint="Enviar e baixar dados"
-                  onPress={async () => {
-                    const r = await runFullSync();
-                    Alert.alert(r.ok ? 'Sync' : 'Falha', r.message);
-                    if (r.ok && auth.token) {
-                      try {
-                        setRep(await syncApi.reputation(auth.token));
-                      } catch {
-                        // ignore
-                      }
-                    }
-                  }}
-                />
                 {auth.role === 'admin' ? (
                   <ActionRow
                     icon={<Shield size={20} color={colors.navy} />}
@@ -733,7 +715,7 @@ export function ProfileScreen() {
 const styles = StyleSheet.create({
   body: {
     paddingHorizontal: space.md,
-    gap: space.lg,
+    gap: space.xl,
     alignItems: 'stretch',
   },
   profileHead: {
@@ -755,12 +737,12 @@ const styles = StyleSheet.create({
     minWidth: 0,
     gap: 3,
     paddingTop: 4,
-    paddingBottom: 10,
+    paddingBottom: 14,
   },
   avatarWrap: {
-    width: 76,
+    width: 118,
     alignItems: 'center',
-    paddingBottom: 12,
+    paddingBottom: 14,
   },
   avatar: {
     width: 64,
@@ -781,18 +763,18 @@ const styles = StyleSheet.create({
   },
   verifyChip: {
     position: 'absolute',
-    bottom: 4,
+    bottom: 2,
     zIndex: 2,
-    maxWidth: 112,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    maxWidth: 118,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
     borderRadius: radii.pill,
     borderWidth: 1.5,
     borderColor: colors.white,
   },
   verifyOk: {backgroundColor: '#DCFCE7'},
   verifyPending: {backgroundColor: '#FEF9C3'},
-  verifyChipText: {fontSize: 10, fontWeight: '800', textAlign: 'center'},
+  verifyChipText: {fontSize: 11, fontWeight: '800', textAlign: 'center'},
   verifyOkText: {color: colors.trustGreen},
   verifyPendingText: {color: colors.trustYellow},
   linkBtn: {paddingVertical: 2, alignSelf: 'flex-start', marginTop: 2},

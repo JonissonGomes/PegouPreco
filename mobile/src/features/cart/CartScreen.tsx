@@ -17,7 +17,6 @@ import {
   ClipboardList,
   History,
   MoreVertical,
-  RefreshCw,
   ScanLine,
   Trash2,
 } from 'lucide-react-native';
@@ -55,7 +54,6 @@ import {
   useMarketName,
 } from '@/store/appStore';
 import type {CartItem} from '@/data/types';
-import {runFullSync} from '@/data/syncWorker';
 import {marketRepo} from '@/data/repositories';
 import {ensureNearbyMarketsDiscovered} from '@/data/remote/ensureNearbyMarkets';
 import {haversineKm} from '@/data/remote/nearbyMarkets';
@@ -244,17 +242,6 @@ export function CartScreen() {
               onPress={() => runMenuAction(() => nav.navigate('History'))}>
               <History size={18} color={colors.navy} />
               <Text style={styles.menuItemText}>Histórico</Text>
-            </Pressable>
-            <Pressable
-              style={styles.menuItem}
-              onPress={() =>
-                runMenuAction(async () => {
-                  const r = await runFullSync();
-                  appAlert(r.ok ? 'Sync' : 'Falha', r.message);
-                })
-              }>
-              <RefreshCw size={18} color={colors.navy} />
-              <Text style={styles.menuItemText}>Sincronizar</Text>
             </Pressable>
             <Pressable
               style={styles.menuItem}

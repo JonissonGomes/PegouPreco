@@ -1,9 +1,9 @@
 import React, {useCallback, useEffect, useMemo, useState} from 'react';
 import {FlatList, Pressable, StyleSheet, Text, View} from 'react-native';
-import {useNavigation} from '@react-navigation/native';
+import {useFocusEffect, useNavigation} from '@react-navigation/native';
 import {
   BadgeCheck,
-  RefreshCw,
+  MapPin,
   Star,
   ThumbsUp,
   UsersRound,
@@ -23,11 +23,15 @@ import {
   SoftHeader,
 } from '@/ui/screenChrome';
 import {colors, space, spacing} from '@/ui/theme';
-import {runFullSync} from '@/data/syncWorker';
+import {requestAutoSync} from '@/data/syncWorker';
 import {formatBrl} from '@/domain/money';
 import {TrustEngine} from '@/domain/trust';
 import {canContribute, prefs, useAppStore} from '@/store/appStore';
 import {getState} from '@/data/db';
+import {
+  haversineKm,
+  NEARBY_RADIUS_KM,
+} from '@/data/remote/nearbyMarkets';
 import type {FiscalLevel, PriceLog, TrustLevel} from '@/data/types';
 import {syncApi, type ReputationRemote} from '@/data/remote/syncApi';
 import {apiErrorMessage} from '@/data/remote/apiError';
@@ -37,6 +41,7 @@ type FeedItem = {
   productName: string;
   marketName: string;
   avgPct: number | null;
+  distanceKm: number | null;
 };
 
 type Burst = {points: number; title: string} | null;
@@ -81,6 +86,12 @@ function avgPriceForProduct(productId: number, excludeId: number): number | null
   return prices.reduce((a, b) => a + b, 0) / prices.length;
 }
 
+function formatDist(km: number | null): string | null {
+  if (km == null) return null;
+  if (km < 1) return `${Math.round(km * 1000)} m`;
+  return `${km.toFixed(1)} km`;
+}
+
 export function CommunityScreen() {
   const nav = useNavigation<any>();
   const auth = useAppStore(s => s.auth);
@@ -93,6 +104,8 @@ export function CommunityScreen() {
   const [reviewBusy, setReviewBusy] = useState(false);
   const [rep, setRep] = useState<ReputationRemote | null>(null);
   const [burst, setBurst] = useState<Burst>(null);
+  const [skipped, setSkipped] = useState<Set<number>>(() => new Set());
+  const [origin, setOrigin] = useState(() => prefs.getLastLocation());
 
   const needAccount = (message: string) => {
     appAlert('Conta necessária', message, [
@@ -105,6 +118,14 @@ export function CommunityScreen() {
     ]);
   };
 
+  useFocusEffect(
+    useCallback(() => {
+      setOrigin(prefs.getLastLocation());
+      requestAutoSync('community');
+      refresh();
+    }, [refresh]),
+  );
+
   useEffect(() => {
     if (!auth?.token) {
       setRep(null);
@@ -116,31 +137,56 @@ export function CommunityScreen() {
       .catch(() => setRep(null));
   }, [auth?.token]);
 
+  const nearbyMarketIds = useMemo(() => {
+    if (!origin) return new Set<number>();
+    const ids = new Set<number>();
+    for (const m of markets) {
+      if (m.lat == null || m.lng == null) continue;
+      const km = haversineKm(origin, {lat: m.lat, lng: m.lng});
+      if (km <= NEARBY_RADIUS_KM) ids.add(m.id);
+    }
+    return ids;
+  }, [markets, origin]);
+
   const feed = useMemo(() => {
     const logs = getState().price_logs.filter(l => l.trustLevel === 'suspect');
     return logs
+      .filter(log => {
+        if (skipped.has(log.id)) return false;
+        if (log.marketId == null) return false;
+        return nearbyMarketIds.has(log.marketId);
+      })
       .map(log => {
+        const market = markets.find(m => m.id === log.marketId);
         const avg = avgPriceForProduct(log.productId, log.id);
         const avgPct =
           avg != null && avg > 0
             ? ((log.retailPrice - avg) / avg) * 100
             : null;
+        const distanceKm =
+          origin && market?.lat != null && market?.lng != null
+            ? haversineKm(origin, {lat: market.lat, lng: market.lng})
+            : null;
         return {
           log,
           productName:
             products.find(p => p.id === log.productId)?.name ?? 'Produto',
-          marketName:
-            markets.find(m => m.id === log.marketId)?.name ?? 'Mercado',
+          marketName: market?.name ?? 'Mercado',
           avgPct,
+          distanceKm,
         };
       })
-      .sort(
-        (a, b) =>
+      .sort((a, b) => {
+        const da = a.distanceKm ?? Infinity;
+        const db = b.distanceKm ?? Infinity;
+        if (da !== db) return da - db;
+        return (
           new Date(b.log.capturedAt).getTime() -
-          new Date(a.log.capturedAt).getTime(),
-      )
+          new Date(a.log.capturedAt).getTime()
+        );
+      })
       .slice(0, 40);
-  }, [markets, products, refresh]);
+  }, [markets, products, refresh, nearbyMarketIds, skipped, origin]);
 
   const pending = feed.length;
   const points = rep?.points ?? 0;
@@ -162,24 +208,17 @@ export function CommunityScreen() {
     async (item: FeedItem, voteType: 'confirm' | 'reject') => {
       if (!canContribute(auth)) {
         needAccount(
-          'Verifique seu e-mail no Perfil para validar preços da comunidade.',
+          'Verifique seu e-mail ou telefone no Perfil para validar preços.',
         );
         return;
       }
       const remoteId = item.log.remoteId;
       if (!remoteId || !auth?.token) {
         appAlert(
-          'Sincronize seus dados',
-          'Abra o Perfil e sincronize para votar em preços da nuvem.',
-          [
-            {label: 'Agora não', style: 'cancel'},
-            {
-              label: 'Ir ao Perfil',
-              style: 'primary',
-              onPress: () => nav.navigate('Profile'),
-            },
-          ],
+          'Aguarde a sincronização',
+          'Os preços ainda estão só no aparelho. Com rede, a sync roda sozinha.',
         );
+        requestAutoSync('vote');
         return;
       }
       setBusyId(item.log.id);
@@ -227,23 +266,16 @@ export function CommunityScreen() {
 
   const submitReview = async (stars: number) => {
     if (!canContribute(auth) || !auth?.token) {
-      needAccount('Verifique o e-mail no Perfil para avaliar mercados.');
+      needAccount('Verifique a conta no Perfil para avaliar mercados.');
       return;
     }
     const rid = reviewMarket?.remoteId;
     if (!rid) {
       appAlert(
         'Mercado ainda local',
-        'Sincronize no Perfil para enviar a avaliação deste mercado.',
-        [
-          {label: 'Ok', style: 'cancel'},
-          {
-            label: 'Ir ao Perfil',
-            style: 'primary',
-            onPress: () => nav.navigate('Profile'),
-          },
-        ],
+        'Aguarde a sincronização automática para enviar a avaliação.',
       );
+      requestAutoSync('review');
       return;
     }
     setReviewBusy(true);
@@ -266,8 +298,8 @@ export function CommunityScreen() {
     if (pct == null) return null;
     const below = pct <= -1;
     const label = below
-      ? `${Math.abs(Math.round(pct))}% abaixo da média`
-      : `${Math.round(Math.abs(pct))}% acima`;
+      ? `${Math.abs(Math.round(pct))}%↓`
+      : `${Math.round(Math.abs(pct))}%↑`;
     return (
       <SavePill label={label} tone={below ? 'green' : 'orange'} />
     );
@@ -296,7 +328,7 @@ export function CommunityScreen() {
         ]}
         ListHeaderComponent={
           <View style={styles.sectionHead}>
-            <Text style={styles.listHeading}>Preços para validar</Text>
+            <Text style={styles.listHeading}>Perto de você</Text>
             {pending > 0 ? (
               <SavePill
                 label={`${pending} pendentes`}
@@ -308,20 +340,28 @@ export function CommunityScreen() {
         ListEmptyComponent={
           <FeatureEmptyGuide
             HeroIcon={UsersRound}
-            title="Fila de validação vazia"
-            subtitle="Quando houver preços pendentes na sua região, eles aparecem aqui para você confirmar ou corrigir."
+            title={
+              origin
+                ? 'Nada para validar por perto'
+                : 'Ative a localização'
+            }
+            subtitle={
+              origin
+                ? `Só listamos preços de mercados a até ${NEARBY_RADIUS_KM} km. Quando houver pendências na região, elas aparecem aqui.`
+                : 'Precisamos da sua localização para mostrar preços de mercados próximos.'
+            }
             stepsLabel="O que você faz nesta tela"
             steps={[
               {
                 n: '1',
-                title: 'Receba a fila',
-                text: 'Preços suspeitos da região entram como missões de validação.',
-                Icon: UsersRound,
+                title: 'Fila local',
+                text: 'Só entram preços suspeitos de mercados perto de você.',
+                Icon: MapPin,
               },
               {
                 n: '2',
-                title: 'Vote Confere ou Errado',
-                text: 'Ajude a comunidade a limpar preços duvidosos.',
+                title: 'Vote ou pule',
+                text: 'Confere, Não sei ou Errado — sem pressão.',
                 Icon: ThumbsUp,
               },
               {
@@ -331,51 +371,53 @@ export function CommunityScreen() {
                 Icon: BadgeCheck,
               },
             ]}
-            PrimaryIcon={RefreshCw}
-            primaryLabel="Sincronizar comunidade"
-            onPrimary={async () => {
-              const r = await runFullSync();
-              refresh();
-              appAlert(r.ok ? 'Sync' : 'Falha', r.message);
-            }}
-            secondaryLabel="Ver mercados no mapa"
-            onSecondary={() => nav.navigate('Map')}
+            PrimaryIcon={MapPin}
+            primaryLabel="Ver mercados no mapa"
+            onPrimary={() => nav.navigate('Map')}
           />
         }
-        renderItem={({item}) => (
-          <SoftCard style={styles.validateCard}>
-            <View style={styles.cardHead}>
-              <View style={{flex: 1, minWidth: 0}}>
-                <Text style={styles.name} numberOfLines={2}>
-                  {item.productName}
-                </Text>
-                <Text style={styles.meta} numberOfLines={1}>
-                  {item.marketName}
-                </Text>
+        renderItem={({item}) => {
+          const dist = formatDist(item.distanceKm);
+          return (
+            <SoftCard style={styles.validateCard}>
+              <View style={styles.cardTop}>
+                <View style={styles.cardMain}>
+                  <Text style={styles.name} numberOfLines={1}>
+                    {item.productName}
+                  </Text>
+                  <Text style={styles.meta} numberOfLines={1}>
+                    {item.marketName}
+                    {dist ? ` · ${dist}` : ''}
+                  </Text>
+                </View>
+                <View style={styles.cardSide}>
+                  <Text style={styles.price}>
+                    {formatBrl(item.log.retailPrice)}
+                  </Text>
+                  {priceBadge(item.avgPct)}
+                </View>
               </View>
-              {priceBadge(item.avgPct)}
-            </View>
 
-            <Text style={styles.price}>{formatBrl(item.log.retailPrice)}</Text>
+              <VoteButtons
+                busy={busyId === item.log.id}
+                onConfirm={() => vote(item, 'confirm')}
+                onReject={() => vote(item, 'reject')}
+                onSkip={() =>
+                  setSkipped(prev => new Set(prev).add(item.log.id))
+                }
+              />
 
-            <VoteButtons
-              busy={busyId === item.log.id}
-              confirmPts={TrustEngine.pointsForVote('confirm', false)}
-              rejectPts={TrustEngine.pointsForVote('reject', false)}
-              onConfirm={() => vote(item, 'confirm')}
-              onReject={() => vote(item, 'reject')}
-            />
-
-            {item.log.marketId != null ? (
-              <Pressable
-                style={styles.reviewBtn}
-                onPress={() => setReviewMarketId(item.log.marketId)}>
-                <Star size={16} color={colors.navy} fill={colors.navy} />
-                <Text style={styles.reviewBtnText}>Avaliar · +5 pts</Text>
-              </Pressable>
-            ) : null}
-          </SoftCard>
-        )}
+              {item.log.marketId != null ? (
+                <Pressable
+                  style={styles.reviewBtn}
+                  onPress={() => setReviewMarketId(item.log.marketId)}>
+                  <Star size={14} color={colors.navy} fill={colors.navy} />
+                  <Text style={styles.reviewBtnText}>Avaliar mercado</Text>
+                </Pressable>
+              ) : null}
+            </SoftCard>
+          );
+        }}
       />
 
       <MarketReviewSheet
@@ -410,20 +452,23 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingBottom: spacing.bottomNavClearance,
   },
-  validateCard: {marginBottom: space.sm, gap: space.sm},
-  cardHead: {flexDirection: 'row', alignItems: 'flex-start', gap: 8},
-  name: {fontWeight: '900', color: colors.navy, fontSize: 16},
-  meta: {color: colors.muted, fontWeight: '600', fontSize: 13, marginTop: 2},
-  price: {fontWeight: '900', color: colors.navy, fontSize: 28},
+  validateCard: {marginBottom: space.sm, gap: space.xs, paddingVertical: 12},
+  cardTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  cardMain: {flex: 1, minWidth: 0, gap: 2},
+  cardSide: {alignItems: 'flex-end', gap: 4},
+  name: {fontWeight: '900', color: colors.navy, fontSize: 15},
+  meta: {color: colors.muted, fontWeight: '600', fontSize: 12},
+  price: {fontWeight: '900', color: colors.navy, fontSize: 18},
   reviewBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 8,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    marginTop: 4,
+    gap: 4,
+    paddingTop: 4,
   },
-  reviewBtnText: {fontWeight: '800', color: colors.navy, fontSize: 12},
+  reviewBtnText: {fontWeight: '700', color: colors.muted, fontSize: 11},
 });

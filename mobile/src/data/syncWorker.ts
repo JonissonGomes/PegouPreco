@@ -1,3 +1,4 @@
+import {AppState, type AppStateStatus} from 'react-native';
 import {getState, saveState} from './db';
 import {
   marketRepo,
@@ -6,31 +7,92 @@ import {
   productRepo,
 } from './repositories';
 import {syncApi} from './remote/syncApi';
+import {apiErrorMessage} from './remote/apiError';
+import {useAppStore} from '@/store/appStore';
 
 function nowIso() {
   return new Date().toISOString();
 }
 
+function sessionVerified(session: {
+  emailVerified?: boolean;
+  phoneVerified?: boolean;
+}): boolean {
+  return !!session.emailVerified || !!session.phoneVerified;
+}
+
+let syncInFlight: Promise<{ok: boolean; message: string}> | null = null;
+let lastAutoAttempt = 0;
+let autoStarted = false;
+const AUTO_MIN_MS = 90_000;
+
 export async function runFullSync(): Promise<{ok: boolean; message: string}> {
+  if (syncInFlight) return syncInFlight;
+  syncInFlight = doFullSync().finally(() => {
+    syncInFlight = null;
+  });
+  return syncInFlight;
+}
+
+async function doFullSync(): Promise<{ok: boolean; message: string}> {
   const raw = prefs.getAuthJson();
   if (!raw) {
     return {ok: false, message: 'Faça login para sincronizar'};
   }
   try {
-    const session = JSON.parse(raw) as {
+    let session = JSON.parse(raw) as {
       token: string;
       emailVerified?: boolean;
+      phoneVerified?: boolean;
+      email?: string;
+      phone?: string | null;
+      displayName?: string;
+      userId?: string;
+      role?: 'user' | 'admin';
     };
-    if (!session.emailVerified) {
-      return {
-        ok: false,
-        message: 'Verifique o e-mail antes de sincronizar contribuições',
+    if (!session.token) {
+      return {ok: false, message: 'Faça login para sincronizar'};
+    }
+
+    // Atualiza flags de verificação a partir do servidor (evita 403 por sessão antiga).
+    try {
+      const me = await syncApi.me(session.token);
+      session = {
+        ...session,
+        emailVerified: !!me.emailVerified,
+        phoneVerified: !!me.phoneVerified,
+        displayName: String(me.displayName ?? session.displayName ?? ''),
+        role: (me.role as 'user' | 'admin' | undefined) ?? session.role,
       };
+      prefs.setAuthJson(JSON.stringify(session));
+      const current = useAppStore.getState().auth;
+      if (current?.token === session.token) {
+        useAppStore.setState({
+          auth: {
+            ...current,
+            emailVerified: !!session.emailVerified,
+            phoneVerified: !!session.phoneVerified,
+            displayName: session.displayName || current.displayName,
+            role: session.role ?? current.role,
+          },
+        });
+      }
+    } catch {
+      // offline / token inválido — segue com sessão local
     }
 
     const since = prefs.getLastSyncAt();
     const pull = await syncApi.pullSince(session.token, since);
     applyPull(pull);
+
+    if (!sessionVerified(session)) {
+      prefs.setLastSyncAt(nowIso());
+      saveState();
+      return {
+        ok: true,
+        message: 'Dados baixados. Confirme a conta para enviar contribuições.',
+      };
+    }
 
     const st = getState();
     const products = st.products
@@ -117,9 +179,31 @@ export async function runFullSync(): Promise<{ok: boolean; message: string}> {
   } catch (e) {
     return {
       ok: false,
-      message: e instanceof Error ? e.message : 'Falha na sync',
+      message: apiErrorMessage(e),
     };
   }
+}
+
+/** Dispara sync em background com debounce (rede / foreground). */
+export function requestAutoSync(_reason?: string) {
+  const auth = useAppStore.getState().auth;
+  if (!auth?.token) return;
+  const now = Date.now();
+  if (now - lastAutoAttempt < AUTO_MIN_MS && _reason !== 'login') return;
+  lastAutoAttempt = now;
+  void runFullSync().then(r => {
+    if (r.ok) useAppStore.getState().refresh();
+  });
+}
+
+export function startAutoSync() {
+  if (autoStarted) return;
+  autoStarted = true;
+  requestAutoSync('boot');
+  AppState.addEventListener('change', (state: AppStateStatus) => {
+    if (state === 'active') requestAutoSync('foreground');
+  });
+  setInterval(() => requestAutoSync('interval'), 5 * 60_000);
 }
 
 function applyPull(pull: Record<string, unknown>) {

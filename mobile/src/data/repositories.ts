@@ -119,9 +119,12 @@ export const prefs = {
 /** Conta verificada por e-mail pode contribuir/votar. */
 export function canContribute(auth: {
   emailVerified?: boolean;
+  phoneVerified?: boolean;
   token?: string;
 } | null): boolean {
-  return !!auth?.token && !!auth.emailVerified;
+  return (
+    !!auth?.token && (!!auth.emailVerified || !!auth.phoneVerified)
+  );
 }
 
 export const marketRepo = {

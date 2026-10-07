@@ -6,7 +6,14 @@ import {
   Text,
   View,
 } from 'react-native';
-import {Check, Star, ThumbsDown, ThumbsUp, Zap} from 'lucide-react-native';
+import {
+  Check,
+  CircleHelp,
+  Star,
+  ThumbsDown,
+  ThumbsUp,
+  Zap,
+} from 'lucide-react-native';
 import {colors, radii, space} from './theme';
 
 /** Seletor interativo de 1–5 estrelas (avaliação de mercado). */
@@ -65,38 +72,43 @@ export function ScoreMeter({
 
 export function VoteButtons({
   busy,
-  confirmPts,
-  rejectPts,
   onConfirm,
   onReject,
+  onSkip,
 }: {
   busy?: boolean;
-  confirmPts: number;
-  rejectPts: number;
   onConfirm: () => void;
   onReject: () => void;
+  /** Opção central — não sei / pular. */
+  onSkip?: () => void;
 }) {
   return (
     <View style={styles.voteRow}>
       <Pressable
         style={[styles.voteBtn, styles.voteOk, busy && styles.voteBusy]}
         onPress={onConfirm}
-        disabled={busy}>
-        <ThumbsUp size={18} color="#fff" />
-        <View>
-          <Text style={styles.voteLabel}>Confere</Text>
-          <Text style={styles.votePts}>+{confirmPts} pts</Text>
-        </View>
+        disabled={busy}
+        accessibilityLabel="Confere">
+        <ThumbsUp size={16} color="#fff" />
+        <Text style={styles.voteLabel}>Confere</Text>
       </Pressable>
+      {onSkip ? (
+        <Pressable
+          style={[styles.voteBtn, styles.voteSkip, busy && styles.voteBusy]}
+          onPress={onSkip}
+          disabled={busy}
+          accessibilityLabel="Não sei">
+          <CircleHelp size={16} color={colors.muted} />
+          <Text style={styles.voteSkipLabel}>Não sei</Text>
+        </Pressable>
+      ) : null}
       <Pressable
         style={[styles.voteBtn, styles.voteNo, busy && styles.voteBusy]}
         onPress={onReject}
-        disabled={busy}>
-        <ThumbsDown size={18} color={colors.navy} />
-        <View>
-          <Text style={styles.voteLabelDark}>Está errado</Text>
-          <Text style={styles.votePtsDark}>+{rejectPts} pts</Text>
-        </View>
+        disabled={busy}
+        accessibilityLabel="Está errado">
+        <ThumbsDown size={16} color={colors.navy} />
+        <Text style={styles.voteLabelDark}>Errado</Text>
       </Pressable>
     </View>
   );
@@ -227,27 +239,33 @@ const styles = StyleSheet.create({
   },
   meterOk: {fontSize: 11, fontWeight: '800', color: colors.trustGreen},
   meterBad: {fontSize: 11, fontWeight: '800', color: colors.danger},
-  voteRow: {flexDirection: 'row', gap: 8, marginTop: 8},
+  voteRow: {flexDirection: 'row', gap: 6, marginTop: 4},
   voteBtn: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    borderRadius: radii.lg,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
+    justifyContent: 'center',
+    gap: 5,
+    borderRadius: radii.md,
+    paddingVertical: 10,
+    paddingHorizontal: 6,
   },
   voteOk: {backgroundColor: colors.navy},
+  voteSkip: {
+    backgroundColor: colors.bg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    flex: 0.85,
+  },
   voteNo: {
     backgroundColor: colors.yellowBright,
     borderWidth: 1,
     borderColor: colors.navy,
   },
   voteBusy: {opacity: 0.55},
-  voteLabel: {color: '#fff', fontWeight: '800', fontSize: 13},
-  votePts: {color: 'rgba(255,255,255,0.75)', fontWeight: '700', fontSize: 11},
-  voteLabelDark: {color: colors.navy, fontWeight: '800', fontSize: 13},
-  votePtsDark: {color: 'rgba(11,42,107,0.7)', fontWeight: '700', fontSize: 11},
+  voteLabel: {color: '#fff', fontWeight: '800', fontSize: 12},
+  voteSkipLabel: {color: colors.muted, fontWeight: '800', fontSize: 11},
+  voteLabelDark: {color: colors.navy, fontWeight: '800', fontSize: 12},
   xpOverlay: {
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',

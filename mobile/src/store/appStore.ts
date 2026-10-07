@@ -128,6 +128,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   setAuth: session => {
     prefs.setAuthJson(session ? JSON.stringify(session) : null);
     set({auth: session});
+    if (session?.token) {
+      // lazy — evita ciclo com syncWorker
+      void import('@/data/syncWorker').then(m => m.requestAutoSync('login'));
+    }
   },
 }));
 
