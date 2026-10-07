@@ -13,11 +13,16 @@ import {useFocusEffect, useNavigation} from '@react-navigation/native';
 import Geolocation from 'react-native-geolocation-service';
 import {
   ChevronRight,
-  Database,
+  ClipboardList,
+  History,
   LogOut,
+  Map,
+  ScanLine,
   Shield,
   Sparkles,
+  Store,
   TrendingDown,
+  UsersRound,
 } from 'lucide-react-native';
 import {AppButton, AppField} from '@/ui/chrome';
 import {Screen} from '@/ui/components';
@@ -27,7 +32,6 @@ import {prefs, useAppStore} from '@/store/appStore';
 import {syncApi, type AuthResponse, type ReputationRemote} from '@/data/remote/syncApi';
 import {apiErrorMessage} from '@/data/remote/apiError';
 import {reverseGeocode} from '@/data/remote/reverseGeocode';
-import {runDemoSeed} from '@/data/seed/demoSeed';
 import {badgeById} from '@/domain/badges';
 import {TrustEngine} from '@/domain/trust';
 import {formatBrl} from '@/domain/money';
@@ -98,7 +102,6 @@ export function ProfileScreen() {
   const nav = useNavigation<any>();
   const auth = useAppStore(s => s.auth);
   const setAuth = useAppStore(s => s.setAuth);
-  const refresh = useAppStore(s => s.refresh);
   const markets = useAppStore(s => s.markets);
   const lists = useAppStore(s => s.lists);
   const [email, setEmail] = useState('');
@@ -345,7 +348,7 @@ export function ProfileScreen() {
           keyboardShouldPersistTaps="handled">
           <ScreenScrollPad>
           {auth ? (
-            <>
+            <View style={styles.stack}>
               <View style={styles.profileHead}>
                 <View style={styles.profileRow}>
                   <View style={styles.avatarWrap}>
@@ -465,23 +468,54 @@ export function ProfileScreen() {
               </Pressable>
 
               <View style={styles.actionsCard}>
+                <ActionRow
+                  icon={<TrendingDown size={20} color={colors.navy} />}
+                  label="Insights"
+                  hint="Rankings e economia por mercado"
+                  onPress={() => nav.navigate('Insights')}
+                />
+                <ActionRow
+                  icon={<Map size={20} color={colors.navy} />}
+                  label="Mapa"
+                  hint="Mercados perto de você"
+                  onPress={() => nav.navigate('Map')}
+                />
+                <ActionRow
+                  icon={<Store size={20} color={colors.navy} />}
+                  label="Lista de compras"
+                  hint="Carrinho e preços no mercado"
+                  onPress={() => nav.navigate('Lists')}
+                />
+                <ActionRow
+                  icon={<ClipboardList size={20} color={colors.navy} />}
+                  label="Listas salvas"
+                  hint="Compras finalizadas"
+                  onPress={() => nav.navigate('ShoppingLists')}
+                />
+                <ActionRow
+                  icon={<History size={20} color={colors.navy} />}
+                  label="Histórico"
+                  hint="Evolução de preços dos produtos"
+                  onPress={() => nav.navigate('History')}
+                />
+                <ActionRow
+                  icon={<UsersRound size={20} color={colors.navy} />}
+                  label="Comunidade"
+                  hint="Validar preços perto de você"
+                  onPress={() => nav.navigate('Community')}
+                />
+                <ActionRow
+                  icon={<ScanLine size={20} color={colors.navy} />}
+                  label="Capturar"
+                  hint="Foto de etiqueta ou NFC-e"
+                  onPress={() => nav.navigate('Capture')}
+                />
                 {auth.role === 'admin' ? (
                   <ActionRow
                     icon={<Shield size={20} color={colors.navy} />}
                     label="Admin · Mercados"
                     hint="Cadastrar mercados na nuvem"
                     onPress={() => nav.navigate('AdminMarkets')}
-                  />
-                ) : null}
-                {__DEV__ ? (
-                  <ActionRow
-                    icon={<Database size={20} color={colors.navy} />}
-                    label="Recarregar seed demo"
-                    onPress={() => {
-                      runDemoSeed();
-                      refresh();
-                      Alert.alert('Seed', 'Banco demo recarregado');
-                    }}
                   />
                 ) : null}
                 <ActionRow
@@ -491,9 +525,9 @@ export function ProfileScreen() {
                   onPress={() => setAuth(null)}
                 />
               </View>
-            </>
+            </View>
           ) : (
-            <>
+            <View style={styles.stack}>
 
               {mode === 'login' || mode === 'register' ? (
                 <View style={styles.tabs}>
@@ -703,7 +737,7 @@ export function ProfileScreen() {
                   else setMode('login');
                 }}
               />
-            </>
+            </View>
           )}
           </ScreenScrollPad>
         </ScrollView>
@@ -715,7 +749,11 @@ export function ProfileScreen() {
 const styles = StyleSheet.create({
   body: {
     paddingHorizontal: space.md,
-    gap: space.xxl,
+    alignItems: 'stretch',
+  },
+  /** Gap aqui — ScreenScrollPad é filho único do ScrollView. */
+  stack: {
+    gap: 28,
     alignItems: 'stretch',
   },
   profileHead: {
