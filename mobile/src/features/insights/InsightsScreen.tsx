@@ -24,6 +24,13 @@ import {formatBrl} from '@/domain/money';
 import {rankNearestMarkets} from '@/domain/marketUi';
 import {TrustEngine} from '@/domain/trust';
 import {
+  type InsightPeriod,
+  monthsAgo,
+  rankCategoryMarketWins,
+  rankCheapestMarkets,
+  savingsSince,
+} from '@/domain/homeInsights';
+import {
   marketRepo,
   prefs,
   priceLogRepo,
@@ -32,6 +39,12 @@ import {
 } from '@/store/appStore';
 import {syncApi, type ReputationRemote} from '@/data/remote/syncApi';
 import type {FiscalLevel} from '@/data/types';
+
+const PERIODS: Array<{id: InsightPeriod; label: string}> = [
+  {id: 'week', label: 'Semana'},
+  {id: 'month', label: 'Mês'},
+  {id: 'all', label: 'Tudo'},
+];
 
 function miniDate(iso: string) {
   const local = new Date(iso);
@@ -46,10 +59,17 @@ function miniDate(iso: string) {
   return `${local.toLocaleDateString('pt-BR', {day: '2-digit', month: '2-digit'})} · ${time}`;
 }
 
+function periodCaption(period: InsightPeriod): string {
+  if (period === 'week') return 'últimos 7 dias';
+  if (period === 'month') return 'último mês';
+  return 'todo o histórico';
+}
+
 export function InsightsScreen() {
   const nav = useNavigation<any>();
   const lists = useAppStore(s => s.lists);
   const markets = useAppStore(s => s.markets);
+  const products = useAppStore(s => s.products);
   const auth = useAppStore(s => s.auth);
   const currentMarketId = useAppStore(s => s.currentMarketId);
   const setCurrentMarket = useAppStore(s => s.setCurrentMarket);
@@ -59,6 +79,7 @@ export function InsightsScreen() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [marketQuery, setMarketQuery] = useState('');
   const [rep, setRep] = useState<ReputationRemote | null>(null);
+  const [period, setPeriod] = useState<InsightPeriod>('week');
 
   useEffect(() => {
     if (!auth?.token) {
@@ -70,6 +91,17 @@ export function InsightsScreen() {
       .then(setRep)
       .catch(() => setRep(null));
   }, [auth?.token]);
+
+  const logs = useMemo(() => priceLogRepo.all(), [lists, markets, products]);
+  const marketRanks = useMemo(
+    () => rankCheapestMarkets(logs, markets, products, period),
+    [logs, markets, products, period],
+  );
+  const categoryWins = useMemo(
+    () => rankCategoryMarketWins(logs, markets, products, period),
+    [logs, markets, products, period],
+  );
+  const saved3m = useMemo(() => savingsSince(lists, monthsAgo(3)), [lists]);
 
   const cheap = useMemo(() => priceLogRepo.cheapestNow(40), [lists, markets]);
   const opps = useMemo(() => priceLogRepo.opportunities(), [lists, markets]);
@@ -119,16 +151,86 @@ export function InsightsScreen() {
     TrustEngine.levelForPoints(rep?.points ?? 0);
 
   const data: Array<{type: string; key: string; payload?: any}> = [];
+  data.push({type: 'period', key: 'period'});
+  data.push({
+    type: 'savings',
+    key: 'savings',
+    payload: {amount: saved3m},
+  });
+  data.push({
+    type: 'section',
+    key: 'rank-h',
+    payload: {
+      title: 'Mercados mais baratos',
+      trailing: periodCaption(period),
+    },
+  });
+  if (!marketRanks.length) {
+    data.push({
+      type: 'empty',
+      key: 'rank-e',
+      payload:
+        'Ainda sem preços comunitários validados neste período. Capture NFC-e ou confirme preços na Comunidade.',
+    });
+  } else {
+    marketRanks.slice(0, 8).forEach((r, i) =>
+      data.push({
+        type: 'market-rank',
+        key: `mr-${r.marketId}`,
+        payload: {...r, place: i + 1},
+      }),
+    );
+  }
+  data.push({
+    type: 'section',
+    key: 'catwin-h',
+    payload: {
+      title: 'Melhor mercado por categoria',
+      trailing: periodCaption(period),
+    },
+  });
+  if (!categoryWins.length) {
+    data.push({
+      type: 'empty',
+      key: 'catwin-e',
+      payload: 'Sem vitórias por categoria neste período.',
+    });
+  } else {
+    categoryWins.slice(0, 10).forEach(r =>
+      data.push({
+        type: 'cat-win',
+        key: `cw-${r.category}`,
+        payload: r,
+      }),
+    );
+  }
+
   if (marketName) {
-    data.push({type: 'section', key: 'today-h', payload: {title: 'Hoje neste mercado', trailing: String(todayF.length)}});
+    data.push({
+      type: 'section',
+      key: 'today-h',
+      payload: {title: 'Hoje neste mercado', trailing: String(todayF.length)},
+    });
     if (!todayF.length) {
-      data.push({type: 'empty', key: 'today-e', payload: `Nenhum item catalogado hoje em ${marketName}.`});
+      data.push({
+        type: 'empty',
+        key: 'today-e',
+        payload: `Nenhum item catalogado hoje em ${marketName}.`,
+      });
     } else {
-      todayF.forEach(i => data.push({type: 'today', key: `t-${i.id}`, payload: i}));
+      todayF.forEach(i =>
+        data.push({type: 'today', key: `t-${i.id}`, payload: i}),
+      );
     }
   }
-  data.push({type: 'section', key: 'cheap-h', payload: {title: 'Preço mais baixo', trailing: `${cheapF.length} itens`}});
-  cheapF.forEach(r => data.push({type: 'cheap', key: `c-${r.product.id}`, payload: r}));
+  data.push({
+    type: 'section',
+    key: 'cheap-h',
+    payload: {title: 'Preço mais baixo', trailing: `${cheapF.length} itens`},
+  });
+  cheapF.forEach(r =>
+    data.push({type: 'cheap', key: `c-${r.product.id}`, payload: r}),
+  );
   if (cheapByCat.length) {
     data.push({
       type: 'section',
@@ -142,21 +244,37 @@ export function InsightsScreen() {
         payload: {title: cat, trailing: String(items.length)},
       });
       items.forEach(r =>
-        data.push({type: 'cheap', key: `bc-${cat}-${r.product.id}`, payload: r}),
+        data.push({
+          type: 'cheap',
+          key: `bc-${cat}-${r.product.id}`,
+          payload: r,
+        }),
       );
     }
   }
-  data.push({type: 'section', key: 'opp-h', payload: {title: 'Acima da sua média', trailing: String(oppsF.length)}});
-  oppsF.forEach(o => data.push({type: 'opp', key: `o-${o.product.id}`, payload: o}));
-  data.push({type: 'section', key: 'list-h', payload: {title: 'Listas passadas', trailing: String(listsF.length)}});
-  listsF.forEach(l => data.push({type: 'list', key: `l-${l.id}`, payload: l}));
+  data.push({
+    type: 'section',
+    key: 'opp-h',
+    payload: {title: 'Acima da sua média', trailing: String(oppsF.length)},
+  });
+  oppsF.forEach(o =>
+    data.push({type: 'opp', key: `o-${o.product.id}`, payload: o}),
+  );
+  data.push({
+    type: 'section',
+    key: 'list-h',
+    payload: {title: 'Listas passadas', trailing: String(listsF.length)},
+  });
+  listsF.forEach(l =>
+    data.push({type: 'list', key: `l-${l.id}`, payload: l}),
+  );
 
   return (
     <View style={styles.root}>
       <AppScreenHeader
         showLogo={false}
         title="Insights"
-        subtitle={marketName || 'Preços e alertas'}
+        subtitle={marketName || 'Preços e rankings'}
         actions={
           <View style={{flexDirection: 'row'}}>
             <Pressable
@@ -181,7 +299,7 @@ export function InsightsScreen() {
       />
       <View style={styles.heroHint}>
         <Text style={styles.heroHintText}>
-          Alertas e oportunidades · suba de Fiscal validando preços na Comunidade
+          Rankings com preços comunitários validados · filtre por período
         </Text>
       </View>
       <TextInput
@@ -196,6 +314,41 @@ export function InsightsScreen() {
         keyExtractor={i => i.key}
         contentContainerStyle={{padding: 16, paddingBottom: 100}}
         renderItem={({item}) => {
+          if (item.type === 'period') {
+            return (
+              <View style={styles.periodRow}>
+                {PERIODS.map(p => {
+                  const on = period === p.id;
+                  return (
+                    <Pressable
+                      key={p.id}
+                      style={[styles.periodChip, on && styles.periodChipOn]}
+                      onPress={() => setPeriod(p.id)}>
+                      <Text
+                        style={[
+                          styles.periodChipText,
+                          on && styles.periodChipTextOn,
+                        ]}>
+                        {p.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            );
+          }
+          if (item.type === 'savings') {
+            return (
+              <View style={styles.savingsBanner}>
+                <Text style={styles.savingsBannerLabel}>
+                  Economia nos últimos 3 meses
+                </Text>
+                <Text style={styles.savingsBannerValue}>
+                  {formatBrl(item.payload.amount)}
+                </Text>
+              </View>
+            );
+          }
           if (item.type === 'section' || item.type === 'cat-section') {
             const isCat = item.type === 'cat-section';
             return (
@@ -213,6 +366,44 @@ export function InsightsScreen() {
           }
           if (item.type === 'empty') {
             return <Text style={styles.emptyLine}>{item.payload}</Text>;
+          }
+          if (item.type === 'market-rank') {
+            const r = item.payload;
+            return (
+              <AppListCard>
+                <View style={styles.row}>
+                  <View style={styles.placeBadge}>
+                    <Text style={styles.placeBadgeText}>{r.place}</Text>
+                  </View>
+                  <View style={{flex: 1}}>
+                    <Text style={styles.name}>{r.marketName}</Text>
+                    <Text style={styles.muted}>
+                      {r.winCount} produto{r.winCount === 1 ? '' : 's'} mais
+                      barato{r.winCount === 1 ? '' : 's'}
+                      {r.topCategories?.length
+                        ? ` · ${r.topCategories.join(', ')}`
+                        : ''}
+                    </Text>
+                  </View>
+                </View>
+              </AppListCard>
+            );
+          }
+          if (item.type === 'cat-win') {
+            const r = item.payload;
+            return (
+              <AppListCard>
+                <View style={styles.row}>
+                  <View style={{flex: 1}}>
+                    <Text style={styles.name}>{r.category}</Text>
+                    <Text style={styles.muted}>
+                      {r.marketName} · {r.winCount} vitória
+                      {r.winCount === 1 ? '' : 's'}
+                    </Text>
+                  </View>
+                </View>
+              </AppListCard>
+            );
           }
           if (item.type === 'today') {
             const i = item.payload;
@@ -353,6 +544,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 12,
     lineHeight: 16,
+    textAlign: 'center',
   },
   search: {
     margin: 16,
@@ -366,6 +558,45 @@ const styles = StyleSheet.create({
     color: colors.ink,
     fontWeight: '600',
   },
+  periodRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+    justifyContent: 'center',
+  },
+  periodChip: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.white,
+    alignItems: 'center',
+  },
+  periodChipOn: {
+    backgroundColor: colors.navy,
+    borderColor: colors.navy,
+  },
+  periodChipText: {fontWeight: '800', fontSize: 13, color: colors.muted},
+  periodChipTextOn: {color: colors.white},
+  savingsBanner: {
+    backgroundColor: '#DCFCE7',
+    borderRadius: radii.lg,
+    padding: space.md,
+    alignItems: 'center',
+    marginBottom: 8,
+    gap: 2,
+  },
+  savingsBannerLabel: {
+    fontWeight: '700',
+    fontSize: 12,
+    color: colors.trustGreen,
+  },
+  savingsBannerValue: {
+    fontWeight: '900',
+    fontSize: 24,
+    color: colors.trustGreen,
+  },
   sectionRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -373,7 +604,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     marginTop: 8,
   },
-  section: {fontWeight: '800', color: colors.navy, fontSize: 15},
+  section: {fontWeight: '800', color: colors.navy, fontSize: 15, flex: 1},
   catSectionRow: {marginTop: 4, marginLeft: 4},
   catSection: {fontSize: 13, fontWeight: '700', color: colors.muted},
   sectionPill: {
@@ -381,11 +612,28 @@ const styles = StyleSheet.create({
     borderRadius: radii.pill,
     paddingHorizontal: 8,
     paddingVertical: 3,
+    marginLeft: 8,
   },
   sectionPillText: {fontSize: 11, fontWeight: '800', color: colors.navy},
   muted: {color: colors.muted, fontWeight: '600', fontSize: 12},
-  emptyLine: {color: colors.muted, marginBottom: 10, fontWeight: '600'},
+  emptyLine: {
+    color: colors.muted,
+    marginBottom: 10,
+    fontWeight: '600',
+    lineHeight: 18,
+  },
   row: {flexDirection: 'row', alignItems: 'center', gap: 8},
+  placeBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.yellow,
+    borderWidth: 1,
+    borderColor: colors.navy,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  placeBadgeText: {fontWeight: '900', fontSize: 12, color: colors.navy},
   name: {fontWeight: '800', color: colors.navy, fontSize: 14},
   price: {fontWeight: '800', color: colors.navy, fontSize: 15},
   modalTitle: {fontSize: 18, fontWeight: '800', color: colors.navy},

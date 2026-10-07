@@ -284,6 +284,12 @@ export const productRepo = {
 };
 
 export const priceLogRepo = {
+  all(): PriceLog[] {
+    return [...getState().price_logs].sort(
+      (a, b) =>
+        new Date(b.capturedAt).getTime() - new Date(a.capturedAt).getTime(),
+    );
+  },
   forProduct(productId: number): PriceLog[] {
     return getState()
       .price_logs.filter(l => l.productId === productId)

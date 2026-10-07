@@ -17,7 +17,6 @@ import {appAlert} from '@/ui/appDialog';
 import {FeatureEmptyGuide} from '@/ui/FeatureEmptyGuide';
 import {MarketReviewSheet} from '@/ui/MarketReviewSheet';
 import {
-  ProgressBar,
   SavePill,
   SoftCard,
   SoftHeader,
@@ -275,25 +274,18 @@ export function CommunityScreen() {
 
   return (
     <Screen>
-      <SoftHeader location={region} title="Comunidade" />
-
-      <View style={styles.fiscalCard}>
-        <View style={styles.fiscalTop}>
-          <Text style={styles.fiscalLevel}>
-            Fiscal {TrustEngine.fiscalLabel(fiscal.level)}
-          </Text>
-          <Text style={styles.fiscalPts}>
-            {points} / {fiscal.next} pts
-          </Text>
-        </View>
-        <ProgressBar
-          progress={fiscal.progress}
-          trackColor="rgba(255,255,255,0.85)"
-          fillColor={colors.navy}
-          height={8}
-        />
-        <Text style={styles.fiscalHint}>{fiscal.hint}</Text>
-      </View>
+      <SoftHeader
+        title="Comunidade"
+        location={region}
+        trailing={
+          <View style={styles.fiscalInline} accessibilityLabel={fiscal.hint}>
+            <Text style={styles.fiscalInlineLevel}>
+              {TrustEngine.fiscalLabel(fiscal.level)}
+            </Text>
+            <Text style={styles.fiscalInlinePts}>{points} pts</Text>
+          </View>
+        }
+      />
 
       <FlatList
         data={feed}
@@ -405,22 +397,27 @@ export function CommunityScreen() {
 }
 
 const styles = StyleSheet.create({
-  fiscalCard: {
-    marginHorizontal: space.md,
-    marginBottom: space.sm,
+  fiscalInline: {
+    alignItems: 'flex-end',
     backgroundColor: colors.yellow,
-    borderRadius: radii.xl,
-    padding: space.md,
-    gap: space.sm,
+    borderRadius: radii.pill,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    minWidth: 64,
   },
-  fiscalTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  fiscalInlineLevel: {
+    fontWeight: '900',
+    color: colors.navy,
+    fontSize: 12,
+    lineHeight: 14,
   },
-  fiscalLevel: {fontWeight: '900', color: colors.navy, fontSize: 16},
-  fiscalPts: {fontWeight: '800', color: colors.navy, fontSize: 14},
-  fiscalHint: {fontWeight: '700', color: colors.navy, fontSize: 13},
+  fiscalInlinePts: {
+    fontWeight: '700',
+    color: colors.navy,
+    fontSize: 11,
+    opacity: 0.8,
+    marginTop: 1,
+  },
   sectionHead: {
     flexDirection: 'row',
     alignItems: 'center',

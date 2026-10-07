@@ -1,6 +1,12 @@
 import {isCommunityPrice} from '@/domain/compare';
 import {effectiveUnitPrice, lineTotal} from '@/domain/pricing';
-import type {CartItem, PriceLog, Product, ShoppingList} from '@/data/types';
+import type {
+  CartItem,
+  Market,
+  PriceLog,
+  Product,
+  ShoppingList,
+} from '@/data/types';
 
 export type CategorySpend = {
   category: string;
@@ -13,8 +19,172 @@ export type CategorySaveEst = {
   saveEst: number;
 };
 
+export type InsightPeriod = 'week' | 'month' | 'all';
+
+export type MarketCheapRank = {
+  marketId: number;
+  marketName: string;
+  winCount: number;
+  productCount: number;
+  topCategories: string[];
+};
+
+export type CategoryMarketWin = {
+  category: string;
+  marketId: number;
+  marketName: string;
+  winCount: number;
+};
+
 export function lifetimeSavings(lists: ShoppingList[]): number {
   return lists.reduce((sum, l) => sum + (l.savings ?? 0), 0);
+}
+
+/** Economia em listas finalizadas desde `since` (ex.: últimos 3 meses). */
+export function savingsSince(lists: ShoppingList[], since: Date): number {
+  const t = since.getTime();
+  return lists
+    .filter(l => new Date(l.finishedAt).getTime() >= t)
+    .reduce((sum, l) => sum + (l.savings ?? 0), 0);
+}
+
+export function monthsAgo(n: number, now = new Date()): Date {
+  const d = new Date(now);
+  d.setMonth(d.getMonth() - n);
+  return d;
+}
+
+export function periodStart(period: InsightPeriod, now = new Date()): Date | null {
+  if (period === 'all') return null;
+  const d = new Date(now);
+  if (period === 'week') {
+    d.setDate(d.getDate() - 7);
+    return d;
+  }
+  d.setMonth(d.getMonth() - 1);
+  return d;
+}
+
+/**
+ * Ranking de mercados mais baratos com base em preços comunitários validados.
+ * Conta quantas vezes cada mercado tem o menor preço de um produto no período.
+ */
+export function rankCheapestMarkets(
+  logs: PriceLog[],
+  markets: Market[],
+  products: Product[],
+  period: InsightPeriod = 'week',
+  now = new Date(),
+): MarketCheapRank[] {
+  const start = periodStart(period, now);
+  const community = logs.filter(l => {
+    if (!isCommunityPrice(l, now)) return false;
+    if (l.marketId == null) return false;
+    if (start && new Date(l.capturedAt).getTime() < start.getTime()) {
+      return false;
+    }
+    return true;
+  });
+
+  const byProduct = new Map<number, PriceLog[]>();
+  for (const l of community) {
+    const arr = byProduct.get(l.productId) ?? [];
+    arr.push(l);
+    byProduct.set(l.productId, arr);
+  }
+
+  const wins = new Map<number, number>();
+  const catWins = new Map<number, Map<string, number>>();
+
+  for (const [productId, plist] of byProduct) {
+    if (plist.length < 1) continue;
+    const best = plist.reduce((a, b) =>
+      a.retailPrice <= b.retailPrice ? a : b,
+    );
+    const mid = best.marketId!;
+    wins.set(mid, (wins.get(mid) ?? 0) + 1);
+    const cat =
+      products.find(p => p.id === productId)?.category?.trim() || 'Outros';
+    const mCats = catWins.get(mid) ?? new Map<string, number>();
+    mCats.set(cat, (mCats.get(cat) ?? 0) + 1);
+    catWins.set(mid, mCats);
+  }
+
+  return [...wins.entries()]
+    .map(([marketId, winCount]) => {
+      const m = markets.find(x => x.id === marketId);
+      const cats = [...(catWins.get(marketId)?.entries() ?? [])]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3)
+        .map(([c]) => c);
+      return {
+        marketId,
+        marketName: m?.name ?? 'Mercado',
+        winCount,
+        productCount: winCount,
+        topCategories: cats,
+      };
+    })
+    .sort((a, b) => b.winCount - a.winCount);
+}
+
+/** Por categoria: mercado que mais venceu (menor preço) no período. */
+export function rankCategoryMarketWins(
+  logs: PriceLog[],
+  markets: Market[],
+  products: Product[],
+  period: InsightPeriod = 'week',
+  now = new Date(),
+): CategoryMarketWin[] {
+  const start = periodStart(period, now);
+  const community = logs.filter(l => {
+    if (!isCommunityPrice(l, now)) return false;
+    if (l.marketId == null) return false;
+    if (start && new Date(l.capturedAt).getTime() < start.getTime()) {
+      return false;
+    }
+    return true;
+  });
+
+  const byProduct = new Map<number, PriceLog[]>();
+  for (const l of community) {
+    const arr = byProduct.get(l.productId) ?? [];
+    arr.push(l);
+    byProduct.set(l.productId, arr);
+  }
+
+  const catBest = new Map<string, Map<number, number>>();
+  for (const [productId, plist] of byProduct) {
+    const best = plist.reduce((a, b) =>
+      a.retailPrice <= b.retailPrice ? a : b,
+    );
+    const cat =
+      products.find(p => p.id === productId)?.category?.trim() || 'Outros';
+    const mid = best.marketId!;
+    const m = catBest.get(cat) ?? new Map<number, number>();
+    m.set(mid, (m.get(mid) ?? 0) + 1);
+    catBest.set(cat, m);
+  }
+
+  const out: CategoryMarketWin[] = [];
+  for (const [category, mWins] of catBest) {
+    let bestId = -1;
+    let bestN = 0;
+    for (const [id, n] of mWins) {
+      if (n > bestN) {
+        bestN = n;
+        bestId = id;
+      }
+    }
+    if (bestId < 0) continue;
+    out.push({
+      category,
+      marketId: bestId,
+      marketName: markets.find(m => m.id === bestId)?.name ?? 'Mercado',
+      winCount: bestN,
+    });
+  }
+  return out.sort((a, b) => b.winCount - a.winCount);
 }
 
 export function categorySpendFromCart(

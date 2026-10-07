@@ -50,55 +50,28 @@ export function SoftHeader({
   trailing?: React.ReactNode;
 }) {
   const insets = useSafeAreaInsets();
-  const titleBesideActions = !leading && !location && !!trailing;
 
   return (
     <View style={[styles.header, {paddingTop: insets.top + space.sm}]}>
-      {location ? (
-        <Text style={styles.location} numberOfLines={1}>
-          {location}
-        </Text>
-      ) : null}
-      {leading ? (
-        <View style={styles.titleRow}>
-          {leading}
-          <View style={{flex: 1, minWidth: 0}}>
-            <Text style={styles.title} numberOfLines={2}>
-              {title}
-            </Text>
-            {subtitle ? (
-              <Text style={styles.subtitle} numberOfLines={1}>
-                {subtitle}
-              </Text>
-            ) : null}
-          </View>
-          {trailing}
-        </View>
-      ) : titleBesideActions ? (
-        <View style={styles.titleRow}>
-          <Text style={[styles.title, {flex: 1}]} numberOfLines={2}>
-            {title}
-          </Text>
-          {trailing}
-        </View>
-      ) : (
-        <>
-          {trailing ? (
-            <View style={[styles.headerRow, {marginBottom: space.xs}]}>
-              <View style={{flex: 1}} />
-              {trailing}
-            </View>
-          ) : null}
+      <View style={styles.titleRow}>
+        {leading}
+        <View style={styles.titleBlock}>
           <Text style={styles.title} numberOfLines={2}>
             {title}
           </Text>
+          {location ? (
+            <Text style={styles.location} numberOfLines={1}>
+              {location}
+            </Text>
+          ) : null}
           {subtitle ? (
             <Text style={styles.subtitle} numberOfLines={1}>
               {subtitle}
             </Text>
           ) : null}
-        </>
-      )}
+        </View>
+        {trailing ? <View style={styles.trailing}>{trailing}</View> : null}
+      </View>
     </View>
   );
 }
@@ -193,21 +166,18 @@ const styles = StyleSheet.create({
     paddingBottom: space.sm,
     backgroundColor: colors.bg,
   },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: space.xs,
-  },
   titleRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: space.sm,
   },
+  titleBlock: {flex: 1, minWidth: 0},
+  trailing: {paddingTop: 4, alignItems: 'flex-end'},
   location: {
+    marginTop: 2,
     fontSize: 13,
     fontWeight: '600',
     color: colors.muted,
-    marginBottom: 4,
   },
   title: {
     ...typography.titleLg,
@@ -215,7 +185,7 @@ const styles = StyleSheet.create({
     lineHeight: 32,
   },
   subtitle: {
-    marginTop: 4,
+    marginTop: 2,
     fontSize: 14,
     fontWeight: '600',
     color: colors.muted,

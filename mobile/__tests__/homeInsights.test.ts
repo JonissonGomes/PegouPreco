@@ -1,8 +1,17 @@
 import {
   categorySpendFromCart,
   lifetimeSavings,
+  monthsAgo,
+  rankCheapestMarkets,
+  savingsSince,
 } from '../src/domain/homeInsights';
-import type {CartItem, Product, ShoppingList} from '../src/data/types';
+import type {
+  CartItem,
+  Market,
+  PriceLog,
+  Product,
+  ShoppingList,
+} from '../src/data/types';
 
 describe('homeInsights', () => {
   it('soma economia de listas finalizadas', () => {
@@ -68,5 +77,113 @@ describe('homeInsights', () => {
     const rows = categorySpendFromCart(cart, products);
     expect(rows[0].category).toBe('Mercearia');
     expect(rows[0].total).toBe(40);
+  });
+
+  it('savingsSince filtra por data', () => {
+    const now = new Date();
+    const lists: ShoppingList[] = [
+      {
+        id: 1,
+        name: 'Recente',
+        marketId: 1,
+        marketName: 'M',
+        itemsJson: '[]',
+        subtotal: 100,
+        savings: 15,
+        itemCount: 2,
+        finishedAt: now.toISOString(),
+        remoteId: null,
+        updatedAt: '',
+        synced: 0,
+      },
+      {
+        id: 2,
+        name: 'Antiga',
+        marketId: 1,
+        marketName: 'M',
+        itemsJson: '[]',
+        subtotal: 80,
+        savings: 40,
+        itemCount: 2,
+        finishedAt: monthsAgo(6, now).toISOString(),
+        remoteId: null,
+        updatedAt: '',
+        synced: 0,
+      },
+    ];
+    expect(savingsSince(lists, monthsAgo(3, now))).toBeCloseTo(15, 1);
+  });
+
+  it('rankCheapestMarkets conta vitórias com logs validados', () => {
+    const now = new Date();
+    const markets: Market[] = [
+      {
+        id: 1,
+        name: 'Barato',
+        cnpj: null,
+        uf: null,
+        lat: null,
+        lng: null,
+        address: null,
+        avgRating: null,
+        ratingsCount: 0,
+        priceLevel: null,
+        remoteId: null,
+        updatedAt: '',
+        synced: 0,
+      },
+      {
+        id: 2,
+        name: 'Caro',
+        cnpj: null,
+        uf: null,
+        lat: null,
+        lng: null,
+        address: null,
+        avgRating: null,
+        ratingsCount: 0,
+        priceLevel: null,
+        remoteId: null,
+        updatedAt: '',
+        synced: 0,
+      },
+    ];
+    const products: Product[] = [
+      {
+        id: 10,
+        name: 'Arroz',
+        aliasesJson: '[]',
+        category: 'Mercearia',
+        remoteId: null,
+        updatedAt: '',
+        synced: 0,
+      },
+    ];
+    const base: PriceLog = {
+      id: 1,
+      productId: 10,
+      marketId: 1,
+      retailPrice: 5,
+      wholesalePrice: null,
+      minWholesaleQty: null,
+      source: 'nfce',
+      capturedAt: now.toISOString(),
+      remoteId: null,
+      nfceKey: null,
+      confirmScore: 2,
+      rejectScore: 0,
+      trustLevel: 'verified',
+      lastConfirmedAt: now.toISOString(),
+      contributorId: null,
+      updatedAt: now.toISOString(),
+      synced: 0,
+    };
+    const logs: PriceLog[] = [
+      base,
+      {...base, id: 2, marketId: 2, retailPrice: 8},
+    ];
+    const ranks = rankCheapestMarkets(logs, markets, products, 'week', now);
+    expect(ranks[0].marketName).toBe('Barato');
+    expect(ranks[0].winCount).toBe(1);
   });
 });
