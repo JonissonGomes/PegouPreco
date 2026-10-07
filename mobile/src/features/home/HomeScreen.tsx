@@ -36,6 +36,7 @@ import {
 } from '@/data/remote/nearbyMarkets';
 import {ensureNearbyMarketsDiscovered} from '@/data/remote/ensureNearbyMarkets';
 import {HomeWelcome} from '@/features/home/HomeWelcome';
+import {HomeHowItWorks} from '@/features/home/HomeHowItWorks';
 import {lifetimeSavings} from '@/domain/homeInsights';
 
 const RECIFE = {lat: -8.0476, lng: -34.8813};
@@ -263,12 +264,21 @@ export function HomeScreen() {
   const bestTotal = best?.total ?? 0;
   const goMap = useCallback(() => nav.navigate('Map'), [nav]);
   const goLists = useCallback(() => nav.navigate('Lists'), [nav]);
+  const goCapture = useCallback(() => nav.navigate('Capture'), [nav]);
 
   const headerTitle = hasDashboard
     ? 'Onde comprar hoje'
     : isReturning
       ? 'Mercados perto de você'
       : 'PegouPreço';
+
+  const howItWorks = (
+    <HomeHowItWorks
+      onExploreMap={goMap}
+      onStartList={goLists}
+      onCapture={goCapture}
+    />
+  );
 
   return (
     <Screen>
@@ -332,6 +342,7 @@ export function HomeScreen() {
                     : 'Abrir mapa'
                 }
               />
+              {howItWorks}
 
               <SectionHeader
                 title="Ranking"
@@ -372,7 +383,7 @@ export function HomeScreen() {
               <MiniMapPreview
                 center={mapOrigin}
                 markers={mapMarkers}
-                height={200}
+                height={180}
                 onPress={goMap}
                 caption={
                   mapMarkers.length
@@ -380,6 +391,7 @@ export function HomeScreen() {
                     : 'Explorar mapa'
                 }
               />
+              {howItWorks}
               <View style={styles.returnBlock}>
                 <Text style={styles.returnTitle}>
                   {hasHistory
@@ -406,12 +418,14 @@ export function HomeScreen() {
               </View>
             </>
           ) : (
-            <HomeWelcome
-              regionLabel={regionLabel || undefined}
-              onExploreMap={goMap}
-              onStartList={goLists}
-              onCapture={() => nav.navigate('Capture')}
-            />
+            <>
+              <HomeWelcome
+                regionLabel={regionLabel || undefined}
+                onExploreMap={goMap}
+                onStartList={goLists}
+              />
+              {howItWorks}
+            </>
           )}
 
           {cart.length > 0 && !hasDashboard ? (
@@ -419,7 +433,7 @@ export function HomeScreen() {
               title="Poucos dados na região"
               message="Ainda não há preços verificados o bastante. Capture etiquetas ou valide preços na Comunidade."
               actionLabel="Capturar"
-              onAction={() => nav.navigate('Capture')}
+              onAction={goCapture}
             />
           ) : null}
 

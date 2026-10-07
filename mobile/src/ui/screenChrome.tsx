@@ -169,9 +169,21 @@ export function ProgressBar({
   );
 }
 
-export function ScreenScrollPad({children}: {children: React.ReactNode}) {
+export function ScreenScrollPad({
+  children,
+  /** Quando o rodapé da tela já reserva espaço (ex.: Como funciona sticky). */
+  compactBottom,
+}: {
+  children: React.ReactNode;
+  compactBottom?: boolean;
+}) {
   return (
-    <View style={{paddingBottom: spacing.bottomNavClearance}}>{children}</View>
+    <View
+      style={{
+        paddingBottom: compactBottom ? space.md : spacing.bottomNavClearance,
+      }}>
+      {children}
+    </View>
   );
 }
 

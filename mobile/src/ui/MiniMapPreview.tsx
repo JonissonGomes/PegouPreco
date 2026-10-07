@@ -119,14 +119,15 @@ function MiniMapPreviewInner({
       <WebView
         originWhitelist={['*']}
         source={source}
-        style={styles.web}
+        // Altura explícita — no Android flex:1 dentro de ScrollView estoura e cobre o conteúdo abaixo
+        style={[styles.web, {height}]}
         scrollEnabled={false}
+        nestedScrollEnabled={false}
         pointerEvents="none"
         javaScriptEnabled
         domStorageEnabled
         setSupportMultipleWindows={false}
         mixedContentMode="always"
-        // Evita flash branco a cada re-render do pai
         startInLoadingState={false}
         androidLayerType="hardware"
       />
@@ -168,7 +169,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  web: {flex: 1, backgroundColor: 'transparent'},
+  web: {
+    width: '100%',
+    backgroundColor: 'transparent',
+    // Android: evita WebView “infinito” no ScrollView
+    opacity: 0.99,
+  },
   overlay: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'space-between',
