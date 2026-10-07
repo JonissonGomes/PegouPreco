@@ -14,7 +14,6 @@ import {useNavigation} from '@react-navigation/native';
 import {
   ArrowLeft,
   ClipboardList,
-  ScanLine,
   ShoppingCart,
   Store,
 } from 'lucide-react-native';
@@ -125,33 +124,33 @@ export function ShoppingListsScreen() {
           <FeatureEmptyGuide
             HeroIcon={ClipboardList}
             title="Nenhuma lista salva ainda"
-            subtitle="Quando você finalizar uma compra, ela aparece aqui para refazer e comparar depois."
-            stepsLabel="Passo a passo"
+            subtitle="Listas finalizadas ficam aqui para você refazer a mesma cesta depois."
+            stepsLabel="O que é esta tela"
             steps={[
               {
                 n: '1',
-                title: 'Monte a lista',
-                text: 'Escaneie etiquetas na aba Listas / Capturar.',
-                Icon: ScanLine,
-              },
-              {
-                n: '2',
-                title: 'Finalize a compra',
-                text: 'Ao terminar no mercado, finalize a lista ativa.',
+                title: 'Finalize uma compra',
+                text: 'Na aba Listas, termine a lista ativa ao sair do mercado.',
                 Icon: ShoppingCart,
               },
               {
+                n: '2',
+                title: 'Ela aparece aqui',
+                text: 'Nome, mercado, total e itens ficam salvos no histórico.',
+                Icon: ClipboardList,
+              },
+              {
                 n: '3',
-                title: 'Reabra quando quiser',
-                text: 'Volte aqui para refazer a mesma cesta em outro dia.',
+                title: 'Refaça quando quiser',
+                text: 'Toque em uma lista para reabrir os itens no carrinho.',
                 Icon: Store,
               },
             ]}
-            PrimaryIcon={ScanLine}
-            primaryLabel="Começar a capturar"
-            onPrimary={() => nav.navigate('Main', {screen: 'Capture'})}
-            secondaryLabel="Ir para Listas"
-            onSecondary={() => nav.navigate('Main', {screen: 'Lists'})}
+            PrimaryIcon={ShoppingCart}
+            primaryLabel="Ir para Listas"
+            onPrimary={() => nav.navigate('Main', {screen: 'Lists'})}
+            secondaryLabel="Ver mercados no mapa"
+            onSecondary={() => nav.navigate('Main', {screen: 'Map'})}
           />
         }
         ListFooterComponent={

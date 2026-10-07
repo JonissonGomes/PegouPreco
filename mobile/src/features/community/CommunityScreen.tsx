@@ -3,8 +3,9 @@ import {FlatList, Pressable, StyleSheet, Text, View} from 'react-native';
 import {useNavigation} from '@react-navigation/native';
 import {
   BadgeCheck,
-  ScanLine,
+  RefreshCw,
   Star,
+  ThumbsUp,
   UsersRound,
 } from 'lucide-react-native';
 import {
@@ -22,6 +23,7 @@ import {
   SoftHeader,
 } from '@/ui/screenChrome';
 import {colors, radii, space, spacing} from '@/ui/theme';
+import {runFullSync} from '@/data/syncWorker';
 import {formatBrl} from '@/domain/money';
 import {TrustEngine} from '@/domain/trust';
 import {canContribute, prefs, useAppStore} from '@/store/appStore';
@@ -314,32 +316,36 @@ export function CommunityScreen() {
         ListEmptyComponent={
           <FeatureEmptyGuide
             HeroIcon={UsersRound}
-            title="Ainda sem preços para validar"
-            subtitle="A comunidade ganha pontos confirmando ou corrigindo preços capturados na região."
-            stepsLabel="Como participar"
+            title="Fila de validação vazia"
+            subtitle="Quando houver preços pendentes na sua região, eles aparecem aqui para você confirmar ou corrigir."
+            stepsLabel="O que você faz nesta tela"
             steps={[
               {
                 n: '1',
-                title: 'Capture preços',
-                text: 'Escaneie etiquetas ou NFC-e nas suas compras.',
-                Icon: ScanLine,
-              },
-              {
-                n: '2',
-                title: 'Aguarde a fila',
-                text: 'Preços novos entram aqui como pendentes de validação.',
+                title: 'Receba a fila',
+                text: 'Preços suspeitos da região entram como missões de validação.',
                 Icon: UsersRound,
               },
               {
+                n: '2',
+                title: 'Vote Confere ou Errado',
+                text: 'Ajude a comunidade a limpar preços duvidosos.',
+                Icon: ThumbsUp,
+              },
+              {
                 n: '3',
-                title: 'Confirme ou corrija',
-                text: 'Vote e ganhe pontos de Fiscal da comunidade.',
+                title: 'Suba de Fiscal',
+                text: 'Cada voto rende pontos — Bronze, Prata e Ouro.',
                 Icon: BadgeCheck,
               },
             ]}
-            PrimaryIcon={ScanLine}
-            primaryLabel="Começar a capturar"
-            onPrimary={() => nav.navigate('Capture')}
+            PrimaryIcon={RefreshCw}
+            primaryLabel="Sincronizar comunidade"
+            onPrimary={async () => {
+              const r = await runFullSync();
+              refresh();
+              appAlert(r.ok ? 'Sync' : 'Falha', r.message);
+            }}
             secondaryLabel="Ver mercados no mapa"
             onSecondary={() => nav.navigate('Map')}
           />

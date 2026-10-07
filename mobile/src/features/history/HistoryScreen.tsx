@@ -111,31 +111,33 @@ export function HistoryScreen() {
           <FeatureEmptyGuide
             HeroIcon={History}
             title="Nada no histórico ainda"
-            subtitle="Cada preço capturado vira histórico para você acompanhar altas e baixas."
-            stepsLabel="Como começar"
+            subtitle="Aqui você acompanha evolução de preço dos produtos que já registrou."
+            stepsLabel="O que é esta tela"
             steps={[
               {
                 n: '1',
-                title: 'Capture etiquetas',
-                text: 'Escaneie produtos nas suas compras.',
-                Icon: ScanLine,
-              },
-              {
-                n: '2',
-                title: 'Volte aqui',
-                text: 'Os produtos aparecem com último preço e tendência.',
+                title: 'Produtos com preço',
+                text: 'Itens que você já capturou entram neste histórico.',
                 Icon: History,
               },
               {
-                n: '3',
-                title: 'Acompanhe o menor preço',
-                text: 'Veja quando um item está na mínima histórica.',
+                n: '2',
+                title: 'Último vs menor',
+                text: 'Compare o preço atual com a mínima que você já viu.',
                 Icon: TrendingDown,
+              },
+              {
+                n: '3',
+                title: 'Abra o detalhe',
+                text: 'Toque em um produto para ver a linha do tempo de preços.',
+                Icon: ScanLine,
               },
             ]}
             PrimaryIcon={ScanLine}
-            primaryLabel="Ir capturar"
+            primaryLabel="Registrar um preço"
             onPrimary={() => nav.navigate('Main', {screen: 'Capture'})}
+            secondaryLabel="Ir para Listas"
+            onSecondary={() => nav.navigate('Main', {screen: 'Lists'})}
           />
         }
         renderItem={({item}) => {

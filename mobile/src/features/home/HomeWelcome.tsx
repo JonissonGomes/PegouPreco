@@ -47,6 +47,7 @@ const styles = StyleSheet.create({
     borderRadius: radii.xl,
     padding: space.lg,
     gap: 10,
+    alignItems: 'center',
   },
   brand: {
     fontSize: 13,
@@ -54,6 +55,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
     textTransform: 'uppercase',
     color: colors.yellow,
+    textAlign: 'center',
   },
   headline: {
     fontSize: 24,
@@ -61,6 +63,7 @@ const styles = StyleSheet.create({
     color: colors.white,
     lineHeight: 30,
     letterSpacing: -0.4,
+    textAlign: 'center',
   },
   sub: {
     fontSize: 14,
@@ -68,5 +71,6 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.88)',
     lineHeight: 20,
     marginBottom: 4,
+    textAlign: 'center',
   },
 });

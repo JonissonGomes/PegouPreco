@@ -17,20 +17,20 @@ type Props = {
   subtitle: string;
   stepsLabel?: string;
   steps: EmptyGuideStep[];
-  primaryLabel: string;
-  onPrimary: () => void;
+  primaryLabel?: string;
+  onPrimary?: () => void;
   PrimaryIcon?: LucideIcon;
   secondaryLabel?: string;
   onSecondary?: () => void;
   style?: StyleProp<ViewStyle>;
 };
 
-/** Empty state visual com passo a passo + CTA (Listas, Comunidade, etc.). */
+/** Empty state visual com passo a passo + CTA contextual. */
 export function FeatureEmptyGuide({
   HeroIcon,
   title,
   subtitle,
-  stepsLabel = 'Como começar',
+  stepsLabel = 'Como funciona nesta tela',
   steps,
   primaryLabel,
   onPrimary,
@@ -49,29 +49,35 @@ export function FeatureEmptyGuide({
         <Text style={styles.sub}>{subtitle}</Text>
       </View>
 
-      <Text style={styles.stepsLabel}>{stepsLabel}</Text>
-      {steps.map(s => (
-        <View key={s.n} style={styles.step}>
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>{s.n}</Text>
-          </View>
-          <View style={styles.stepIcon}>
-            <s.Icon size={18} color={colors.navy} />
-          </View>
-          <View style={{flex: 1}}>
-            <Text style={styles.stepTitle}>{s.title}</Text>
-            <Text style={styles.stepText}>{s.text}</Text>
-          </View>
-        </View>
-      ))}
+      {steps.length > 0 ? (
+        <>
+          <Text style={styles.stepsLabel}>{stepsLabel}</Text>
+          {steps.map(s => (
+            <View key={s.n} style={styles.step}>
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>{s.n}</Text>
+              </View>
+              <View style={styles.stepIcon}>
+                <s.Icon size={18} color={colors.navy} />
+              </View>
+              <View style={{flex: 1}}>
+                <Text style={styles.stepTitle}>{s.title}</Text>
+                <Text style={styles.stepText}>{s.text}</Text>
+              </View>
+            </View>
+          ))}
+        </>
+      ) : null}
 
-      <AppButton
-        icon={
-          PrimaryIcon ? <PrimaryIcon size={20} color="#fff" /> : undefined
-        }
-        label={primaryLabel}
-        onPress={onPrimary}
-      />
+      {primaryLabel && onPrimary ? (
+        <AppButton
+          icon={
+            PrimaryIcon ? <PrimaryIcon size={20} color="#fff" /> : undefined
+          }
+          label={primaryLabel}
+          onPress={onPrimary}
+        />
+      ) : null}
       {secondaryLabel && onSecondary ? (
         <AppButton
           outlined
@@ -96,10 +102,11 @@ const styles = StyleSheet.create({
     padding: space.lg,
     gap: 8,
     marginBottom: space.sm,
+    alignItems: 'center',
   },
   heroIcon: {
-    width: 48,
-    height: 48,
+    width: 52,
+    height: 52,
     borderRadius: 16,
     backgroundColor: colors.yellow,
     alignItems: 'center',
@@ -111,12 +118,14 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: colors.white,
     letterSpacing: -0.3,
+    textAlign: 'center',
   },
   sub: {
     fontSize: 14,
     fontWeight: '600',
     color: 'rgba(255,255,255,0.88)',
     lineHeight: 20,
+    textAlign: 'center',
   },
   stepsLabel: {
     marginTop: space.xs,
