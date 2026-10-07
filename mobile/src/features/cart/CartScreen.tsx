@@ -60,6 +60,7 @@ import {marketRepo} from '@/data/repositories';
 import {ensureNearbyMarketsDiscovered} from '@/data/remote/ensureNearbyMarkets';
 import {haversineKm} from '@/data/remote/nearbyMarkets';
 import {MAPBOX_ACCESS_TOKEN} from '@/config/env';
+import {CartEmptyGuide} from '@/features/cart/CartEmptyGuide';
 
 function qtyPhrase(qty: number) {
   const n = formatQty(qty);
@@ -285,25 +286,11 @@ export function CartScreen() {
         </Pressable>
       </Modal>
       {cart.length === 0 ? (
-        <View style={styles.empty}>
-          <Text style={styles.emptyTitle}>
-            {activeListName ? 'Carrinho vazio' : 'Nenhuma lista ativa'}
-          </Text>
-          <Text style={styles.emptyMsg}>
-            {activeListName
-              ? 'Capture uma etiqueta para adicionar itens.'
-              : 'Inicie uma lista de compras para começar.'}
-          </Text>
-          <AppButton
-            icon={
-              activeListName ? (
-                <ScanLine size={20} color="#fff" />
-              ) : undefined
-            }
-            label={activeListName ? 'Escanear item' : 'Nova lista'}
-            onPress={goCapture}
-          />
-        </View>
+        <CartEmptyGuide
+          hasActiveList={!!activeListName}
+          onStartScan={goCapture}
+          onOpenSavedLists={() => nav.navigate('ShoppingLists')}
+        />
       ) : (
         <>
           <ScrollView
@@ -862,9 +849,6 @@ const styles = StyleSheet.create({
   },
   menuItemText: {fontSize: 15, fontWeight: '700', color: colors.ink},
   listPad: {paddingHorizontal: space.md, paddingTop: 4},
-  empty: {flex: 1, justifyContent: 'center', padding: 24, gap: 12},
-  emptyTitle: {fontSize: 20, fontWeight: '800', color: colors.navy},
-  emptyMsg: {color: colors.muted, marginBottom: 8},
   finalizeBar: {
     paddingHorizontal: 16,
     paddingTop: 8,

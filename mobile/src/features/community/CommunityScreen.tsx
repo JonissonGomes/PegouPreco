@@ -1,14 +1,19 @@
 import React, {useCallback, useEffect, useMemo, useState} from 'react';
 import {FlatList, Pressable, StyleSheet, Text, View} from 'react-native';
 import {useNavigation} from '@react-navigation/native';
-import {Star} from 'lucide-react-native';
 import {
-  EmptyState,
+  BadgeCheck,
+  ScanLine,
+  Star,
+  UsersRound,
+} from 'lucide-react-native';
+import {
   Screen,
   VoteButtons,
   XpBurst,
 } from '@/ui/components';
 import {appAlert} from '@/ui/appDialog';
+import {FeatureEmptyGuide} from '@/ui/FeatureEmptyGuide';
 import {MarketReviewSheet} from '@/ui/MarketReviewSheet';
 import {
   ProgressBar,
@@ -16,7 +21,7 @@ import {
   SoftCard,
   SoftHeader,
 } from '@/ui/screenChrome';
-import {colors, radii, space} from '@/ui/theme';
+import {colors, radii, space, spacing} from '@/ui/theme';
 import {formatBrl} from '@/domain/money';
 import {TrustEngine} from '@/domain/trust';
 import {canContribute, prefs, useAppStore} from '@/store/appStore';
@@ -291,7 +296,10 @@ export function CommunityScreen() {
       <FlatList
         data={feed}
         keyExtractor={i => String(i.log.id)}
-        contentContainerStyle={styles.list}
+        contentContainerStyle={[
+          styles.list,
+          feed.length === 0 && styles.listEmpty,
+        ]}
         ListHeaderComponent={
           <View style={styles.sectionHead}>
             <Text style={styles.listHeading}>Preços para validar</Text>
@@ -304,9 +312,36 @@ export function CommunityScreen() {
           </View>
         }
         ListEmptyComponent={
-          <EmptyState
-            title="Tudo certo por aqui"
-            message="Quando surgir um preço suspeito na região, a missão aparece nesta lista."
+          <FeatureEmptyGuide
+            HeroIcon={UsersRound}
+            title="Ainda sem preços para validar"
+            subtitle="A comunidade ganha pontos confirmando ou corrigindo preços capturados na região."
+            stepsLabel="Como participar"
+            steps={[
+              {
+                n: '1',
+                title: 'Capture preços',
+                text: 'Escaneie etiquetas ou NFC-e nas suas compras.',
+                Icon: ScanLine,
+              },
+              {
+                n: '2',
+                title: 'Aguarde a fila',
+                text: 'Preços novos entram aqui como pendentes de validação.',
+                Icon: UsersRound,
+              },
+              {
+                n: '3',
+                title: 'Confirme ou corrija',
+                text: 'Vote e ganhe pontos de Fiscal da comunidade.',
+                Icon: BadgeCheck,
+              },
+            ]}
+            PrimaryIcon={ScanLine}
+            primaryLabel="Começar a capturar"
+            onPrimary={() => nav.navigate('Capture')}
+            secondaryLabel="Ver mercados no mapa"
+            onSecondary={() => nav.navigate('Map')}
           />
         }
         renderItem={({item}) => (
@@ -389,6 +424,10 @@ const styles = StyleSheet.create({
   },
   listHeading: {fontWeight: '900', fontSize: 18, color: colors.navy, flex: 1},
   list: {padding: space.md, paddingBottom: 120},
+  listEmpty: {
+    flexGrow: 1,
+    paddingBottom: spacing.bottomNavClearance,
+  },
   validateCard: {marginBottom: space.sm, gap: space.sm},
   cardHead: {flexDirection: 'row', alignItems: 'flex-start', gap: 8},
   name: {fontWeight: '900', color: colors.navy, fontSize: 16},

@@ -8,15 +8,15 @@ import {
   View,
 } from 'react-native';
 import {useNavigation} from '@react-navigation/native';
-import {ArrowLeft} from 'lucide-react-native';
-import {EmptyState} from '@/ui/components';
+import {ArrowLeft, History, ScanLine, TrendingDown} from 'lucide-react-native';
+import {FeatureEmptyGuide} from '@/ui/FeatureEmptyGuide';
 import {
   BackCircleButton,
   SavePill,
   SoftCard,
   SoftHeader,
 } from '@/ui/screenChrome';
-import {colors, radii, space} from '@/ui/theme';
+import {colors, radii, space, spacing} from '@/ui/theme';
 import {formatBrl} from '@/domain/money';
 import {priceLogRepo, useAppStore} from '@/store/appStore';
 
@@ -103,13 +103,39 @@ export function HistoryScreen() {
       <FlatList
         data={filtered}
         keyExtractor={r => String(r.product.id)}
-        contentContainerStyle={styles.list}
+        contentContainerStyle={[
+          styles.list,
+          filtered.length === 0 && styles.listEmpty,
+        ]}
         ListEmptyComponent={
-          <EmptyState
-            title="Nada capturado ainda"
-            message="Capture etiquetas ou finalize uma lista para montar seu histórico de preços."
-            actionLabel="Ir capturar"
-            onAction={() => nav.navigate('Main', {screen: 'Capture'})}
+          <FeatureEmptyGuide
+            HeroIcon={History}
+            title="Nada no histórico ainda"
+            subtitle="Cada preço capturado vira histórico para você acompanhar altas e baixas."
+            stepsLabel="Como começar"
+            steps={[
+              {
+                n: '1',
+                title: 'Capture etiquetas',
+                text: 'Escaneie produtos nas suas compras.',
+                Icon: ScanLine,
+              },
+              {
+                n: '2',
+                title: 'Volte aqui',
+                text: 'Os produtos aparecem com último preço e tendência.',
+                Icon: History,
+              },
+              {
+                n: '3',
+                title: 'Acompanhe o menor preço',
+                text: 'Veja quando um item está na mínima histórica.',
+                Icon: TrendingDown,
+              },
+            ]}
+            PrimaryIcon={ScanLine}
+            primaryLabel="Ir capturar"
+            onPrimary={() => nav.navigate('Main', {screen: 'Capture'})}
           />
         }
         renderItem={({item}) => {
@@ -193,6 +219,10 @@ const styles = StyleSheet.create({
   chipText: {fontWeight: '800', color: colors.navy, fontSize: 13},
   chipTextOn: {color: colors.navy},
   list: {paddingHorizontal: space.md, paddingBottom: 40, gap: space.sm},
+  listEmpty: {
+    flexGrow: 1,
+    paddingBottom: spacing.bottomNavClearance,
+  },
   productCard: {marginBottom: space.sm},
   row: {flexDirection: 'row', alignItems: 'flex-start', gap: 10},
   name: {fontWeight: '900', color: colors.navy, fontSize: 15},

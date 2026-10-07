@@ -11,8 +11,15 @@ import {
 } from 'react-native';
 import {FlatList, ScrollView} from 'react-native-gesture-handler';
 import {useNavigation} from '@react-navigation/native';
-import {ArrowLeft} from 'lucide-react-native';
+import {
+  ArrowLeft,
+  ClipboardList,
+  ScanLine,
+  ShoppingCart,
+  Store,
+} from 'lucide-react-native';
 import {AppButton} from '@/ui/chrome';
+import {FeatureEmptyGuide} from '@/ui/FeatureEmptyGuide';
 import {KeyboardSafeSheet} from '@/ui/keyboardSheet';
 import {SwipeableActions} from '@/ui/SwipeableActions';
 import {
@@ -20,7 +27,7 @@ import {
   SoftCard,
   SoftHeader,
 } from '@/ui/screenChrome';
-import {colors, space} from '@/ui/theme';
+import {colors, space, spacing} from '@/ui/theme';
 import {formatBrl, formatQty} from '@/domain/money';
 import {lineTotal} from '@/domain/pricing';
 import {
@@ -84,6 +91,13 @@ export function ShoppingListsScreen() {
         checkedOff: 0,
       });
     }
+    if (list.marketId == null) {
+      Alert.alert(
+        'Mercado ausente',
+        'Esta lista não tem mercado vinculado. Crie uma nova lista e escolha o mercado.',
+      );
+      return;
+    }
     startList(list.name, list.marketId);
     setSelected(null);
     nav.navigate('Main', {screen: 'Lists'});
@@ -103,7 +117,43 @@ export function ShoppingListsScreen() {
       <FlatList
         data={lists}
         keyExtractor={l => String(l.id)}
-        contentContainerStyle={styles.listPad}
+        contentContainerStyle={[
+          styles.listPad,
+          lists.length === 0 && styles.listPadEmpty,
+        ]}
+        ListEmptyComponent={
+          <FeatureEmptyGuide
+            HeroIcon={ClipboardList}
+            title="Nenhuma lista salva ainda"
+            subtitle="Quando você finalizar uma compra, ela aparece aqui para refazer e comparar depois."
+            stepsLabel="Passo a passo"
+            steps={[
+              {
+                n: '1',
+                title: 'Monte a lista',
+                text: 'Escaneie etiquetas na aba Listas / Capturar.',
+                Icon: ScanLine,
+              },
+              {
+                n: '2',
+                title: 'Finalize a compra',
+                text: 'Ao terminar no mercado, finalize a lista ativa.',
+                Icon: ShoppingCart,
+              },
+              {
+                n: '3',
+                title: 'Reabra quando quiser',
+                text: 'Volte aqui para refazer a mesma cesta em outro dia.',
+                Icon: Store,
+              },
+            ]}
+            PrimaryIcon={ScanLine}
+            primaryLabel="Começar a capturar"
+            onPrimary={() => nav.navigate('Main', {screen: 'Capture'})}
+            secondaryLabel="Ir para Listas"
+            onSecondary={() => nav.navigate('Main', {screen: 'Lists'})}
+          />
+        }
         ListFooterComponent={
           lists.length ? (
             <Text style={styles.footerHint}>
@@ -230,6 +280,10 @@ export function ShoppingListsScreen() {
 const styles = StyleSheet.create({
   root: {flex: 1, backgroundColor: colors.bg},
   listPad: {padding: space.md, paddingBottom: 40},
+  listPadEmpty: {
+    flexGrow: 1,
+    paddingBottom: spacing.bottomNavClearance,
+  },
   listCard: {marginBottom: space.sm},
   listRow: {
     flexDirection: 'row',
