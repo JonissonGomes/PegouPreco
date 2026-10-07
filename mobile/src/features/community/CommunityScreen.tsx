@@ -21,7 +21,7 @@ import {
   SoftHeader,
 } from '@/ui/screenChrome';
 import {colors, space, spacing} from '@/ui/theme';
-import {requestAutoSync} from '@/data/syncWorker';
+import {requestAutoSync, runFullSync} from '@/data/syncWorker';
 import {formatBrl} from '@/domain/money';
 import {TrustEngine} from '@/domain/trust';
 import {canContribute, prefs, useAppStore} from '@/store/appStore';
@@ -214,6 +214,25 @@ export function CommunityScreen() {
     }
   };
 
+  const applyLocalVote = (logId: number, voteType: 'confirm' | 'reject') => {
+    const weight = TrustEngine.weightFor(level);
+    const st = getState();
+    const log = st.price_logs.find(l => l.id === logId);
+    if (!log) return;
+    if (voteType === 'confirm') {
+      log.confirmScore += weight;
+      log.lastConfirmedAt = new Date().toISOString();
+    } else {
+      log.rejectScore += weight;
+    }
+    log.trustLevel = TrustEngine.compute({
+      confirmScore: log.confirmScore,
+      rejectScore: log.rejectScore,
+      lastConfirmedAt: log.lastConfirmedAt,
+    }) as TrustLevel;
+    log.synced = 0;
+  };
+
   const vote = useCallback(
     async (item: FeedItem, voteType: 'confirm' | 'reject') => {
       if (!canContribute(auth)) {
@@ -222,41 +241,37 @@ export function CommunityScreen() {
         );
         return;
       }
-      const remoteId = item.log.remoteId;
-      if (!remoteId || !auth?.token) {
-        appAlert(
-          'Aguarde a sincronização',
-          'Os preços ainda estão só no aparelho. Com rede, a sync roda sozinha.',
-        );
-        requestAutoSync('vote');
-        return;
-      }
       setBusyId(item.log.id);
       const pts = TrustEngine.pointsForVote(voteType, false);
       try {
-        const weight = TrustEngine.weightFor(level);
-        await syncApi.castVote(auth.token, {
-          priceLogId: remoteId,
-          vote: voteType,
-          withPhoto: false,
-          weight,
-        });
-        const st = getState();
-        const log = st.price_logs.find(l => l.id === item.log.id);
-        if (log) {
-          if (voteType === 'confirm') {
-            log.confirmScore += weight;
-            log.lastConfirmedAt = new Date().toISOString();
-          } else {
-            log.rejectScore += weight;
-          }
-          log.trustLevel = TrustEngine.compute({
-            confirmScore: log.confirmScore,
-            rejectScore: log.rejectScore,
-            lastConfirmedAt: log.lastConfirmedAt,
-          }) as TrustLevel;
-          log.synced = 0;
+        let remoteId = item.log.remoteId;
+
+        // Seed / log local: tenta push uma vez; se não houver remoteId, vota só offline.
+        if (!remoteId && auth?.token) {
+          await runFullSync();
+          refresh();
+          remoteId =
+            getState().price_logs.find(l => l.id === item.log.id)?.remoteId ??
+            null;
         }
+
+        if (remoteId && auth?.token) {
+          try {
+            await syncApi.castVote(auth.token, {
+              priceLogId: remoteId,
+              vote: voteType,
+              withPhoto: false,
+              weight: TrustEngine.weightFor(level),
+            });
+          } catch (e) {
+            // Offline / API: ainda aplica localmente
+            console.warn('[community] voto remoto falhou', apiErrorMessage(e));
+          }
+        } else {
+          requestAutoSync('vote');
+        }
+
+        applyLocalVote(item.log.id, voteType);
         refresh();
         celebrate(
           pts,

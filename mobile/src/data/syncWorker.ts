@@ -189,7 +189,13 @@ export function requestAutoSync(_reason?: string) {
   const auth = useAppStore.getState().auth;
   if (!auth?.token) return;
   const now = Date.now();
-  if (now - lastAutoAttempt < AUTO_MIN_MS && _reason !== 'login') return;
+  if (
+    now - lastAutoAttempt < AUTO_MIN_MS &&
+    _reason !== 'login' &&
+    _reason !== 'vote'
+  ) {
+    return;
+  }
   lastAutoAttempt = now;
   void runFullSync().then(r => {
     if (r.ok) useAppStore.getState().refresh();
