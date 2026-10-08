@@ -369,8 +369,8 @@ export function ProfileScreen() {
               />
               <ActionRow
                 icon={<Store size={20} color={colors.navy} />}
-                label="Lista de compras"
-                hint="Carrinho e preços no mercado"
+                label="Compras"
+                hint="Registrar itens no mercado"
                 onPress={() => nav.navigate('Lists')}
               />
               <ActionRow

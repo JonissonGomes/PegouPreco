@@ -90,7 +90,7 @@ function Tabs() {
         name="Lists"
         component={CartScreen}
         options={{
-          title: 'Listas',
+          title: 'Compras',
           tabBarIcon: ({color}) => <ShoppingCart size={20} color={color} />,
         }}
       />

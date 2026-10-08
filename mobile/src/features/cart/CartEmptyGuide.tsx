@@ -27,11 +27,11 @@ export function CartEmptyGuide({
       showsVerticalScrollIndicator={false}>
       <FeatureEmptyGuide
         HeroIcon={hasActiveList ? ScanLine : ClipboardList}
-        title={hasActiveList ? 'Carrinho vazio' : 'Monte sua lista no mercado'}
+        title={hasActiveList ? 'Compra sem itens' : 'Inicie uma compra'}
         subtitle={
           hasActiveList
-            ? 'Escaneie etiquetas para adicionar itens e acompanhar o total.'
-            : 'Crie a lista, confirme o mercado e comece a capturar preços.'
+            ? 'Escaneie etiquetas para colocar os itens desta compra.'
+            : 'Confirme o mercado e registre os produtos que você está comprando.'
         }
         stepsLabel="Passo a passo nesta lista"
         steps={
@@ -59,8 +59,8 @@ export function CartEmptyGuide({
             : [
                 {
                   n: '1',
-                  title: 'Crie a lista',
-                  text: 'Informe o nome e confirme o mercado onde você está.',
+                  title: 'Inicie a compra',
+                  text: 'Dê um nome e confirme o mercado onde você está.',
                   Icon: ClipboardList,
                 },
                 {
@@ -72,7 +72,7 @@ export function CartEmptyGuide({
                 {
                   n: '3',
                   title: 'Comece a escanear',
-                  text: 'Aponte a câmera para a etiqueta e os itens entram na lista.',
+                  text: 'Aponte a câmera para a etiqueta e os itens entram na compra.',
                   Icon: ScanLine,
                 },
               ]
@@ -81,11 +81,11 @@ export function CartEmptyGuide({
         primaryLabel={
           hasActiveList
             ? 'Começar a escanear'
-            : 'Começar · criar lista e escanear'
+            : 'Iniciar compra'
         }
         onPrimary={onStartScan}
         secondaryLabel={
-          !hasActiveList && onOpenSavedLists ? 'Ver listas salvas' : undefined
+          !hasActiveList && onOpenSavedLists ? 'Ver compras salvas' : undefined
         }
         onSecondary={onOpenSavedLists}
       />

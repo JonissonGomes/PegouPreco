@@ -2,11 +2,9 @@ import {
   CONFIRM_AT_MARKET_KM,
   dedupeByGeo,
   haversineKm,
-  seedMarketsNear,
   type NearbyMarketHit,
 } from '../src/data/remote/nearbyMarkets';
 import {pickConfirmCandidate, rankNearestMarkets} from '../src/domain/marketUi';
-import {SEED_MARKET_POINTS} from '../src/data/seed/marketPoints';
 import type {Market} from '../src/data/types';
 
 function market(
@@ -60,14 +58,6 @@ describe('nearbyMarkets geo', () => {
     expect(out[0].name).toContain('Assaí');
   });
 
-  it('seed RMR inclui Mix Mateus e filtra por raio', () => {
-    const nearImbiribeira = seedMarketsNear(-8.113, -34.921, 5);
-    const names = nearImbiribeira.map(h => h.name);
-    expect(names.some(n => /mix mateus/i.test(n))).toBe(true);
-    expect(SEED_MARKET_POINTS.some(m => /mix mateus/i.test(m.name))).toBe(
-      true,
-    );
-  });
 });
 
 describe('pickConfirmCandidate', () => {

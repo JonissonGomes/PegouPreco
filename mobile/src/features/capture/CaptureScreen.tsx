@@ -163,11 +163,11 @@ export function CaptureScreen() {
     if (!activeListName || !activeMarketId) {
       appAlert(
         'Lista necessária',
-        'Inicie uma lista na aba Listas antes de capturar.',
+        'Inicie uma compra na aba Compras antes de capturar.',
         [
           {label: 'Cancelar', style: 'cancel'},
           {
-            label: 'Ir para Listas',
+            label: 'Ir para Compras',
             style: 'primary',
             onPress: () => nav.navigate('Lists'),
           },

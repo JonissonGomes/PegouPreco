@@ -10,8 +10,7 @@ import {
   canContribute,
 } from '@/data/repositories';
 import type {CartItem, Market, Product, ShoppingList} from '@/data/types';
-import {clearDemoSeed, runDemoSeed} from '@/data/seed/demoSeed';
-import {CLEAR_SEED_DEMO, SEED_DEMO} from '@/config/env';
+import {purgeSeedData} from '@/data/purgeSeed';
 import {initDb} from '@/data/db';
 import {
   ensureStartupPermissions,
@@ -50,6 +49,8 @@ type AppState = {
   startList: (name: string, marketId: number) => void;
   setCurrentMarket: (id: number) => void;
   finalize: () => boolean;
+  /** Encerra a compra atual (itens + mercado) para começar outra. */
+  cancelPurchase: () => void;
   setAuth: (session: AuthSession | null) => void;
 };
 
@@ -70,13 +71,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   bootstrap: async () => {
     set({bootStatus: 'Preparando dados…'});
     await initDb();
-    if (CLEAR_SEED_DEMO) {
-      set({bootStatus: 'Limpando seed…'});
-      clearDemoSeed();
-    } else if (SEED_DEMO) {
-      set({bootStatus: 'Populando seed demo…'});
-      runDemoSeed();
-    }
+    purgeSeedData();
 
     set({bootStatus: 'Verificando permissões…'});
     const permissions = await ensureStartupPermissions();
@@ -124,6 +119,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     const ok = finalizeActiveList();
     get().refresh();
     return ok;
+  },
+  cancelPurchase: () => {
+    cartRepo.clear();
+    prefs.clearActiveList();
+    get().refresh();
   },
   setAuth: session => {
     prefs.setAuthJson(session ? JSON.stringify(session) : null);

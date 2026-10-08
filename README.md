@@ -31,8 +31,6 @@ PegouPreço/
 make deps     # npm install em mobile/
 make run      # emulador/device Android (New Architecture)
 make apk      # APK release (arm64-v8a)
-make seed        # banco demo (mercados com geo, preços, carrinho, listas)
-make seed-clear  # remove dados do seed (preserva login)
 make api         # sync_api na porta 8080
 make test        # testes de domínio
 ```
@@ -47,8 +45,6 @@ MAPBOX_ACCESS_TOKEN=
 # Emulador: http://10.0.2.2:8080
 # Device USB: http://127.0.0.1:8080  (make api / make run fazem adb reverse)
 SYNC_API_BASE=http://127.0.0.1:8080
-SEED_DEMO=false
-CLEAR_SEED_DEMO=false
 ```
 
 `react-native-config` embute o `.env` no build nativo: depois de alterar `SYNC_API_BASE` ou o token, rode `make run` (ou reinstale o APK). Só reiniciar o Metro não atualiza.

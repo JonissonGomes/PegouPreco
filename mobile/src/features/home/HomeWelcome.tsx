@@ -30,7 +30,7 @@ export function HomeWelcome({
         <AppButton label="Ver mercados no mapa" onPress={onExploreMap} />
         <AppButton
           outlined
-          label="Começar lista de compras"
+          label="Iniciar compra"
           onPress={onStartList}
         />
       </View>

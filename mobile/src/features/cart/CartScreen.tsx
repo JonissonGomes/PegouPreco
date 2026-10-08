@@ -70,6 +70,7 @@ export function CartScreen() {
   const cart = useAppStore(s => s.cart);
   const refresh = useAppStore(s => s.refresh);
   const finalize = useAppStore(s => s.finalize);
+  const cancelPurchase = useAppStore(s => s.cancelPurchase);
   const startList = useAppStore(s => s.startList);
   const activeListName = useAppStore(s => s.activeListName);
   const activeMarketId = useAppStore(s => s.activeMarketId);
@@ -200,11 +201,11 @@ export function CartScreen() {
   return (
     <View style={styles.root}>
       <SoftHeader
-        title={activeListName || 'Lista de compras'}
+        title={activeListName || 'Iniciar compras'}
         subtitle={
           activeListName
             ? marketName || 'Mercado não definido'
-            : 'Inicie uma lista para capturar'
+            : 'Comece uma compra e registre os itens no mercado'
         }
         trailing={
           <Pressable
@@ -235,7 +236,7 @@ export function CartScreen() {
                 runMenuAction(() => nav.navigate('ShoppingLists'))
               }>
               <ClipboardList size={18} color={colors.navy} />
-              <Text style={styles.menuItemText}>Listas salvas</Text>
+              <Text style={styles.menuItemText}>Compras salvas</Text>
             </Pressable>
             <Pressable
               style={styles.menuItem}
@@ -243,32 +244,31 @@ export function CartScreen() {
               <History size={18} color={colors.navy} />
               <Text style={styles.menuItemText}>Histórico</Text>
             </Pressable>
-            <Pressable
-              style={styles.menuItem}
-              onPress={() =>
-                runMenuAction(() =>
-                  appAlert(
-                    'Limpar carrinho?',
-                    'Todos os itens serão removidos.',
-                    [
-                      {label: 'Cancelar', style: 'cancel'},
-                      {
-                        label: 'Limpar',
-                        style: 'destructive',
-                        onPress: () => {
-                          cartRepo.clear();
-                          refresh();
+            {activeListName ? (
+              <Pressable
+                style={styles.menuItem}
+                onPress={() =>
+                  runMenuAction(() =>
+                    appAlert(
+                      'Cancelar esta compra?',
+                      'Os itens saem do carrinho e você pode iniciar outra.',
+                      [
+                        {label: 'Voltar', style: 'cancel'},
+                        {
+                          label: 'Cancelar compra',
+                          style: 'destructive',
+                          onPress: () => cancelPurchase(),
                         },
-                      },
-                    ],
-                  ),
-                )
-              }>
-              <Trash2 size={18} color={colors.danger} />
-              <Text style={[styles.menuItemText, {color: colors.danger}]}>
-                Limpar lista
-              </Text>
-            </Pressable>
+                      ],
+                    ),
+                  )
+                }>
+                <Trash2 size={18} color={colors.danger} />
+                <Text style={[styles.menuItemText, {color: colors.danger}]}>
+                  Cancelar compra
+                </Text>
+              </Pressable>
+            ) : null}
           </View>
         </Pressable>
       </Modal>
@@ -423,9 +423,9 @@ export function CartScreen() {
           setPickedMarketId(null);
           setStartStep('loading');
         }}>
-        <Text style={styles.modalTitle}>Nova lista de compras</Text>
+        <Text style={styles.modalTitle}>Iniciar compra</Text>
         <AppField
-          label="Nome da lista"
+          label="Nome da compra"
           value={listName}
           onChangeText={setListName}
           compact

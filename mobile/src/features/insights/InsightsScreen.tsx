@@ -8,7 +8,7 @@ import {
   View,
 } from 'react-native';
 import {useFocusEffect, useNavigation} from '@react-navigation/native';
-import {ClipboardList, Store} from 'lucide-react-native';
+import {ClipboardList, ScanLine, Store} from 'lucide-react-native';
 import {
   AppButton,
   AppField,
@@ -19,6 +19,7 @@ import {
 import {FiscalBadge} from '@/ui/components';
 import {KeyboardSafeSheet} from '@/ui/keyboardSheet';
 import {MarketSuggestRow} from '@/ui/MarketSuggestRow';
+import {FeatureEmptyGuide} from '@/ui/FeatureEmptyGuide';
 import {colors, radii, space, spacing} from '@/ui/theme';
 import {formatBrl} from '@/domain/money';
 import {rankNearestMarkets} from '@/domain/marketUi';
@@ -223,27 +224,34 @@ export function InsightsScreen() {
 
   const data: Array<{type: string; key: string; payload?: any}> = [];
   data.push({type: 'period', key: 'period'});
-  data.push({
-    type: 'savings',
-    key: 'savings',
-    payload: {amount: saved3m},
-  });
-  data.push({
-    type: 'section',
-    key: 'rank-h',
-    payload: {
-      title: 'Mercados mais baratos',
-      trailing: periodCaption(period),
-    },
-  });
-  if (!marketRanks.length) {
+  if (saved3m > 0) {
     data.push({
-      type: 'empty',
-      key: 'rank-e',
-      payload:
-        'Ainda sem preços comunitários validados neste período. Capture NFC-e ou confirme preços na Comunidade.',
+      type: 'savings',
+      key: 'savings',
+      payload: {amount: saved3m},
     });
-  } else {
+  }
+  const hasInsightBody =
+    marketRanks.length > 0 ||
+    categoryWins.length > 0 ||
+    todayF.length > 0 ||
+    cheapF.length > 0 ||
+    oppsF.length > 0 ||
+    listsF.length > 0;
+
+  if (!hasInsightBody) {
+    data.push({type: 'guide', key: 'empty-guide'});
+  }
+
+  if (marketRanks.length) {
+    data.push({
+      type: 'section',
+      key: 'rank-h',
+      payload: {
+        title: 'Mercados mais baratos',
+        trailing: periodCaption(period),
+      },
+    });
     marketRanks.slice(0, 8).forEach((r, i) =>
       data.push({
         type: 'market-rank',
@@ -252,21 +260,15 @@ export function InsightsScreen() {
       }),
     );
   }
-  data.push({
-    type: 'section',
-    key: 'catwin-h',
-    payload: {
-      title: 'Melhor mercado por categoria',
-      trailing: periodCaption(period),
-    },
-  });
-  if (!categoryWins.length) {
+  if (categoryWins.length) {
     data.push({
-      type: 'empty',
-      key: 'catwin-e',
-      payload: 'Sem vitórias por categoria neste período.',
+      type: 'section',
+      key: 'catwin-h',
+      payload: {
+        title: 'Melhor mercado por categoria',
+        trailing: periodCaption(period),
+      },
     });
-  } else {
     categoryWins.slice(0, 10).forEach(r =>
       data.push({
         type: 'cat-win',
@@ -276,32 +278,26 @@ export function InsightsScreen() {
     );
   }
 
-  if (marketName) {
+  if (marketName && todayF.length) {
     data.push({
       type: 'section',
       key: 'today-h',
       payload: {title: 'Hoje neste mercado', trailing: String(todayF.length)},
     });
-    if (!todayF.length) {
-      data.push({
-        type: 'empty',
-        key: 'today-e',
-        payload: `Nenhum item catalogado hoje em ${marketName}.`,
-      });
-    } else {
-      todayF.forEach(i =>
-        data.push({type: 'today', key: `t-${i.id}`, payload: i}),
-      );
-    }
+    todayF.forEach(i =>
+      data.push({type: 'today', key: `t-${i.id}`, payload: i}),
+    );
   }
-  data.push({
-    type: 'section',
-    key: 'cheap-h',
-    payload: {title: 'Preço mais baixo', trailing: `${cheapF.length} itens`},
-  });
-  cheapF.forEach(r =>
-    data.push({type: 'cheap', key: `c-${r.product.id}`, payload: r}),
-  );
+  if (cheapF.length) {
+    data.push({
+      type: 'section',
+      key: 'cheap-h',
+      payload: {title: 'Preço mais baixo', trailing: `${cheapF.length} itens`},
+    });
+    cheapF.forEach(r =>
+      data.push({type: 'cheap', key: `c-${r.product.id}`, payload: r}),
+    );
+  }
   if (cheapByCat.length) {
     data.push({
       type: 'section',
@@ -323,28 +319,32 @@ export function InsightsScreen() {
       );
     }
   }
-  data.push({
-    type: 'section',
-    key: 'opp-h',
-    payload: {title: 'Acima da sua média', trailing: String(oppsF.length)},
-  });
-  oppsF.forEach(o =>
-    data.push({type: 'opp', key: `o-${o.product.id}`, payload: o}),
-  );
-  data.push({
-    type: 'section',
-    key: 'list-h',
-    payload: {
-      title:
-        scope.mode === 'favorites'
-          ? 'Listas nos mercados marcados'
-          : 'Listas no raio',
-      trailing: String(listsF.length),
-    },
-  });
-  listsF.forEach(l =>
-    data.push({type: 'list', key: `l-${l.id}`, payload: l}),
-  );
+  if (oppsF.length) {
+    data.push({
+      type: 'section',
+      key: 'opp-h',
+      payload: {title: 'Acima da sua média', trailing: String(oppsF.length)},
+    });
+    oppsF.forEach(o =>
+      data.push({type: 'opp', key: `o-${o.product.id}`, payload: o}),
+    );
+  }
+  if (listsF.length) {
+    data.push({
+      type: 'section',
+      key: 'list-h',
+      payload: {
+        title:
+          scope.mode === 'favorites'
+            ? 'Compras nos mercados marcados'
+            : 'Compras no raio',
+        trailing: String(listsF.length),
+      },
+    });
+    listsF.forEach(l =>
+      data.push({type: 'list', key: `l-${l.id}`, payload: l}),
+    );
+  }
 
   return (
     <View style={styles.root}>
@@ -420,6 +420,41 @@ export function InsightsScreen() {
                   );
                 })}
               </View>
+            );
+          }
+          if (item.type === 'guide') {
+            return (
+              <FeatureEmptyGuide
+                HeroIcon={Store}
+                title="Nada para comparar por perto"
+                subtitle={`Ainda não há preços validados neste período, num raio de ${NEARBY_RADIUS_KM} km. Quando a comunidade confirmar valores, os rankings aparecem aqui.`}
+                stepsLabel="Como encher esta tela"
+                steps={[
+                  {
+                    n: '1',
+                    title: 'Capture no mercado',
+                    text: 'Etiqueta ou NFC-e entram como preço da sua compra.',
+                    Icon: ScanLine,
+                  },
+                  {
+                    n: '2',
+                    title: 'Confirme na Comunidade',
+                    text: 'Preços suspeitos só entram no ranking depois do voto.',
+                    Icon: Store,
+                  },
+                  {
+                    n: '3',
+                    title: 'Volte aos Insights',
+                    text: 'Mercados mais baratos e categorias surgem com dados reais.',
+                    Icon: ClipboardList,
+                  },
+                ]}
+                PrimaryIcon={ScanLine}
+                primaryLabel="Capturar preço"
+                onPrimary={() => nav.navigate('Capture')}
+                secondaryLabel="Ir para a Comunidade"
+                onSecondary={() => nav.navigate('Community')}
+              />
             );
           }
           if (item.type === 'savings') {

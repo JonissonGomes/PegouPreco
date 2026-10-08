@@ -130,7 +130,7 @@ export function ShoppingListsScreen() {
               {
                 n: '1',
                 title: 'Finalize uma compra',
-                text: 'Na aba Listas, termine a lista ativa ao sair do mercado.',
+                text: 'Na aba Compras, finalize a compra ao sair do mercado.',
                 Icon: ShoppingCart,
               },
               {
@@ -147,7 +147,7 @@ export function ShoppingListsScreen() {
               },
             ]}
             PrimaryIcon={ShoppingCart}
-            primaryLabel="Ir para Listas"
+            primaryLabel="Ir para Compras"
             onPrimary={() => nav.navigate('Main', {screen: 'Lists'})}
             secondaryLabel="Ver mercados no mapa"
             onSecondary={() => nav.navigate('Main', {screen: 'Map'})}

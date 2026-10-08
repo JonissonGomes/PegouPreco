@@ -86,7 +86,7 @@ export function HomeScreen() {
   const regionLabel = [loc.neighborhood, loc.city].filter(Boolean).join(', ');
   const openListLabel = activeListName
     ? `Abrir ${activeListName}`
-    : 'Abrir listas';
+    : 'Iniciar compra';
 
   const nearbyMarkets = useMemo(
     () => filterMarketsInRadius(markets, mapOrigin, NEARBY_RADIUS_KM, 20),
@@ -346,7 +346,7 @@ export function HomeScreen() {
 
               <SectionHeader
                 title="Ranking"
-                actionLabel="Ver listas"
+                actionLabel="Ver compras"
                 onAction={goLists}
               />
               <View style={styles.listPad}>
@@ -371,9 +371,9 @@ export function HomeScreen() {
                   </Text>
                 </Pressable>
                 <Pressable style={styles.ctaCard} onPress={goLists}>
-                  <Text style={styles.ctaCardTitle}>Listas</Text>
+                  <Text style={styles.ctaCardTitle}>Compras</Text>
                   <Text style={styles.ctaCardSub}>
-                    {activeListName || 'Montar ou reabrir'}
+                    {activeListName || 'Iniciar ou continuar'}
                   </Text>
                 </Pressable>
               </View>
@@ -401,9 +401,9 @@ export function HomeScreen() {
                 <Text style={styles.returnMsg}>
                   {hasHistory
                     ? savedTotal > 0
-                      ? `Você já economizou ${formatBrl(savedTotal)} em listas finalizadas. Abra o mapa ou comece uma nova lista.`
-                      : 'Toque no mapa para ver pinos ou inicie uma lista para comparar preços.'
-                    : 'Toque no mapa para explorar ou comece uma lista para comparar preços da comunidade.'}
+                      ? `Você já economizou ${formatBrl(savedTotal)} em compras finalizadas. Abra o mapa ou inicie outra compra.`
+                      : 'Toque no mapa para ver pinos ou inicie uma compra para comparar preços.'
+                    : 'Toque no mapa para explorar ou inicie uma compra para comparar preços da comunidade.'}
                 </Text>
                 <AppButton label="Abrir mapa" onPress={goMap} />
                 <AppButton
@@ -411,7 +411,7 @@ export function HomeScreen() {
                   label={
                     activeListName
                       ? `Continuar ${activeListName}`
-                      : 'Nova lista de compras'
+                      : 'Iniciar compra'
                   }
                   onPress={goLists}
                 />

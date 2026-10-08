@@ -1,11 +1,9 @@
-import {SEED_MARKET_POINTS} from '@/data/seed/marketPoints';
-
 export type NearbyMarketHit = {
   name: string;
   lat: number;
   lng: number;
   address: string | null;
-  source: 'osm' | 'mapbox' | 'seed';
+  source: 'osm' | 'mapbox';
   distanceKm?: number;
 };
 
@@ -24,7 +22,6 @@ const BRAND_HINT =
 const SOURCE_RANK: Record<NearbyMarketHit['source'], number> = {
   osm: 3,
   mapbox: 2,
-  seed: 1,
 };
 
 export function haversineKm(
@@ -230,22 +227,6 @@ out center tags;
   }
 }
 
-/** Fallback local (seed) — só no raio curto. */
-export function seedMarketsNear(
-  lat: number,
-  lng: number,
-  maxKm = 12,
-): NearbyMarketHit[] {
-  const hits = SEED_MARKET_POINTS.map(m => ({
-    name: m.name,
-    lat: m.lat,
-    lng: m.lng,
-    address: m.address,
-    source: 'seed' as const,
-  }));
-  return nearestInRadius(hits, {lat, lng}, maxKm);
-}
-
 type MapboxFeature = {
   text?: string;
   place_name?: string;
@@ -345,7 +326,7 @@ async function fetchMapboxNearbyMarkets(
 
 /**
  * Descobre mercados na localidade.
- * OSM e Mapbox em paralelo com timeout curto; seed só se nada vier.
+ * OSM e Mapbox em paralelo. Mercados oficiais vêm da API (`/markets/map`).
  */
 export async function discoverNearbyMarkets(
   lat: number,
@@ -374,11 +355,7 @@ export async function discoverNearbyMarkets(
     if (!nearOsm) merged.push(h);
   }
 
-  const near = nearestInRadius(dedupeByGeo(merged), origin, radiusKm);
-  if (near.length > 0) return near;
-
-  // Fallback seed RMR — raio alinhado à descoberta (até 25 km).
-  return seedMarketsNear(lat, lng, Math.min(radiusKm, NEARBY_RADIUS_KM));
+  return nearestInRadius(dedupeByGeo(merged), origin, radiusKm);
 }
 
 /** Filtra mercados já salvos para exibir só os do raio. */

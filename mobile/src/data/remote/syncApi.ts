@@ -3,8 +3,23 @@ import {SYNC_API_BASE} from '@/config/env';
 
 const client = axios.create({
   baseURL: SYNC_API_BASE,
-  timeout: 20000,
+  // Render (plano free) dorme e a 1ª chamada pode levar ~50s.
+  timeout: 60000,
   headers: {'Content-Type': 'application/json'},
+});
+
+client.interceptors.response.use(undefined, async error => {
+  const cfg = error.config as (typeof error.config & {__retried?: boolean}) | undefined;
+  if (
+    !cfg ||
+    cfg.__retried ||
+    (axios.isAxiosError(error) && error.response)
+  ) {
+    return Promise.reject(error);
+  }
+  cfg.__retried = true;
+  await new Promise(resolve => setTimeout(resolve, 2000));
+  return client.request(cfg);
 });
 
 function auth(token: string) {

@@ -136,7 +136,7 @@ export function HistoryScreen() {
             PrimaryIcon={ScanLine}
             primaryLabel="Registrar um preço"
             onPrimary={() => nav.navigate('Main', {screen: 'Capture'})}
-            secondaryLabel="Ir para Listas"
+            secondaryLabel="Ir para Compras"
             onSecondary={() => nav.navigate('Main', {screen: 'Lists'})}
           />
         }

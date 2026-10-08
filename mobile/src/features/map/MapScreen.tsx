@@ -223,7 +223,7 @@ export function MapScreen() {
   const [mapReady, setMapReady] = useState(false);
   const [status, setStatus] = useState('Buscando mercados próximos…');
   const [selected, setSelected] = useState<Market | null>(null);
-  /** IDs da última descoberta — evita pins de seed genérico fora do lugar. */
+  /** IDs no raio: mercados locais já ligados à API + descoberta OSM/Mapbox. */
   const [pinIds, setPinIds] = useState<number[] | null>(null);
   const [query, setQuery] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
@@ -324,20 +324,21 @@ export function MapScreen() {
       setStatus(`${local.length} salvos · buscando mais…`);
     }
     try {
-      const {hits, marketIds} = await ensureNearbyMarketsDiscovered(
+      const {marketIds} = await ensureNearbyMarketsDiscovered(
         point.latitude,
         point.longitude,
         {radiusKm: NEARBY_RADIUS_KM, mapboxToken: MAPBOX_ACCESS_TOKEN},
       );
-      const ids = marketIds.length ? marketIds : local.map(m => m.id);
-      setPinIds(ids);
+      // União com os já salvos no raio — a descoberta não esconde os da API.
+      const ids = [
+        ...new Set([...local.map(m => m.id), ...marketIds]),
+      ];
+      setPinIds(ids.length ? ids : null);
       refresh();
       setStatus(
-        hits.length
-          ? `${hits.length} mercados nesta localidade`
-          : local.length
-            ? `${local.length} mercados salvos próximos`
-            : 'Nenhum mercado próximo encontrado',
+        ids.length
+          ? `${ids.length} mercados nesta localidade`
+          : 'Nenhum mercado próximo encontrado',
       );
       void loadRemote(point, ids);
     } catch {

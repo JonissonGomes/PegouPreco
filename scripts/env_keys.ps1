@@ -15,8 +15,6 @@ function Ensure-MobileEnvFile {
       @(
         "MAPBOX_ACCESS_TOKEN="
         "SYNC_API_BASE=http://10.0.2.2:8080"
-        "SEED_DEMO=false"
-        "CLEAR_SEED_DEMO=false"
       ) | Set-Content -Path $envPath -Encoding utf8
     }
   }

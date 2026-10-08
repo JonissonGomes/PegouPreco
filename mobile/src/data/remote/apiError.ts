@@ -6,6 +6,12 @@ export function apiErrorMessage(e: unknown): string {
     const data = e.response?.data as {error?: string} | undefined;
     if (data?.error) return data.error;
     if (!e.response) {
+      const timedOut = e.code === 'ECONNABORTED';
+      if (timedOut || /onrender\.com/i.test(SYNC_API_BASE)) {
+        return timedOut
+          ? 'A API no Render demorou para responder (o serviço gratuito pode estar acordando). Tente de novo em alguns segundos.'
+          : `Sem conexão com ${SYNC_API_BASE}. Confira a internet do celular; no plano gratuito o Render pode estar acordando.`;
+      }
       return `Sem conexão com a API (${SYNC_API_BASE}). Verifique se o sync_api está rodando.`;
     }
     if (e.response.status === 403) return data?.error ?? 'Conta não confirmada';
