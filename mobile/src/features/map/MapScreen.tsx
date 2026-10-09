@@ -169,6 +169,14 @@ function buildMapHtml(
 
     const user = L.marker(center, { icon: makeUserIcon(), interactive: false }).addTo(map);
     const layer = L.layerGroup().addTo(map);
+    let userMoved = false;
+    let fitted = false;
+    map.on('zoomstart', function (e) {
+      if (e && e.originalEvent) userMoved = true;
+    });
+    map.on('dragstart', function (e) {
+      if (e && e.originalEvent) userMoved = true;
+    });
 
     function renderMarkets(list) {
       layer.clearLayers();
@@ -183,19 +191,20 @@ function buildMapHtml(
           }));
         });
       });
-      if (pts.length > 1) {
+      if (!userMoved && !fitted && pts.length > 1) {
         map.fitBounds(pts, { padding: [48, 48], maxZoom: 14 });
+        fitted = true;
       }
     }
 
     renderMarkets(markets);
 
-    window.setCenter = function(lat, lng, zoom) {
+    window.setCenter = function(lat, lng) {
       const next = [lat, lng];
-      map.setView(next, zoom || map.getZoom(), { animate: true });
       user.setLatLng(next);
       center[0] = lat;
       center[1] = lng;
+      if (!userMoved) map.panTo(next, { animate: true });
     };
 
     window.flyToMarket = function(lat, lng, zoom) {
@@ -303,10 +312,10 @@ export function MapScreen() {
   };
 
   const html = useMemo(
-    () => buildMapHtml(center, markerData, MAPBOX_ACCESS_TOKEN),
-    // center só no primeiro paint; depois usamos inject
+    () => buildMapHtml(center, [], MAPBOX_ACCESS_TOKEN),
+    // O HTML não pode depender dos pins: trocar a source recria o mapa e perde o zoom.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [markerData, MAPBOX_ACCESS_TOKEN],
+    [MAPBOX_ACCESS_TOKEN],
   );
 
   const pushMarkersToWeb = (list = markerData) => {
@@ -377,7 +386,7 @@ export function MapScreen() {
         setCenter(next);
         setBlocked(false);
         webRef.current?.injectJavaScript(
-          `window.setCenter && window.setCenter(${next.latitude}, ${next.longitude}, 14); true;`,
+          `window.setCenter && window.setCenter(${next.latitude}, ${next.longitude}); true;`,
         );
         await discoverAround(next);
       },

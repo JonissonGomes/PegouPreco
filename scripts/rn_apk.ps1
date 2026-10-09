@@ -17,11 +17,31 @@ if (-not (Test-Path (Join-Path $root 'mobile\node_modules'))) {
   exit 1
 }
 
-$versionName = '1.0'
-if (Test-Path $appGradle) {
-  $m = Select-String -Path $appGradle -Pattern 'versionName\s+"([^"]+)"' | Select-Object -First 1
-  if ($m) { $versionName = $m.Matches[0].Groups[1].Value }
+function Bump-AndroidVersion([string]$gradlePath) {
+  $text = [IO.File]::ReadAllText($gradlePath)
+  $code = 1
+  if ($text -match 'versionCode\s+(\d+)') { $code = [int]$Matches[1] }
+  $name = '1.0.0'
+  if ($text -match 'versionName\s+"([^"]+)"') { $name = $Matches[1] }
+  $parts = @($name.Split('.'))
+  while ($parts.Count -lt 3) { $parts += '0' }
+  $patch = 0
+  [void][int]::TryParse($parts[2], [ref]$patch)
+  $parts[2] = [string]($patch + 1)
+  $nextName = ($parts[0..2] -join '.')
+  $nextCode = $code + 1
+  $text = [regex]::Replace($text, 'versionCode\s+\d+', "versionCode $nextCode", 1)
+  $text = [regex]::Replace($text, 'versionName\s+"[^"]+"', "versionName `"$nextName`"", 1)
+  $utf8 = New-Object System.Text.UTF8Encoding $false
+  [IO.File]::WriteAllText($gradlePath, $text, $utf8)
+  return $nextName
 }
+
+if (-not (Test-Path $appGradle)) {
+  throw "build.gradle nao encontrado: $appGradle"
+}
+$versionName = Bump-AndroidVersion $appGradle
+Write-Host "Versao do app: $versionName" -ForegroundColor Cyan
 
 $appName = 'PegouPreco'
 if (Test-Path $stringsXml) {
