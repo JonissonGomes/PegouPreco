@@ -40,6 +40,18 @@ export function sendError(res: Response, status: number, message: string) {
   return res.status(status).json({error: message});
 }
 
+/** Sessão opaca: 4 dias a partir do login. */
+export const SESSION_MS = 4 * 24 * 60 * 60 * 1000;
+
+export function nextTokenExpiry(from = Date.now()): string {
+  return new Date(from + SESSION_MS).toISOString();
+}
+
+export function tokenStillValid(expiresAt: unknown): boolean {
+  const exp = Date.parse(String(expiresAt ?? ''));
+  return !Number.isNaN(exp) && Date.now() <= exp;
+}
+
 export function resolveRole(
   user: Record<string, unknown>,
 ): 'admin' | 'user' {
@@ -66,5 +78,6 @@ export function publicUser(
     uf: user.uf,
     city: user.city,
     role: resolveRole(user),
+    tokenExpiresAt: user.tokenExpiresAt ?? null,
   };
 }

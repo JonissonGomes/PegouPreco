@@ -23,6 +23,8 @@ import {colors, radii, space} from '@/ui/theme';
 import {useAppStore} from '@/store/appStore';
 import {syncApi, type AuthResponse} from '@/data/remote/syncApi';
 import {apiErrorMessage} from '@/data/remote/apiError';
+import {loginWithPasskey} from '@/data/remote/passkeyAuth';
+import {sessionExpiresAt} from '@/domain/session';
 import {
   isValidEmail,
   isValidOtp,
@@ -57,6 +59,7 @@ function sessionFrom(
     phoneVerified: !!data.phoneVerified,
     userId: String(data.userId ?? data.id ?? fallback.email),
     role: data.role,
+    expiresAt: sessionExpiresAt(data.tokenExpiresAt),
   };
 }
 
@@ -667,6 +670,26 @@ export function AuthPanel({location}: {location?: string}) {
                       Alert.alert(
                         'Código reenviado',
                         'Confira a caixa de entrada e o spam.',
+                      );
+                    })
+                  }
+                />
+              ) : null}
+
+              {mode === 'login' ? (
+                <PulseCta
+                  label="Entrar com passkey"
+                  disabled={busy}
+                  onPress={() =>
+                    withBusy(async () => {
+                      const data = await loginWithPasskey();
+                      if (!data.token) throw new Error('Token ausente');
+                      setAuth(
+                        sessionFrom(data, {
+                          email: data.email ?? '',
+                          phone: data.phone ?? '',
+                          name: data.displayName ?? '',
+                        }),
                       );
                     })
                   }

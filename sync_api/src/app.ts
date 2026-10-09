@@ -4,6 +4,7 @@ import {DataStore} from './store.js';
 import {sendVerificationEmail} from './email.js';
 import {sendVerificationSms} from './sms.js';
 import {JevClient} from './jev.js';
+import {mountPasskeyRoutes} from './passkeys.js';
 import {
   normalizePhone,
   sixDigitCode,
@@ -32,6 +33,26 @@ async function auth(req: Request, store: DataStore): Promise<string | null> {
 
 export function createRouter(store: DataStore): Router {
   const router = Router();
+  router.use(async (req, res, next) => {
+    const header = req.headers.authorization;
+    if (!header?.startsWith('Bearer ')) {
+      next();
+      return;
+    }
+    try {
+      const state = await store.inspectToken(
+        header.slice('Bearer '.length).trim(),
+      );
+      if (state === 'expired') {
+        sendError(res, 401, 'sessão expirada');
+        return;
+      }
+      next();
+    } catch (err) {
+      next(err);
+    }
+  });
+  mountPasskeyRoutes(router, store);
   const skipEmailVerification = config.skipEmailVerification;
   const skipSmsVerification = config.skipSmsVerification;
   const exposeOtp =
@@ -344,8 +365,10 @@ export function createRouter(store: DataStore): Router {
         'conta não confirmada — confira o código enviado por e-mail',
       );
     }
-    const token = await store.issueToken(String(user.id));
-    return res.json(publicUser(user, token));
+    const issued = await store.issueToken(String(user.id));
+    return res.json(
+      publicUser({...user, tokenExpiresAt: issued.tokenExpiresAt}, issued.token),
+    );
   });
 
   router.get('/auth/me', async (req, res) => {

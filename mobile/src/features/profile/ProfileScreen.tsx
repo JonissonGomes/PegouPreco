@@ -13,6 +13,7 @@ import {
   ChevronRight,
   ClipboardList,
   History,
+  Fingerprint,
   LogOut,
   Map,
   ScanLine,
@@ -27,6 +28,7 @@ import {FiscalChip, ScreenScrollPad, SoftHeader} from '@/ui/screenChrome';
 import {colors, radii, space} from '@/ui/theme';
 import {prefs, useAppStore} from '@/store/appStore';
 import {syncApi, type ReputationRemote} from '@/data/remote/syncApi';
+import {registerPasskey} from '@/data/remote/passkeyAuth';
 import {apiErrorMessage} from '@/data/remote/apiError';
 import {reverseGeocode} from '@/data/remote/reverseGeocode';
 import {badgeById} from '@/domain/badges';
@@ -405,6 +407,21 @@ export function ProfileScreen() {
                   onPress={() => nav.navigate('AdminMarkets')}
                 />
               ) : null}
+              <ActionRow
+                icon={<Fingerprint size={20} color={colors.navy} />}
+                label="Ativar passkey"
+                hint="Entrar neste aparelho com biometria"
+                onPress={() => {
+                  void registerPasskey(auth.token)
+                    .then(() =>
+                      Alert.alert(
+                        'PegouPreço',
+                        'Passkey ativada. Na próxima vez use Entrar com passkey.',
+                      ),
+                    )
+                    .catch(e => Alert.alert('PegouPreço', apiErrorMessage(e)));
+                }}
+              />
               <ActionRow
                 icon={<LogOut size={20} color={colors.danger} />}
                 label="Sair"

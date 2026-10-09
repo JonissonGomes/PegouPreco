@@ -16,6 +16,8 @@ import {
   ensureStartupPermissions,
   type AppPermissionFlags,
 } from '@/app/permissions';
+import {sessionIsLive} from '@/domain/session';
+import {bindSessionRejected} from '@/data/remote/sessionGate';
 
 type AuthSession = {
   token: string;
@@ -26,6 +28,8 @@ type AuthSession = {
   phoneVerified?: boolean;
   userId: string;
   role?: 'user' | 'admin';
+  /** ISO. Depois disso o app desloga. */
+  expiresAt: string;
 };
 
 type AppState = {
@@ -77,7 +81,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     const permissions = await ensureStartupPermissions();
 
     const raw = prefs.getAuthJson();
-    const auth = raw ? (JSON.parse(raw) as AuthSession) : null;
+    const parsed = raw ? (JSON.parse(raw) as AuthSession) : null;
+    const auth = parsed && sessionIsLive(parsed.expiresAt) ? parsed : null;
+    if (parsed && !auth) prefs.setAuthJson(null);
     prefs.ensureActiveListConsistency();
     set({
       ready: true,
@@ -134,6 +140,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 }));
+
+bindSessionRejected(() => {
+  if (useAppStore.getState().auth) useAppStore.getState().setAuth(null);
+});
 
 export function useMarketName(id: number | null | undefined) {
   const markets = useAppStore(s => s.markets);

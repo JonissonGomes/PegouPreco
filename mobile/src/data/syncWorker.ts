@@ -1,4 +1,6 @@
 import {AppState, type AppStateStatus} from 'react-native';
+import axios from 'axios';
+import {sessionIsLive} from '@/domain/session';
 import {getState, saveState} from './db';
 import {
   marketRepo,
@@ -49,9 +51,11 @@ async function doFullSync(): Promise<{ok: boolean; message: string}> {
       displayName?: string;
       userId?: string;
       role?: 'user' | 'admin';
+      expiresAt?: string;
     };
-    if (!session.token) {
-      return {ok: false, message: 'Faça login para sincronizar'};
+    if (!session.token || !sessionIsLive(session.expiresAt)) {
+      useAppStore.getState().setAuth(null);
+      return {ok: false, message: 'Sessão encerrada. Entre de novo.'};
     }
 
     // Atualiza flags de verificação a partir do servidor (evita 403 por sessão antiga).
@@ -63,6 +67,10 @@ async function doFullSync(): Promise<{ok: boolean; message: string}> {
         phoneVerified: !!me.phoneVerified,
         displayName: String(me.displayName ?? session.displayName ?? ''),
         role: (me.role as 'user' | 'admin' | undefined) ?? session.role,
+        expiresAt:
+          typeof me.tokenExpiresAt === 'string'
+            ? me.tokenExpiresAt
+            : session.expiresAt,
       };
       prefs.setAuthJson(JSON.stringify(session));
       const current = useAppStore.getState().auth;
@@ -74,11 +82,14 @@ async function doFullSync(): Promise<{ok: boolean; message: string}> {
             phoneVerified: !!session.phoneVerified,
             displayName: session.displayName || current.displayName,
             role: session.role ?? current.role,
+            expiresAt: session.expiresAt ?? current.expiresAt,
           },
         });
       }
-    } catch {
-      // offline / token inválido — segue com sessão local
+    } catch (e) {
+      if (axios.isAxiosError(e) && e.response?.status === 401) {
+        return {ok: false, message: 'Sessão encerrada. Entre de novo.'};
+      }
     }
 
     const since = prefs.getLastSyncAt();

@@ -13,6 +13,15 @@ async function main() {
   const app = express();
   app.use(cors());
   app.use(express.json());
+  app.use((req, res, next) => {
+    const started = Date.now();
+    res.on('finish', () => {
+      console.log(
+        `${req.method} ${req.originalUrl} ${res.statusCode} ${Date.now() - started}ms`,
+      );
+    });
+    next();
+  });
   app.use(createRouter(store));
 
   app.listen(config.port, '0.0.0.0', () => {

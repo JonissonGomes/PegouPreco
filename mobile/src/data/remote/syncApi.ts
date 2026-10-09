@@ -1,5 +1,7 @@
 import axios from 'axios';
 import {SYNC_API_BASE} from '@/config/env';
+import type {PasskeyCreateResult, PasskeyGetResult} from 'react-native-passkey';
+import {notifySessionRejected} from './sessionGate';
 
 const client = axios.create({
   baseURL: SYNC_API_BASE,
@@ -9,6 +11,13 @@ const client = axios.create({
 });
 
 client.interceptors.response.use(undefined, async error => {
+  if (axios.isAxiosError(error) && error.response?.status === 401) {
+    const msg = (error.response.data as {error?: string} | undefined)?.error;
+    if (msg === 'sessão expirada' || msg === 'unauthorized') {
+      notifySessionRejected();
+    }
+    return Promise.reject(error);
+  }
   const cfg = error.config as (typeof error.config & {__retried?: boolean}) | undefined;
   if (
     !cfg ||
@@ -38,6 +47,7 @@ export type AuthResponse = {
   needsVerification?: boolean;
   otpChannel?: 'email' | 'phone';
   role?: 'user' | 'admin';
+  tokenExpiresAt?: string | null;
   devCode?: string;
   hint?: string;
   ok?: boolean;
@@ -97,6 +107,20 @@ export const syncApi = {
   login: (email: string, password: string) =>
     client
       .post<AuthResponse>('/auth/login', {email, password})
+      .then(r => r.data),
+  passkeyRegisterOptions: (token: string) =>
+    client
+      .post('/auth/passkey/register/options', {}, {headers: auth(token)})
+      .then(r => r.data),
+  passkeyRegisterVerify: (token: string, body: PasskeyCreateResult) =>
+    client
+      .post('/auth/passkey/register/verify', body, {headers: auth(token)})
+      .then(r => r.data as {ok?: boolean}),
+  passkeyLoginOptions: () =>
+    client.post('/auth/passkey/login/options', {}).then(r => r.data),
+  passkeyLoginVerify: (body: PasskeyGetResult) =>
+    client
+      .post<AuthResponse>('/auth/passkey/login/verify', body)
       .then(r => r.data),
   me: (token: string) =>
     client.get('/auth/me', {headers: auth(token)}).then(r => r.data),

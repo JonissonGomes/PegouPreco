@@ -2,7 +2,7 @@ import {Db, Collection, MongoClient} from 'mongodb';
 import {v4 as uuidv4} from 'uuid';
 import {config} from './config.js';
 import {JevClient} from './jev.js';
-import {haversineKm, resolveRole, sha256} from './util.js';
+import {haversineKm, nextTokenExpiry, resolveRole, sha256, tokenStillValid} from './util.js';
 
 type MemMap = Record<string, Record<string, unknown>>;
 
@@ -13,6 +13,10 @@ export class DataStore {
 
   private readonly _memUsers: MemMap = {};
   private readonly _memTokens: Record<string, string> = {};
+  private readonly _memChallenges: Record<
+    string,
+    {userId: string | null; expiresAt: string}
+  > = {};
   private readonly _memProducts: MemMap = {};
   private readonly _memMarkets: MemMap = {};
   private readonly _memLogs: MemMap = {};
@@ -115,6 +119,8 @@ export class DataStore {
       verificationCodeHash: args.verificationCodeHash,
       verificationExpiresAt: new Date(now.getTime() + 15 * 60 * 1000).toISOString(),
       token,
+      tokenExpiresAt: nextTokenExpiry(now.getTime()),
+      passkeys: [],
       createdAt: now.toISOString(),
     };
     if (this.mode === 'memory') {
@@ -170,7 +176,9 @@ export class DataStore {
     if (markEmail) user.phoneVerified = user.phoneVerified === true;
     user.verificationCodeHash = null;
     user.verifyAttempts = 0;
-    const token = await this.issueToken(String(user.id));
+    const issued = await this.issueToken(String(user.id));
+    const token = issued.token;
+    user.tokenExpiresAt = issued.tokenExpiresAt;
     const uid = String(user.id);
     if (this.mode === 'memory') {
       this._memUsers[uid] = user;
@@ -188,6 +196,7 @@ export class DataStore {
       uf: user.uf,
       city: user.city,
       role: resolveRole(user),
+      tokenExpiresAt: user.tokenExpiresAt,
     };
   }
 
@@ -473,22 +482,128 @@ export class DataStore {
     return 1.0;
   }
 
-  async issueToken(userId: string): Promise<string> {
+  async issueToken(
+    userId: string,
+  ): Promise<{token: string; tokenExpiresAt: string}> {
     const token = uuidv4();
+    const tokenExpiresAt = nextTokenExpiry();
     if (this.mode === 'memory') {
-      this._memTokens[token] = userId;
       const user = this._memUsers[userId];
-      if (user) user.token = token;
-      return token;
+      const previous = user?.token ? String(user.token) : '';
+      if (previous) delete this._memTokens[previous];
+      this._memTokens[token] = userId;
+      if (user) {
+        user.token = token;
+        user.tokenExpiresAt = tokenExpiresAt;
+      }
+      return {token, tokenExpiresAt};
     }
-    await this.col('users').updateOne({id: userId}, {$set: {token}});
-    return token;
+    await this.col('users').updateOne(
+      {id: userId},
+      {$set: {token, tokenExpiresAt}},
+    );
+    return {token, tokenExpiresAt};
+  }
+
+  async findUserByToken(
+    token: string,
+  ): Promise<Record<string, unknown> | null> {
+    if (!token) return null;
+    if (this.mode === 'memory') {
+      const id = this._memTokens[token];
+      const user = id ? this._memUsers[id] : undefined;
+      if (user && user.token === token) return user;
+      for (const row of Object.values(this._memUsers)) {
+        if (row.token === token) return row;
+      }
+      return null;
+    }
+    const doc = await this.col('users').findOne({token});
+    return doc as Record<string, unknown> | null;
+  }
+
+  async inspectToken(
+    token: string,
+  ): Promise<'valid' | 'expired' | 'unknown'> {
+    const user = await this.findUserByToken(token);
+    if (!user) return 'unknown';
+    return tokenStillValid(user.tokenExpiresAt) ? 'valid' : 'expired';
   }
 
   async userIdForToken(token: string): Promise<string | null> {
-    if (this.mode === 'memory') return this._memTokens[token] ?? null;
-    const user = await this.col('users').findOne({token});
-    return (user?.id as string) ?? null;
+    if ((await this.inspectToken(token)) !== 'valid') return null;
+    const user = await this.findUserByToken(token);
+    return user ? String(user.id) : null;
+  }
+
+  async saveWebauthnChallenge(args: {
+    challenge: string;
+    userId: string | null;
+    expiresAt: string;
+  }): Promise<void> {
+    if (this.mode === 'memory') {
+      this._memChallenges[args.challenge] = {
+        userId: args.userId,
+        expiresAt: args.expiresAt,
+      };
+      return;
+    }
+    await this.col('webauthn_challenges').updateOne(
+      {challenge: args.challenge},
+      {$set: args},
+      {upsert: true},
+    );
+  }
+
+  async consumeWebauthnChallenge(
+    challenge: string,
+  ): Promise<{userId: string | null} | null> {
+    if (this.mode === 'memory') {
+      const row = this._memChallenges[challenge];
+      delete this._memChallenges[challenge];
+      if (!row || Date.parse(row.expiresAt) < Date.now()) return null;
+      return {userId: row.userId};
+    }
+    const row = await this.col('webauthn_challenges').findOne({challenge});
+    await this.col('webauthn_challenges').deleteOne({challenge});
+    if (!row || Date.parse(String(row.expiresAt)) < Date.now()) return null;
+    return {userId: (row.userId as string | null) ?? null};
+  }
+
+  async findUserByCredentialId(
+    credentialId: string,
+  ): Promise<Record<string, unknown> | null> {
+    if (this.mode === 'memory') {
+      for (const user of Object.values(this._memUsers)) {
+        const list = Array.isArray(user.passkeys) ? user.passkeys : [];
+        if (list.some(item => (item as {id?: string}).id === credentialId)) {
+          return user;
+        }
+      }
+      return null;
+    }
+    const doc = await this.col('users').findOne({'passkeys.id': credentialId});
+    return doc as Record<string, unknown> | null;
+  }
+
+  async upsertPasskey(
+    userId: string,
+    cred: Record<string, unknown>,
+  ): Promise<void> {
+    const user = await this.findUserById(userId);
+    if (!user) return;
+    const list = Array.isArray(user.passkeys)
+      ? [...(user.passkeys as Record<string, unknown>[])]
+      : [];
+    const idx = list.findIndex(item => item.id === cred.id);
+    if (idx >= 0) list[idx] = {...list[idx], ...cred};
+    else list.push(cred);
+    if (this.mode === 'memory') {
+      user.passkeys = list;
+      this._memUsers[userId] = user;
+      return;
+    }
+    await this.col('users').updateOne({id: userId}, {$set: {passkeys: list}});
   }
 
   async push(
