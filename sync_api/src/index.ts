@@ -24,6 +24,15 @@ async function main() {
   });
   app.use(createRouter(store));
 
+  const purge = () => {
+    void store.purgeStale().catch(err => {
+      console.error('Falha ao limpar dados expirados', err);
+    });
+  };
+  purge();
+  const purgeTimer = setInterval(purge, 6 * 60 * 60 * 1000);
+  purgeTimer.unref?.();
+
   app.listen(config.port, '0.0.0.0', () => {
     console.log(
       `PegouPreço sync_api em http://0.0.0.0:${config.port} · store=${store.mode}`,

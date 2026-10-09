@@ -2,6 +2,7 @@ import {Db, Collection, MongoClient} from 'mongodb';
 import {v4 as uuidv4} from 'uuid';
 import {config} from './config.js';
 import {JevClient} from './jev.js';
+import {MarketStats, SUGGESTION_KEEP_MS} from './marketStats.js';
 import {haversineKm, nextTokenExpiry, resolveRole, sha256, tokenStillValid} from './util.js';
 
 type MemMap = Record<string, Record<string, unknown>>;
@@ -27,15 +28,13 @@ export class DataStore {
   private readonly _memPrefs: MemMap = {};
   private readonly _memMarketSuggestions: MemMap = {};
   private _jev?: JevClient;
-  private readonly _highlightCache = new Map<
-    string,
-    {yes: boolean; until: number}
-  >();
+  private readonly stats: MarketStats;
 
   private constructor(mode: 'memory' | 'mongo', db?: Db, client?: MongoClient) {
     this.mode = mode;
     this.db = db;
     this.client = client;
+    this.stats = new MarketStats(mode, name => this.col(name));
   }
 
   static async open({
@@ -339,7 +338,8 @@ export class DataStore {
       radiusKm != null &&
       radiusKm > 0;
 
-    const weekly = await this._weeklyVisitorsByMarket();
+    await this.stats.backfillFromLogs(() => this._logsSinceWeek());
+    const weekly = await this.stats.weeklyCounts();
     const out: Record<string, unknown>[] = [];
     for (const m of markets) {
       const id = m.id as string | undefined;
@@ -367,29 +367,43 @@ export class DataStore {
     return out;
   }
 
-  private async _weeklyVisitorsByMarket(): Promise<Map<string, number>> {
-    const since = Date.now() - 7 * 24 * 60 * 60 * 1000;
-    const logs =
-      this.mode === 'memory'
-        ? Object.values(this._memLogs)
-        : ((await this.col('price_logs').find().toArray()) as Record<
-            string,
-            unknown
-          >[]);
-    const sets = new Map<string, Set<string>>();
-    for (const log of logs) {
-      const at = Date.parse(String(log.capturedAt ?? log.updatedAt ?? ''));
-      if (!Number.isFinite(at) || at < since) continue;
-      const marketId = String(log.marketId ?? '');
-      const user = String(log.contributorId ?? '');
-      if (!marketId || !user) continue;
-      const set = sets.get(marketId) ?? new Set<string>();
-      set.add(user);
-      sets.set(marketId, set);
+  private async _logsSinceWeek(): Promise<Record<string, unknown>[]> {
+    const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    if (this.mode === 'memory') {
+      return Object.values(this._memLogs).filter(log => {
+        const at = String(log.capturedAt ?? log.updatedAt ?? '');
+        return at >= since;
+      });
     }
-    const counts = new Map<string, number>();
-    for (const [id, set] of sets) counts.set(id, set.size);
-    return counts;
+    return (await this.col('price_logs')
+      .find({
+        $or: [{capturedAt: {$gte: since}}, {updatedAt: {$gte: since}}],
+      })
+      .toArray()) as Record<string, unknown>[];
+  }
+
+  async purgeStale(): Promise<void> {
+    await this.stats.purge();
+    const now = new Date().toISOString();
+    const suggestionCut = new Date(Date.now() - SUGGESTION_KEEP_MS).toISOString();
+    if (this.mode === 'memory') {
+      for (const [token, row] of Object.entries(this._memChallenges)) {
+        if (row.expiresAt < now) delete this._memChallenges[token];
+      }
+      for (const [id, row] of Object.entries(this._memMarketSuggestions)) {
+        if (row.status === 'pending') continue;
+        const resolved = String(row.resolvedAt ?? row.updatedAt ?? '');
+        if (resolved && resolved < suggestionCut) {
+          delete this._memMarketSuggestions[id];
+        }
+      }
+      return;
+    }
+    await this.col('webauthn_challenges').deleteMany({expiresAt: {$lt: now}});
+    await this.col('market_suggestions').deleteMany({
+      status: {$ne: 'pending'},
+      resolvedAt: {$lt: suggestionCut},
+    });
   }
 
   private async _applyHighlights(markets: Record<string, unknown>[]) {
@@ -406,8 +420,7 @@ export class DataStore {
     const featured = new Set<string>();
     for (const m of candidates) {
       const id = String(m.id);
-      const cached = this._highlightCache.get(id);
-      let yes = cached != null && cached.until > Date.now() ? cached.yes : null;
+      let yes = await this.stats.highlightFor(id);
       if (yes == null) {
         const args = {
           marketName: String(m.name ?? ''),
@@ -420,10 +433,7 @@ export class DataStore {
           : args.weeklyVisitors >= 5 ||
             (args.weeklyVisitors >= 2 && args.avgRating >= 4) ||
             (args.ratingsCount >= 8 && args.avgRating >= 4.2);
-        this._highlightCache.set(id, {
-          yes,
-          until: Date.now() + 12 * 60 * 60 * 1000,
-        });
+        await this.stats.saveHighlight(id, yes);
       }
       if (yes) featured.add(id);
     }
@@ -794,6 +804,11 @@ export class DataStore {
         matchKeys: ['nfceKey'],
       });
       priceLogIdMap[String(l.localId)] = remoteId;
+      await this.stats.recordVisit(
+        marketRemote,
+        String(l.contributorId ?? userId),
+        l.capturedAt != null ? String(l.capturedAt) : null,
+      );
       await this._awardContributionBadges({userId, source});
     }
 
@@ -818,6 +833,13 @@ export class DataStore {
         matchKeys: [],
       });
       shoppingListIdMap[String(s.localId)] = remoteId;
+      const listMarket =
+        s.marketId != null ? marketIdMap[String(s.marketId)] : null;
+      await this.stats.recordVisit(
+        listMarket ?? null,
+        userId,
+        s.finishedAt != null ? String(s.finishedAt) : null,
+      );
     }
 
     return {

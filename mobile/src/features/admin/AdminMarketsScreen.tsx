@@ -1,30 +1,24 @@
 import React, {useCallback, useMemo, useState} from 'react';
-import {
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import {Pressable, ScrollView, Text, View} from 'react-native';
 import {useFocusEffect, useNavigation} from '@react-navigation/native';
 import Geolocation from 'react-native-geolocation-service';
-import {ArrowLeft, MapPin, Trash2} from 'lucide-react-native';
-import {AppButton, AppField, AppScreenHeader} from '@/ui/chrome';
+import {ArrowLeft} from 'lucide-react-native';
+import {AppScreenHeader} from '@/ui/chrome';
 import {appAlert} from '@/ui/appDialog';
-import {colors, radii, space} from '@/ui/theme';
+import {colors} from '@/ui/theme';
 import {marketRepo, useAppStore} from '@/store/appStore';
 import {syncApi, type AdminMarketRemote} from '@/data/remote/syncApi';
 import {apiErrorMessage} from '@/data/remote/apiError';
 import {refreshPermissionFlags} from '@/app/permissions';
-import {PIN_REPORTS, pinReportLabel} from '@/domain/pinReports';
+import {AdminMarketForm} from './AdminMarketForm';
+import {AdminMarketList} from './AdminMarketList';
+import {
+  AdminSupportPanel,
+  type SuggestionDraft,
+} from './AdminSupportPanel';
+import {adminStyles as styles} from './adminStyles';
 
 type Tab = 'markets' | 'support' | 'form';
-
-const FILTERS = [
-  {id: 'all', label: 'Todos'},
-  ...PIN_REPORTS.map(item => ({id: item.id, label: item.label})),
-  {id: 'confirm', label: 'Confirmação'},
-];
 
 export function AdminMarketsScreen() {
   const nav = useNavigation<any>();
@@ -92,14 +86,7 @@ export function AdminMarketsScreen() {
     setCnpj('');
   }
 
-  function fillForm(source: {
-    id?: string;
-    name?: string;
-    address?: string | null;
-    lat?: number;
-    lng?: number;
-    cnpj?: string | null;
-  }) {
+  function fillForm(source: SuggestionDraft) {
     const local = marketRepo
       .all()
       .find(m => m.remoteId && m.remoteId === source.id);
@@ -113,7 +100,7 @@ export function AdminMarketsScreen() {
     setTab('form');
   }
 
-  function askEdit(source: Parameters<typeof fillForm>[0]) {
+  function askEdit(source: SuggestionDraft) {
     appAlert('Editar mercado', `Alterar ${source.name ?? 'este mercado'}?`, [
       {label: 'Cancelar', style: 'cancel'},
       {label: 'Editar', style: 'primary', onPress: () => fillForm(source)},
@@ -134,31 +121,6 @@ export function AdminMarketsScreen() {
       },
       () => appAlert('GPS', 'Não foi possível obter a posição.'),
       {enableHighAccuracy: true, timeout: 15000, maximumAge: 5000},
-    );
-  };
-
-  const save = async () => {
-    if (!auth?.token) {
-      appAlert('Sessão', 'Faça login como admin.');
-      return;
-    }
-    const latN = Number(lat.replace(',', '.'));
-    const lngN = Number(lng.replace(',', '.'));
-    if (!name.trim() || !Number.isFinite(latN) || !Number.isFinite(lngN)) {
-      appAlert('Formulário', 'Informe nome, latitude e longitude.');
-      return;
-    }
-    appAlert(
-      remoteId ? 'Salvar edição' : 'Publicar mercado',
-      `${name.trim()} vai para a nuvem com esses dados.`,
-      [
-        {label: 'Cancelar', style: 'cancel'},
-        {
-          label: 'Confirmar',
-          style: 'primary',
-          onPress: () => void persist(latN, lngN),
-        },
-      ],
     );
   };
 
@@ -199,6 +161,31 @@ export function AdminMarketsScreen() {
     }
   };
 
+  const save = async () => {
+    if (!auth?.token) {
+      appAlert('Sessão', 'Faça login como admin.');
+      return;
+    }
+    const latN = Number(lat.replace(',', '.'));
+    const lngN = Number(lng.replace(',', '.'));
+    if (!name.trim() || !Number.isFinite(latN) || !Number.isFinite(lngN)) {
+      appAlert('Formulário', 'Informe nome, latitude e longitude.');
+      return;
+    }
+    appAlert(
+      remoteId ? 'Salvar edição' : 'Publicar mercado',
+      `${name.trim()} vai para a nuvem com esses dados.`,
+      [
+        {label: 'Cancelar', style: 'cancel'},
+        {
+          label: 'Confirmar',
+          style: 'primary',
+          onPress: () => void persist(latN, lngN),
+        },
+      ],
+    );
+  };
+
   const removeCloud = (market: AdminMarketRemote) => {
     if (!auth?.token) return;
     appAlert('Excluir mercado', `Remover ${market.name} da nuvem?`, [
@@ -210,9 +197,7 @@ export function AdminMarketsScreen() {
           setBusy(true);
           try {
             await syncApi.adminDeleteMarket(auth.token!, market.id);
-            const local = marketRepo
-              .all()
-              .find(m => m.remoteId === market.id);
+            const local = marketRepo.all().find(m => m.remoteId === market.id);
             if (local) marketRepo.upsertGeo(local.id, {remoteId: null});
             refresh();
             if (remoteId === market.id) resetForm();
@@ -243,11 +228,7 @@ export function AdminMarketsScreen() {
           onPress: async () => {
             setBusy(true);
             try {
-              await syncApi.adminResolveMarketSuggestion(
-                auth.token!,
-                id,
-                approve,
-              );
+              await syncApi.adminResolveMarketSuggestion(auth.token!, id, approve);
               await load();
               if (approve) {
                 appAlert('Aprovado', 'Sugestão aplicada.', undefined, 'success');
@@ -303,223 +284,44 @@ export function AdminMarketsScreen() {
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={styles.body}>
         {tab === 'markets' ? (
-          cloud.length === 0 ? (
-            <Text style={styles.empty}>Nenhum mercado na nuvem ainda.</Text>
-          ) : (
-            cloud.map(item => (
-              <View key={item.id} style={styles.card}>
-                <Text style={styles.rowName}>{item.name}</Text>
-                <Text style={styles.rowMeta}>
-                  {item.address || 'Endereço não informado'}
-                  {item.city ? ` · ${item.city}` : ''}
-                </Text>
-                <View style={styles.actions}>
-                  <View style={styles.action}>
-                    <AppButton
-                      outlined
-                      label="Editar"
-                      onPress={() => askEdit(item)}
-                    />
-                  </View>
-                  <View style={styles.action}>
-                    <AppButton
-                      outlined
-                      label="Remover"
-                      icon={<Trash2 size={16} color={colors.danger} />}
-                      onPress={() => removeCloud(item)}
-                    />
-                  </View>
-                </View>
-              </View>
-            ))
-          )
+          <AdminMarketList
+            markets={cloud}
+            onEdit={askEdit}
+            onRemove={removeCloud}
+          />
         ) : null}
-
         {tab === 'support' ? (
-          <>
-            <AppField
-              label="Filtrar por mercado"
-              value={query}
-              onChangeText={setQuery}
-              compact
-            />
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <View style={styles.chips}>
-                {FILTERS.map(item => (
-                  <Pressable
-                    key={item.id}
-                    style={[styles.chip, filter === item.id && styles.chipOn]}
-                    onPress={() => setFilter(item.id)}>
-                    <Text
-                      style={[
-                        styles.chipText,
-                        filter === item.id && styles.chipTextOn,
-                      ]}>
-                      {item.label}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-            </ScrollView>
-            {visibleSuggestions.length === 0 ? (
-              <Text style={styles.empty}>Nada pendente nesse filtro.</Text>
-            ) : (
-              visibleSuggestions.map(item => (
-                <View key={String(item.id)} style={styles.card}>
-                  <Text style={styles.rowName}>{String(item.name ?? '')}</Text>
-                  <Text style={styles.rowMeta}>
-                    {item.reportType
-                      ? pinReportLabel(String(item.reportType))
-                      : item.kind === 'confirm'
-                        ? 'Confirmação'
-                        : String(item.kind ?? 'sugestão')}
-                    {item.note ? ` · ${String(item.note)}` : ''}
-                  </Text>
-                  <View style={styles.actions}>
-                    <View style={styles.action}>
-                      <AppButton
-                        outlined
-                        label="Editar"
-                        disabled={busy}
-                        onPress={() =>
-                          askEdit({
-                            id: item.targetMarketId
-                              ? String(item.targetMarketId)
-                              : undefined,
-                            name: String(item.name ?? ''),
-                            address: (item.address as string) ?? null,
-                            lat: Number(item.lat),
-                            lng: Number(item.lng),
-                            cnpj: (item.cnpj as string) ?? null,
-                          })
-                        }
-                      />
-                    </View>
-                    <View style={styles.action}>
-                      <AppButton
-                        label="Aprovar"
-                        disabled={busy}
-                        onPress={() =>
-                          resolveSuggestion(String(item.id), true)
-                        }
-                      />
-                    </View>
-                    <View style={styles.action}>
-                      <AppButton
-                        outlined
-                        label="Rejeitar"
-                        disabled={busy}
-                        onPress={() =>
-                          resolveSuggestion(String(item.id), false)
-                        }
-                      />
-                    </View>
-                  </View>
-                </View>
-              ))
-            )}
-          </>
+          <AdminSupportPanel
+            query={query}
+            filter={filter}
+            busy={busy}
+            items={visibleSuggestions}
+            onQuery={setQuery}
+            onFilter={setFilter}
+            onEdit={askEdit}
+            onResolve={resolveSuggestion}
+          />
         ) : null}
-
         {tab === 'form' ? (
-          <>
-            <AppField label="Nome" value={name} onChangeText={setName} compact />
-            <AppField
-              label="Endereço"
-              value={address}
-              onChangeText={setAddress}
-              compact
-            />
-            <View style={styles.coordRow}>
-              <View style={{flex: 1}}>
-                <AppField label="Lat" value={lat} onChangeText={setLat} compact />
-              </View>
-              <View style={{flex: 1}}>
-                <AppField label="Lng" value={lng} onChangeText={setLng} compact />
-              </View>
-            </View>
-            <AppButton
-              label="Usar GPS"
-              outlined
-              icon={<MapPin size={18} color={colors.navy} />}
-              onPress={() => void useGps()}
-            />
-            <AppField
-              label="CNPJ (opcional)"
-              value={cnpj}
-              onChangeText={setCnpj}
-              compact
-            />
-            <AppButton
-              disabled={busy}
-              label={busy ? 'Salvando…' : remoteId ? 'Salvar edição' : 'Publicar mercado'}
-              onPress={() => void save()}
-            />
-            {editLocalId != null || remoteId ? (
-              <Pressable onPress={resetForm}>
-                <Text style={styles.clearForm}>Limpar formulário</Text>
-              </Pressable>
-            ) : null}
-          </>
+          <AdminMarketForm
+            name={name}
+            address={address}
+            lat={lat}
+            lng={lng}
+            cnpj={cnpj}
+            busy={busy}
+            editing={editLocalId != null || !!remoteId}
+            onName={setName}
+            onAddress={setAddress}
+            onLat={setLat}
+            onLng={setLng}
+            onCnpj={setCnpj}
+            onGps={() => void useGps()}
+            onSave={() => void save()}
+            onClear={resetForm}
+          />
         ) : null}
       </ScrollView>
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  root: {flex: 1, backgroundColor: colors.bg},
-  back: {padding: 8},
-  tabs: {
-    flexDirection: 'row',
-    gap: 8,
-    paddingHorizontal: space.md,
-    paddingBottom: space.sm,
-  },
-  tab: {
-    flex: 1,
-    height: 36,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.white,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  tabOn: {backgroundColor: colors.navy, borderColor: colors.navy},
-  tabText: {fontWeight: '800', color: colors.navy, fontSize: 12},
-  tabTextOn: {color: '#fff'},
-  body: {padding: space.md, paddingBottom: 48, gap: 8},
-  card: {
-    backgroundColor: colors.white,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: space.sm,
-    gap: 6,
-  },
-  rowName: {fontWeight: '800', color: colors.navy, fontSize: 15},
-  rowMeta: {color: colors.muted, fontWeight: '600', fontSize: 12},
-  actions: {flexDirection: 'row', gap: 8, marginTop: 4},
-  action: {flex: 1},
-  empty: {color: colors.muted, fontWeight: '600'},
-  coordRow: {flexDirection: 'row', gap: 8},
-  clearForm: {
-    textAlign: 'center',
-    color: colors.muted,
-    fontWeight: '700',
-    paddingVertical: 8,
-  },
-  chips: {flexDirection: 'row', gap: 8, paddingVertical: 4},
-  chip: {
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.white,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  chipOn: {backgroundColor: colors.navy, borderColor: colors.navy},
-  chipText: {fontWeight: '700', color: colors.navy, fontSize: 12},
-  chipTextOn: {color: '#fff'},
-});
