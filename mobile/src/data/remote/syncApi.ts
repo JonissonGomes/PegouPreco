@@ -222,7 +222,25 @@ export const syncApi = {
       .then(r => r.data),
   adminDeleteMarket: (token: string, id: string) =>
     client
-      .delete(`/admin/markets/${id}`, {headers: auth(token)})
+      .delete(`/admin/markets/${encodeURIComponent(id)}`, {headers: auth(token)})
+      .then(r => r.data),
+  adminResolveSuggestionGroup: (
+    token: string,
+    body: {
+      approve: boolean;
+      targetMarketId?: string | null;
+      reportType: string;
+      name: string;
+      lat?: number | null;
+      lng?: number | null;
+    },
+  ) =>
+    client
+      .post<{ok?: boolean; resolved?: number}>(
+        '/admin/market-suggestions/resolve-group',
+        body,
+        {headers: auth(token)},
+      )
       .then(r => r.data),
   submitMarketSuggestion: (
     token: string,

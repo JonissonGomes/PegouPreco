@@ -522,6 +522,27 @@ export function createRouter(store: DataStore): Router {
     return res.json({suggestions});
   });
 
+  router.post('/admin/market-suggestions/resolve-group', async (req, res) => {
+    const admin = await requireAdmin(req, store);
+    if (!admin) return sendError(res, 403, 'admin only');
+    const body = req.body as Record<string, unknown>;
+    const approve = body.approve === true || body.approve === 'true';
+    const result = await store.resolveSuggestionGroup({
+      approve,
+      adminUserId: admin.userId,
+      targetMarketId:
+        body.targetMarketId != null ? String(body.targetMarketId) : null,
+      reportType: body.reportType != null ? String(body.reportType) : null,
+      name: body.name != null ? String(body.name) : null,
+      lat: body.lat != null ? Number(body.lat) : null,
+      lng: body.lng != null ? Number(body.lng) : null,
+    });
+    if (!result.ok) {
+      return sendError(res, 400, result.error ?? 'falha ao resolver');
+    }
+    return res.json(result);
+  });
+
   router.post('/admin/market-suggestions/:id/resolve', async (req, res) => {
     const admin = await requireAdmin(req, store);
     if (!admin) return sendError(res, 403, 'admin only');

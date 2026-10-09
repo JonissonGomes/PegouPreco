@@ -151,6 +151,19 @@ export const marketRepo = {
   getById(id: number): Market | null {
     return getState().markets.find(m => m.id === id) ?? null;
   },
+  /** Tira o mercado local para o sync não recriar o que o admin apagou. */
+  dropCloudCopy(remoteId: string, name: string, lat: number, lng: number) {
+    const near = Number.isFinite(lat) && Number.isFinite(lng);
+    const state = getState();
+    state.markets = state.markets.filter(m => {
+      if (remoteId && m.remoteId === remoteId) return false;
+      if (!near) return true;
+      if (m.name.trim().toLowerCase() !== name.trim().toLowerCase()) return true;
+      if (m.lat == null || m.lng == null) return false;
+      return haversineKm({lat: m.lat, lng: m.lng}, {lat, lng}) > 0.4;
+    });
+    saveState();
+  },
   resolveOrCreate(name: string, cnpj?: string | null): Market {
     const trimmed = name.trim();
     const existing = getState().markets.find(

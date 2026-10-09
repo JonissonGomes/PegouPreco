@@ -16,6 +16,8 @@ import {
   AdminSupportPanel,
   type SuggestionDraft,
 } from './AdminSupportPanel';
+import {groupReports, type ReportGroup} from './reportGroups';
+import {pinReportLabel} from '@/domain/pinReports';
 import {adminStyles as styles} from './adminStyles';
 
 type Tab = 'markets' | 'support' | 'form';
@@ -62,18 +64,17 @@ export function AdminMarketsScreen() {
     }, [load]),
   );
 
-  const visibleSuggestions = useMemo(() => {
+  const visibleGroups = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return suggestions.filter(item => {
-      const type = String(item.reportType ?? '');
-      const kind = String(item.kind ?? '');
-      if (filter === 'confirm' && kind !== 'confirm') return false;
-      if (filter !== 'all' && filter !== 'confirm' && type !== filter) {
-        return false;
-      }
+    const filtered = suggestions.filter(item => {
+      const type = String(
+        item.reportType ?? (item.kind === 'confirm' ? 'confirm' : ''),
+      );
+      if (filter !== 'all' && type !== filter) return false;
       if (!q) return true;
       return String(item.name ?? '').toLowerCase().includes(q);
     });
+    return groupReports(filtered);
   }, [suggestions, filter, query]);
 
   function resetForm() {
@@ -197,8 +198,12 @@ export function AdminMarketsScreen() {
           setBusy(true);
           try {
             await syncApi.adminDeleteMarket(auth.token!, market.id);
-            const local = marketRepo.all().find(m => m.remoteId === market.id);
-            if (local) marketRepo.upsertGeo(local.id, {remoteId: null});
+            marketRepo.dropCloudCopy(
+              market.id,
+              market.name,
+              Number(market.lat),
+              Number(market.lng),
+            );
             refresh();
             if (remoteId === market.id) resetForm();
             await load();
@@ -213,35 +218,61 @@ export function AdminMarketsScreen() {
     ]);
   };
 
-  const resolveSuggestion = (id: string, approve: boolean) => {
+  const resolveGroup = (group: ReportGroup, approve: boolean) => {
     if (!auth?.token) return;
-    appAlert(
-      approve ? 'Aprovar reporte' : 'Rejeitar reporte',
-      approve
-        ? 'Publicar ou aplicar esta sugestão?'
-        : 'Descartar esta sugestão?',
-      [
-        {label: 'Cancelar', style: 'cancel'},
-        {
-          label: approve ? 'Aprovar' : 'Rejeitar',
-          style: approve ? 'primary' : 'destructive',
-          onPress: async () => {
-            setBusy(true);
-            try {
-              await syncApi.adminResolveMarketSuggestion(auth.token!, id, approve);
-              await load();
-              if (approve) {
-                appAlert('Aprovado', 'Sugestão aplicada.', undefined, 'success');
-              }
-            } catch (e) {
-              appAlert('Erro', apiErrorMessage(e));
-            } finally {
-              setBusy(false);
+    const reason =
+      group.reason === 'confirm' ? 'Confirmação' : pinReportLabel(group.reason);
+    const removes = approve && group.reason === 'missing';
+    const message = removes
+      ? `Aprovar "Não existe" remove ${group.name} e encerra ${group.count} reporte(s) desse motivo.`
+      : approve
+        ? `Aprovar ${group.count} reporte(s) de "${reason}" em ${group.name}?`
+        : `Recusar ${group.count} reporte(s) de "${reason}" em ${group.name}?`;
+    appAlert(approve ? 'Aprovar motivo' : 'Recusar motivo', message, [
+      {label: 'Cancelar', style: 'cancel'},
+      {
+        label: approve ? 'Aprovar' : 'Rejeitar',
+        style: approve ? 'primary' : 'destructive',
+        onPress: async () => {
+          setBusy(true);
+          try {
+            const result = await syncApi.adminResolveSuggestionGroup(
+              auth.token!,
+              {
+                approve,
+                targetMarketId: group.targetMarketId ?? null,
+                reportType: group.reason,
+                name: group.name,
+                lat: group.lat,
+                lng: group.lng,
+              },
+            );
+            if (removes) {
+              marketRepo.dropCloudCopy(
+                group.targetMarketId ?? '',
+                group.name,
+                group.lat,
+                group.lng,
+              );
+              refresh();
             }
-          },
+            await load();
+            appAlert(
+              approve ? 'Aprovado' : 'Recusado',
+              `${result.resolved ?? group.count} reporte(s) de "${reason}" ${
+                approve ? 'aplicados' : 'recusados'
+              }.`,
+              undefined,
+              'success',
+            );
+          } catch (e) {
+            appAlert('Erro', apiErrorMessage(e));
+          } finally {
+            setBusy(false);
+          }
         },
-      ],
-    );
+      },
+    ]);
   };
 
   return (
@@ -295,11 +326,11 @@ export function AdminMarketsScreen() {
             query={query}
             filter={filter}
             busy={busy}
-            items={visibleSuggestions}
+            groups={visibleGroups}
             onQuery={setQuery}
             onFilter={setFilter}
             onEdit={askEdit}
-            onResolve={resolveSuggestion}
+            onResolve={resolveGroup}
           />
         ) : null}
         {tab === 'form' ? (

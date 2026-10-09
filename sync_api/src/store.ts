@@ -1,4 +1,4 @@
-import {Db, Collection, MongoClient} from 'mongodb';
+import {Db, Collection, MongoClient, ObjectId} from 'mongodb';
 import {v4 as uuidv4} from 'uuid';
 import {config} from './config.js';
 import {JevClient} from './jev.js';
@@ -27,6 +27,7 @@ export class DataStore {
   private readonly _memReviews: MemMap = {};
   private readonly _memPrefs: MemMap = {};
   private readonly _memMarketSuggestions: MemMap = {};
+  private readonly _memTombstones: MemMap = {};
   private _jev?: JevClient;
   private readonly stats: MarketStats;
 
@@ -397,6 +398,12 @@ export class DataStore {
           delete this._memMarketSuggestions[id];
         }
       }
+      const tombCut = new Date(
+        Date.now() - 180 * 24 * 60 * 60 * 1000,
+      ).toISOString();
+      for (const [id, row] of Object.entries(this._memTombstones)) {
+        if (String(row.deletedAt ?? '') < tombCut) delete this._memTombstones[id];
+      }
       return;
     }
     await this.col('webauthn_challenges').deleteMany({expiresAt: {$lt: now}});
@@ -404,6 +411,8 @@ export class DataStore {
       status: {$ne: 'pending'},
       resolvedAt: {$lt: suggestionCut},
     });
+    const tombCut = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString();
+    await this.col('market_tombstones').deleteMany({deletedAt: {$lt: tombCut}});
   }
 
   private async _applyHighlights(markets: Record<string, unknown>[]) {
@@ -706,6 +715,17 @@ export class DataStore {
 
     for (const raw of (body.markets as unknown[] | undefined) ?? []) {
       const m = {...(raw as Record<string, unknown>)};
+      const latN = Number(m.lat);
+      const lngN = Number(m.lng);
+      if (
+        await this.marketIsTombstoned(
+          String(m.name ?? ''),
+          latN,
+          lngN,
+        )
+      ) {
+        continue;
+      }
       const remoteId = await this._upsertLww({
         collection: 'markets',
         mem: this._memMarkets,
@@ -1411,15 +1431,49 @@ export class DataStore {
 
   async adminListMarkets(): Promise<Record<string, unknown>[]> {
     this.ensureDemoMarkets();
-    if (this.mode === 'memory') {
-      return Object.values(this._memMarkets).sort((a, b) =>
-        String(a.name ?? '').localeCompare(String(b.name ?? ''), 'pt-BR'),
-      );
+    const rows =
+      this.mode === 'memory'
+        ? Object.values(this._memMarkets)
+        : ((await this.col('markets').find().toArray()) as Record<
+            string,
+            unknown
+          >[]);
+    const out: Record<string, unknown>[] = [];
+    for (const row of rows) {
+      const pub = await this._ensureMarketId(row);
+      if (pub) out.push(pub);
     }
-    return (await this.col('markets')
-      .find()
-      .sort({name: 1})
-      .toArray()) as Record<string, unknown>[];
+    out.sort((a, b) =>
+      String(a.name ?? '').localeCompare(String(b.name ?? ''), 'pt-BR'),
+    );
+    return out;
+  }
+
+  private async _ensureMarketId(
+    row: Record<string, unknown>,
+  ): Promise<Record<string, unknown> | null> {
+    let id = row.id != null ? String(row.id) : '';
+    if (!id && row._id != null) id = String(row._id);
+    if (!id) return null;
+    if (row.id == null) {
+      if (this.mode === 'memory') {
+        row.id = id;
+        this._memMarkets[id] = row;
+      } else if (row._id != null) {
+        await this.col('markets').updateOne({_id: row._id as never}, {$set: {id}});
+      }
+    }
+    return {
+      id,
+      name: row.name ?? '',
+      lat: row.lat ?? null,
+      lng: row.lng ?? null,
+      address: row.address ?? null,
+      cnpj: row.cnpj ?? null,
+      city: row.city ?? null,
+      uf: row.uf ?? null,
+      updatedAt: row.updatedAt ?? null,
+    };
   }
 
   async adminUpsertMarket(body: {
@@ -1443,6 +1497,7 @@ export class DataStore {
         unknown
       > | null;
     }
+    await this.clearTombstone(body.name, body.lat, body.lng);
     const doc: Record<string, unknown> = {
       ...(existing ?? {}),
       id,
@@ -1465,13 +1520,66 @@ export class DataStore {
   }
 
   async adminDeleteMarket(id: string): Promise<boolean> {
+    const clean = id.trim();
+    if (!clean) return false;
+    const market = await this._findMarketDoc(clean);
+    if (!market) return false;
+    const storedId = String(market.id ?? clean);
     if (this.mode === 'memory') {
-      if (!this._memMarkets[id]) return false;
-      delete this._memMarkets[id];
-      return true;
+      for (const [key, row] of Object.entries(this._memMarkets)) {
+        if (
+          key === storedId ||
+          key === clean ||
+          String(row.id ?? '') === storedId
+        ) {
+          delete this._memMarkets[key];
+        }
+      }
+    } else {
+      await this.col('markets').deleteOne({id: storedId});
+      if (market._id != null) {
+        await this.col('markets').deleteOne({_id: market._id as never});
+      }
     }
-    const r = await this.col('markets').deleteOne({id});
-    return r.deletedCount > 0;
+    await this._dropMarketRefs(storedId, clean);
+    await this.rememberTombstone({
+      id: storedId,
+      name: String(market.name ?? ''),
+      lat: Number(market.lat),
+      lng: Number(market.lng),
+    });
+    return true;
+  }
+
+  private async _findMarketDoc(
+    id: string,
+  ): Promise<Record<string, unknown> | null> {
+    if (this.mode === 'memory') {
+      return (
+        this._memMarkets[id] ??
+        Object.values(this._memMarkets).find(row => String(row.id) === id) ??
+        null
+      );
+    }
+    const byId = (await this.col('markets').findOne({id})) as Record<
+      string,
+      unknown
+    > | null;
+    if (byId) return byId;
+    if (/^[a-f0-9]{24}$/i.test(id)) {
+      return (await this.col('markets').findOne({
+        _id: new ObjectId(id),
+      })) as Record<string, unknown> | null;
+    }
+    return null;
+  }
+
+  private async _dropMarketRefs(storedId: string, rawId: string) {
+    const ids = [storedId, rawId].filter(Boolean);
+    if (this.mode === 'memory') return;
+    await this.col('market_visits').deleteMany({marketId: {$in: ids}});
+    await this.col('market_highlights').deleteMany({marketId: {$in: ids}});
+    await this.col('market_reviews').deleteMany({marketId: {$in: ids}});
   }
 
   async createMarketSuggestion(body: {
@@ -1553,11 +1661,8 @@ export class DataStore {
 
     let market: Record<string, unknown> | undefined;
     if (args.approve && suggestion.reportType === 'missing') {
-      const targetId = suggestion.targetMarketId
-        ? String(suggestion.targetMarketId)
-        : '';
-      if (targetId) await this.adminDeleteMarket(targetId);
-    } else if (args.approve) {
+      await this._deleteReportedMarket(suggestion);
+    } else if (args.approve && suggestion.kind !== 'confirm') {
       const kind = String(suggestion.kind ?? 'add');
       const targetId =
         kind === 'fix' || kind === 'confirm'
@@ -1582,5 +1687,175 @@ export class DataStore {
       );
     }
     return {ok: true, market};
+  }
+
+  async resolveSuggestionGroup(args: {
+    approve: boolean;
+    adminUserId: string;
+    targetMarketId?: string | null;
+    reportType?: string | null;
+    name?: string | null;
+    lat?: number | null;
+    lng?: number | null;
+  }): Promise<{ok: boolean; resolved: number; error?: string}> {
+    const pending = await this.listMarketSuggestions('pending');
+    const matched = pending.filter(row => this._sameReportGroup(row, args));
+    if (matched.length === 0) {
+      return {ok: false, resolved: 0, error: 'nenhum reporte pendente desse motivo'};
+    }
+    const sample = matched[0];
+    if (args.approve && String(args.reportType ?? sample.reportType) === 'missing') {
+      await this._deleteReportedMarket(sample);
+    } else if (args.approve && sample.kind !== 'confirm') {
+      const targetId =
+        sample.targetMarketId != null ? String(sample.targetMarketId) : null;
+      await this.adminUpsertMarket({
+        id: targetId,
+        name: String(sample.name ?? ''),
+        lat: Number(sample.lat),
+        lng: Number(sample.lng),
+        address: (sample.address as string) ?? null,
+        cnpj: (sample.cnpj as string) ?? null,
+      });
+    }
+    const now = new Date().toISOString();
+    for (const row of matched) {
+      row.status = args.approve ? 'approved' : 'rejected';
+      row.resolvedAt = now;
+      row.resolvedBy = args.adminUserId;
+      row.updatedAt = now;
+      const id = String(row.id);
+      if (this.mode === 'memory') {
+        this._memMarketSuggestions[id] = row;
+      } else {
+        const {_id: _ignored, ...rest} = row;
+        await this.col('market_suggestions').replaceOne({id}, rest);
+      }
+    }
+    return {ok: true, resolved: matched.length};
+  }
+
+  private _sameReportGroup(
+    row: Record<string, unknown>,
+    args: {
+      targetMarketId?: string | null;
+      reportType?: string | null;
+      name?: string | null;
+      lat?: number | null;
+      lng?: number | null;
+    },
+  ): boolean {
+    const reason = String(
+      row.reportType ?? (row.kind === 'confirm' ? 'confirm' : row.kind ?? ''),
+    );
+    const want = String(args.reportType ?? '');
+    if (reason !== want) return false;
+    if (args.targetMarketId) {
+      return String(row.targetMarketId ?? '') === args.targetMarketId;
+    }
+    const sameName =
+      String(row.name ?? '').trim().toLowerCase() ===
+      String(args.name ?? '').trim().toLowerCase();
+    if (!sameName) return false;
+    const lat = Number(row.lat);
+    const lng = Number(row.lng);
+    if (
+      args.lat == null ||
+      args.lng == null ||
+      !Number.isFinite(lat) ||
+      !Number.isFinite(lng)
+    ) {
+      return true;
+    }
+    return (
+      haversineKm({lat, lng}, {lat: args.lat, lng: args.lng}) <= 0.4
+    );
+  }
+
+  private async _deleteReportedMarket(suggestion: Record<string, unknown>) {
+    const targetId = suggestion.targetMarketId
+      ? String(suggestion.targetMarketId)
+      : '';
+    if (targetId && (await this.adminDeleteMarket(targetId))) return;
+    const name = String(suggestion.name ?? '').trim().toLowerCase();
+    const lat = Number(suggestion.lat);
+    const lng = Number(suggestion.lng);
+    const markets = await this.adminListMarkets();
+    const hit = markets.find(market => {
+      if (String(market.name ?? '').trim().toLowerCase() !== name) return false;
+      const mLat = Number(market.lat);
+      const mLng = Number(market.lng);
+      if (!Number.isFinite(mLat) || !Number.isFinite(mLng)) return true;
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return true;
+      return haversineKm({lat, lng}, {lat: mLat, lng: mLng}) <= 0.4;
+    });
+    if (hit?.id) await this.adminDeleteMarket(String(hit.id));
+  }
+
+  private async rememberTombstone(market: {
+    id: string;
+    name: string;
+    lat: number;
+    lng: number;
+  }) {
+    const doc = {
+      id: market.id,
+      nameKey: market.name.trim().toLowerCase(),
+      lat: market.lat,
+      lng: market.lng,
+      deletedAt: new Date().toISOString(),
+    };
+    if (this.mode === 'memory') {
+      this._memTombstones[market.id] = doc;
+      return;
+    }
+    await this.col('market_tombstones').updateOne(
+      {id: market.id},
+      {$set: doc},
+      {upsert: true},
+    );
+  }
+
+  private async clearTombstone(name: string, lat: number, lng: number) {
+    const rows = await this._tombstonesFor(name);
+    for (const row of rows) {
+      const tLat = Number(row.lat);
+      const tLng = Number(row.lng);
+      if (
+        Number.isFinite(tLat) &&
+        Number.isFinite(tLng) &&
+        haversineKm({lat, lng}, {lat: tLat, lng: tLng}) > 0.4
+      ) {
+        continue;
+      }
+      const id = String(row.id ?? '');
+      if (this.mode === 'memory') delete this._memTombstones[id];
+      else if (id) await this.col('market_tombstones').deleteOne({id});
+    }
+  }
+
+  async marketIsTombstoned(name: string, lat: number, lng: number) {
+    if (!name.trim() || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return false;
+    }
+    const rows = await this._tombstonesFor(name);
+    return rows.some(row => {
+      const tLat = Number(row.lat);
+      const tLng = Number(row.lng);
+      if (!Number.isFinite(tLat) || !Number.isFinite(tLng)) return true;
+      return haversineKm({lat, lng}, {lat: tLat, lng: tLng}) <= 0.4;
+    });
+  }
+
+  private async _tombstonesFor(name: string) {
+    const nameKey = name.trim().toLowerCase();
+    if (this.mode === 'memory') {
+      return Object.values(this._memTombstones).filter(
+        row => row.nameKey === nameKey,
+      );
+    }
+    return (await this.col('market_tombstones')
+      .find({nameKey})
+      .toArray()) as Record<string, unknown>[];
   }
 }

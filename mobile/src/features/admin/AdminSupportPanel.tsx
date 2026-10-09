@@ -2,6 +2,7 @@ import React from 'react';
 import {Pressable, ScrollView, Text, View} from 'react-native';
 import {AppButton, AppField} from '@/ui/chrome';
 import {PIN_REPORTS, pinReportLabel} from '@/domain/pinReports';
+import type {ReportGroup} from './reportGroups';
 import {adminStyles as styles} from './adminStyles';
 
 const FILTERS = [
@@ -23,7 +24,7 @@ export function AdminSupportPanel({
   query,
   filter,
   busy,
-  items,
+  groups,
   onQuery,
   onFilter,
   onEdit,
@@ -32,11 +33,11 @@ export function AdminSupportPanel({
   query: string;
   filter: string;
   busy: boolean;
-  items: Array<Record<string, unknown>>;
+  groups: ReportGroup[];
   onQuery: (value: string) => void;
   onFilter: (id: string) => void;
   onEdit: (draft: SuggestionDraft) => void;
-  onResolve: (id: string, approve: boolean) => void;
+  onResolve: (group: ReportGroup, approve: boolean) => void;
 }) {
   return (
     <>
@@ -64,19 +65,20 @@ export function AdminSupportPanel({
           ))}
         </View>
       </ScrollView>
-      {items.length === 0 ? (
+      {groups.length === 0 ? (
         <Text style={styles.empty}>Nada pendente nesse filtro.</Text>
       ) : (
-        items.map(item => (
-          <View key={String(item.id)} style={styles.card}>
-            <Text style={styles.rowName}>{String(item.name ?? '')}</Text>
+        groups.map(group => (
+          <View key={group.key} style={styles.card}>
+            <Text style={styles.rowName}>{group.name}</Text>
             <Text style={styles.rowMeta}>
-              {item.reportType
-                ? pinReportLabel(String(item.reportType))
-                : item.kind === 'confirm'
-                  ? 'Confirmação'
-                  : String(item.kind ?? 'sugestão')}
-              {item.note ? ` · ${String(item.note)}` : ''}
+              {group.reason === 'confirm'
+                ? 'Confirmação'
+                : pinReportLabel(group.reason)}
+              {' · '}
+              {group.count === 1
+                ? '1 reporte'
+                : `${group.count} reportes`}
             </Text>
             <View style={styles.actions}>
               <View style={styles.action}>
@@ -86,14 +88,12 @@ export function AdminSupportPanel({
                   disabled={busy}
                   onPress={() =>
                     onEdit({
-                      id: item.targetMarketId
-                        ? String(item.targetMarketId)
-                        : undefined,
-                      name: String(item.name ?? ''),
-                      address: (item.address as string) ?? null,
-                      lat: Number(item.lat),
-                      lng: Number(item.lng),
-                      cnpj: (item.cnpj as string) ?? null,
+                      id: group.targetMarketId,
+                      name: group.name,
+                      address: group.address,
+                      lat: group.lat,
+                      lng: group.lng,
+                      cnpj: group.cnpj,
                     })
                   }
                 />
@@ -102,7 +102,7 @@ export function AdminSupportPanel({
                 <AppButton
                   label="Aprovar"
                   disabled={busy}
-                  onPress={() => onResolve(String(item.id), true)}
+                  onPress={() => onResolve(group, true)}
                 />
               </View>
               <View style={styles.action}>
@@ -110,7 +110,7 @@ export function AdminSupportPanel({
                   outlined
                   label="Rejeitar"
                   disabled={busy}
-                  onPress={() => onResolve(String(item.id), false)}
+                  onPress={() => onResolve(group, false)}
                 />
               </View>
             </View>
