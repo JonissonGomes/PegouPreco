@@ -1,6 +1,5 @@
 import React, {useMemo, useState} from 'react';
 import {
-  Alert,
   LayoutAnimation,
   Platform,
   Pressable,
@@ -18,6 +17,7 @@ import {
   Store,
 } from 'lucide-react-native';
 import {AppButton} from '@/ui/chrome';
+import {appAlert} from '@/ui/appDialog';
 import {FeatureEmptyGuide} from '@/ui/FeatureEmptyGuide';
 import {KeyboardSafeSheet} from '@/ui/keyboardSheet';
 import {SwipeableActions} from '@/ui/SwipeableActions';
@@ -91,9 +91,9 @@ export function ShoppingListsScreen() {
       });
     }
     if (list.marketId == null) {
-      Alert.alert(
+      appAlert(
         'Mercado ausente',
-        'Esta lista não tem mercado vinculado. Crie uma nova lista e escolha o mercado.',
+        'Esta lista não tem mercado vinculado. Crie uma nova compra e escolha o mercado.',
       );
       return;
     }
@@ -163,13 +163,13 @@ export function ShoppingListsScreen() {
         renderItem={({item}) => (
           <SwipeableActions
             onDelete={() => {
-              Alert.alert(
+              appAlert(
                 'Excluir lista?',
                 `"${item.name}" será removida do histórico.`,
                 [
-                  {text: 'Cancelar', style: 'cancel'},
+                  {label: 'Cancelar', style: 'cancel'},
                   {
-                    text: 'Excluir',
+                    label: 'Excluir',
                     style: 'destructive',
                     onPress: () => {
                       LayoutAnimation.configureNext(
@@ -249,13 +249,13 @@ export function ShoppingListsScreen() {
                   label="Excluir"
                   outlined
                   onPress={() => {
-                    Alert.alert(
+                    appAlert(
                       'Excluir lista?',
                       `"${selected.name}" será removida.`,
                       [
-                        {text: 'Cancelar', style: 'cancel'},
+                        {label: 'Cancelar', style: 'cancel'},
                         {
-                          text: 'Excluir',
+                          label: 'Excluir',
                           style: 'destructive',
                           onPress: () => {
                             shoppingListRepo.remove(selected.id);

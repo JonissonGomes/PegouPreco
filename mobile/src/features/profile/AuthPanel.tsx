@@ -1,6 +1,5 @@
 import React, {useEffect, useMemo, useRef, useState} from 'react';
 import {
-  Alert,
   Animated,
   Easing,
   KeyboardAvoidingView,
@@ -23,6 +22,7 @@ import {colors, radii, space} from '@/ui/theme';
 import {useAppStore} from '@/store/appStore';
 import {syncApi, type AuthResponse} from '@/data/remote/syncApi';
 import {apiErrorMessage} from '@/data/remote/apiError';
+import {appAlert} from '@/ui/appDialog';
 import {loginWithPasskey} from '@/data/remote/passkeyAuth';
 import {sessionExpiresAt} from '@/domain/session';
 import {
@@ -352,12 +352,12 @@ export function AuthPanel({location}: {location?: string}) {
       const msg = apiErrorMessage(e);
       if (msg.includes('não confirmada') || msg.includes('código')) {
         switchMode('verify');
-        Alert.alert(
+        appAlert(
           'Confirme seu e-mail',
           'Sua conta ainda não foi confirmada. Use o código enviado por e-mail.',
         );
       } else {
-        Alert.alert('PegouPreço', msg);
+        appAlert('PegouPreço', msg);
       }
     } finally {
       setBusy(false);
@@ -557,11 +557,11 @@ export function AuthPanel({location}: {location?: string}) {
                     };
                     if (mode === 'login') {
                       if (!isValidEmail(emailNorm)) {
-                        Alert.alert('PegouPreço', 'Informe um e-mail válido.');
+                        appAlert('PegouPreço', 'Informe um e-mail válido.');
                         return;
                       }
                       if (!password) {
-                        Alert.alert('PegouPreço', 'Informe a sua senha.');
+                        appAlert('PegouPreço', 'Informe a sua senha.');
                         return;
                       }
                       const data = await syncApi.login(emailNorm, password);
@@ -571,22 +571,22 @@ export function AuthPanel({location}: {location?: string}) {
                     }
                     if (mode === 'register') {
                       if (!nameNorm) {
-                        Alert.alert('PegouPreço', 'Como devemos te chamar?');
+                        appAlert('PegouPreço', 'Como devemos te chamar?');
                         return;
                       }
                       if (!isValidEmail(emailNorm)) {
-                        Alert.alert('PegouPreço', 'Informe um e-mail válido.');
+                        appAlert('PegouPreço', 'Informe um e-mail válido.');
                         return;
                       }
                       if (!isValidPhoneBr(phone)) {
-                        Alert.alert(
+                        appAlert(
                           'PegouPreço',
                           'Informe o celular com DDD, ex.: (81) 99999-0000.',
                         );
                         return;
                       }
                       if (!isValidPassword(password)) {
-                        Alert.alert(
+                        appAlert(
                           'PegouPreço',
                           'A senha precisa ter entre 6 e 72 caracteres.',
                         );
@@ -605,7 +605,7 @@ export function AuthPanel({location}: {location?: string}) {
                       }
                       setOtpSent(true);
                       switchMode('verify');
-                      Alert.alert(
+                      appAlert(
                         'Confirme seu e-mail',
                         'Enviamos um código de 6 dígitos para o e-mail informado.',
                       );
@@ -613,7 +613,7 @@ export function AuthPanel({location}: {location?: string}) {
                     }
                     if (mode === 'otp' && !otpSent) {
                       if (!isValidEmail(emailNorm)) {
-                        Alert.alert('PegouPreço', 'Informe um e-mail válido.');
+                        appAlert('PegouPreço', 'Informe um e-mail válido.');
                         return;
                       }
                       const data = await syncApi.requestOtp({
@@ -622,14 +622,14 @@ export function AuthPanel({location}: {location?: string}) {
                       noteDevCode(data);
                       setOtpSent(true);
                       animateLayout();
-                      Alert.alert(
+                      appAlert(
                         'Código enviado',
                         'Confira o e-mail e digite o código de 6 dígitos.',
                       );
                       return;
                     }
                     if (!isValidOtp(code)) {
-                      Alert.alert(
+                      appAlert(
                         'PegouPreço',
                         'Digite o código de 6 dígitos.',
                       );
@@ -659,7 +659,7 @@ export function AuthPanel({location}: {location?: string}) {
                     withBusy(async () => {
                       const emailNorm = normalizeEmail(email);
                       if (!isValidEmail(emailNorm)) {
-                        Alert.alert('PegouPreço', 'Informe um e-mail válido.');
+                        appAlert('PegouPreço', 'Informe um e-mail válido.');
                         return;
                       }
                       const data = await syncApi.resendCode({
@@ -667,7 +667,7 @@ export function AuthPanel({location}: {location?: string}) {
                         channel: 'email',
                       });
                       noteDevCode(data);
-                      Alert.alert(
+                      appAlert(
                         'Código reenviado',
                         'Confira a caixa de entrada e o spam.',
                       );

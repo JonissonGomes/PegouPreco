@@ -47,6 +47,7 @@ export type AuthResponse = {
   needsVerification?: boolean;
   otpChannel?: 'email' | 'phone';
   role?: 'user' | 'admin';
+  hasPasskey?: boolean;
   tokenExpiresAt?: string | null;
   devCode?: string;
   hint?: string;
@@ -118,6 +119,10 @@ export const syncApi = {
       .then(r => r.data as {ok?: boolean}),
   passkeyLoginOptions: () =>
     client.post('/auth/passkey/login/options', {}).then(r => r.data),
+  disablePasskey: (token: string) =>
+    client
+      .post('/auth/passkey/disable', {}, {headers: auth(token)})
+      .then(r => r.data as {ok?: boolean; hasPasskey?: boolean}),
   passkeyLoginVerify: (body: PasskeyGetResult) =>
     client
       .post<AuthResponse>('/auth/passkey/login/verify', body)
@@ -228,6 +233,7 @@ export const syncApi = {
       address?: string | null;
       cnpj?: string | null;
       kind: 'add' | 'fix' | 'confirm';
+      reportType?: string | null;
       targetMarketId?: string | null;
       note?: string | null;
     },

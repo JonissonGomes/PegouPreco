@@ -20,7 +20,7 @@ import {apiErrorMessage} from '@/data/remote/apiError';
 import {KeyboardSafeSheet} from '@/ui/keyboardSheet';
 import {MarketPinSheet} from '@/ui/MarketPinSheet';
 import {colors, space, spacing} from '@/ui/theme';
-import {formatDistanceKm} from '@/domain/marketUi';
+import {formatDistanceKm, preferAddress} from '@/domain/marketUi';
 import {
   canContribute,
   marketRepo,
@@ -127,7 +127,7 @@ function buildMapHtml(
   <script>
     const center = [${center.latitude}, ${center.longitude}];
     const markets = ${markersJson};
-    const brandRe = /atacad|atacarejo|assa[ií]|carrefour|extra|bompre|sam/i;
+    const brandRe = /atacad|atacarejo|assa[ií]|carrefour|extra|bompre|sam|arco/i;
     const map = L.map('map', {
       zoomControl: false,
       attributionControl: true,
@@ -145,12 +145,16 @@ function buildMapHtml(
       });
     }
 
-    function makeMarketIcon(name) {
-      const brand = brandRe.test(name || '');
+    function makeMarketIcon(name, featured) {
+      const brand = !!featured || brandRe.test(name || '');
       const fill = brand ? '#FFD400' : '#0B2A6B';
       const stroke = brand ? '#0B2A6B' : '#ffffff';
+      const ring = featured
+        ? '<circle cx="14" cy="13" r="8" fill="none" stroke="#0B2A6B" stroke-width="1.6"/>'
+        : '';
       const svg = '<svg viewBox="0 0 28 36" xmlns="http://www.w3.org/2000/svg">'
         + '<path d="M14 1C7.4 1 2 6.4 2 13c0 8.4 12 21 12 21s12-12.6 12-21C26 6.4 20.6 1 14 1z" fill="' + fill + '" stroke="' + stroke + '" stroke-width="2"/>'
+        + ring
         + '<circle cx="14" cy="13" r="4.5" fill="' + (brand ? '#0B2A6B' : '#fff') + '"/>'
         + '</svg>';
       // Sem margin CSS: o iconAnchor já posiciona a ponta do pin na lat/lng.
@@ -171,7 +175,7 @@ function buildMapHtml(
       const pts = [[center[0], center[1]]];
       (list || []).forEach((m) => {
         pts.push([m.lat, m.lng]);
-        const marker = L.marker([m.lat, m.lng], { icon: makeMarketIcon(m.name) }).addTo(layer);
+        const marker = L.marker([m.lat, m.lng], { icon: makeMarketIcon(m.name, m.featured) }).addTo(layer);
         marker.on('click', () => {
           window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({
             type: 'market',
@@ -255,6 +259,7 @@ export function MapScreen() {
         lat: m.lat!,
         lng: m.lng!,
         rating: m.avgRating ?? 0,
+        featured: !!m.featured,
       })),
     [nearby],
   );
@@ -415,11 +420,16 @@ export function MapScreen() {
         marketRepo.upsertGeo(m.id, {
           lat: m.lat ?? lat,
           lng: m.lng ?? lng,
-          address: m.address ?? (r.address as string) ?? null,
+          address: preferAddress(m.address, (r.address as string) ?? null),
           avgRating: r.avgRating != null ? Number(r.avgRating) : m.avgRating,
           ratingsCount:
             r.ratingsCount != null ? Number(r.ratingsCount) : m.ratingsCount,
           priceLevel: (r.priceLevel as string) ?? m.priceLevel,
+          weeklyVisitors:
+            r.weeklyVisitors != null
+              ? Number(r.weeklyVisitors)
+              : m.weeklyVisitors,
+          featured: r.featured === true,
           remoteId: (r.id as string) ?? m.remoteId,
         });
         // Mercados curados na API entram como pins mesmo sem discovery local

@@ -27,6 +27,10 @@ export class DataStore {
   private readonly _memPrefs: MemMap = {};
   private readonly _memMarketSuggestions: MemMap = {};
   private _jev?: JevClient;
+  private readonly _highlightCache = new Map<
+    string,
+    {yes: boolean; until: number}
+  >();
 
   private constructor(mode: 'memory' | 'mongo', db?: Db, client?: MongoClient) {
     this.mode = mode;
@@ -335,6 +339,7 @@ export class DataStore {
       radiusKm != null &&
       radiusKm > 0;
 
+    const weekly = await this._weeklyVisitorsByMarket();
     const out: Record<string, unknown>[] = [];
     for (const m of markets) {
       const id = m.id as string | undefined;
@@ -355,9 +360,74 @@ export class DataStore {
         avgRating: agg.avg,
         ratingsCount: agg.count,
         priceLevel: m.priceLevel ?? (await this._computePriceLevel(id)),
+        weeklyVisitors: weekly.get(id) ?? 0,
       });
     }
+    await this._applyHighlights(out);
     return out;
+  }
+
+  private async _weeklyVisitorsByMarket(): Promise<Map<string, number>> {
+    const since = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const logs =
+      this.mode === 'memory'
+        ? Object.values(this._memLogs)
+        : ((await this.col('price_logs').find().toArray()) as Record<
+            string,
+            unknown
+          >[]);
+    const sets = new Map<string, Set<string>>();
+    for (const log of logs) {
+      const at = Date.parse(String(log.capturedAt ?? log.updatedAt ?? ''));
+      if (!Number.isFinite(at) || at < since) continue;
+      const marketId = String(log.marketId ?? '');
+      const user = String(log.contributorId ?? '');
+      if (!marketId || !user) continue;
+      const set = sets.get(marketId) ?? new Set<string>();
+      set.add(user);
+      sets.set(marketId, set);
+    }
+    const counts = new Map<string, number>();
+    for (const [id, set] of sets) counts.set(id, set.size);
+    return counts;
+  }
+
+  private async _applyHighlights(markets: Record<string, unknown>[]) {
+    const score = (m: Record<string, unknown>) =>
+      Number(m.weeklyVisitors ?? 0) * 2 + Number(m.ratingsCount ?? 0);
+    const candidates = [...markets]
+      .filter(m => {
+        const weekly = Number(m.weeklyVisitors ?? 0);
+        const ratings = Number(m.ratingsCount ?? 0);
+        return weekly >= 2 || ratings >= 4;
+      })
+      .sort((a, b) => score(b) - score(a))
+      .slice(0, 4);
+    const featured = new Set<string>();
+    for (const m of candidates) {
+      const id = String(m.id);
+      const cached = this._highlightCache.get(id);
+      let yes = cached != null && cached.until > Date.now() ? cached.yes : null;
+      if (yes == null) {
+        const args = {
+          marketName: String(m.name ?? ''),
+          weeklyVisitors: Number(m.weeklyVisitors ?? 0),
+          avgRating: Number(m.avgRating ?? 0),
+          ratingsCount: Number(m.ratingsCount ?? 0),
+        };
+        yes = this._jev
+          ? await this._jev.shouldHighlight(args)
+          : args.weeklyVisitors >= 5 ||
+            (args.weeklyVisitors >= 2 && args.avgRating >= 4) ||
+            (args.ratingsCount >= 8 && args.avgRating >= 4.2);
+        this._highlightCache.set(id, {
+          yes,
+          until: Date.now() + 12 * 60 * 60 * 1000,
+        });
+      }
+      if (yes) featured.add(id);
+    }
+    for (const m of markets) m.featured = featured.has(String(m.id));
   }
 
   private async _aggregateReviews(
@@ -604,6 +674,15 @@ export class DataStore {
       return;
     }
     await this.col('users').updateOne({id: userId}, {$set: {passkeys: list}});
+  }
+
+  async clearPasskeys(userId: string): Promise<void> {
+    if (this.mode === 'memory') {
+      const user = this._memUsers[userId];
+      if (user) user.passkeys = [];
+      return;
+    }
+    await this.col('users').updateOne({id: userId}, {$set: {passkeys: []}});
   }
 
   async push(
@@ -1381,6 +1460,7 @@ export class DataStore {
     address?: string | null;
     cnpj?: string | null;
     kind: 'add' | 'fix' | 'confirm';
+    reportType?: string | null;
     targetMarketId?: string | null;
     note?: string | null;
   }): Promise<Record<string, unknown>> {
@@ -1393,6 +1473,7 @@ export class DataStore {
       address: body.address ?? null,
       cnpj: body.cnpj ?? null,
       kind: body.kind,
+      reportType: body.reportType ?? null,
       targetMarketId: body.targetMarketId ?? null,
       note: body.note ?? null,
       userId: body.userId,
@@ -1449,7 +1530,12 @@ export class DataStore {
     suggestion.updatedAt = now;
 
     let market: Record<string, unknown> | undefined;
-    if (args.approve) {
+    if (args.approve && suggestion.reportType === 'missing') {
+      const targetId = suggestion.targetMarketId
+        ? String(suggestion.targetMarketId)
+        : '';
+      if (targetId) await this.adminDeleteMarket(targetId);
+    } else if (args.approve) {
       const kind = String(suggestion.kind ?? 'add');
       const targetId =
         kind === 'fix' || kind === 'confirm'

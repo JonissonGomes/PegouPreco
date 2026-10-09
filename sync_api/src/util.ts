@@ -79,5 +79,6 @@ export function publicUser(
     city: user.city,
     role: resolveRole(user),
     tokenExpiresAt: user.tokenExpiresAt ?? null,
+    hasPasskey: Array.isArray(user.passkeys) && user.passkeys.length > 0,
   };
 }

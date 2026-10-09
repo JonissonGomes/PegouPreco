@@ -504,6 +504,8 @@ export function createRouter(store: DataStore): Router {
       address: body.address != null ? String(body.address) : null,
       cnpj: body.cnpj != null ? String(body.cnpj) : null,
       kind,
+      reportType:
+        body.reportType != null ? String(body.reportType) : null,
       targetMarketId:
         body.targetMarketId != null ? String(body.targetMarketId) : null,
       note: body.note != null ? String(body.note) : null,

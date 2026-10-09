@@ -1,6 +1,5 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
-  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -30,6 +29,7 @@ import {prefs, useAppStore} from '@/store/appStore';
 import {syncApi, type ReputationRemote} from '@/data/remote/syncApi';
 import {registerPasskey} from '@/data/remote/passkeyAuth';
 import {apiErrorMessage} from '@/data/remote/apiError';
+import {appAlert} from '@/ui/appDialog';
 import {reverseGeocode} from '@/data/remote/reverseGeocode';
 import {badgeById} from '@/domain/badges';
 import {TrustEngine} from '@/domain/trust';
@@ -94,6 +94,7 @@ export function ProfileScreen() {
   );
   const [uf, setUf] = useState('');
   const [rep, setRep] = useState<ReputationRemote | null>(null);
+  const [passkeyOn, setPasskeyOn] = useState(false);
 
   const savings3m = useMemo(
     () => savingsSince(lists, monthsAgo(3)),
@@ -166,7 +167,7 @@ export function ProfileScreen() {
         });
       } catch (e) {
         if (!opts?.silent) {
-          Alert.alert('Localização', apiErrorMessage(e));
+          appAlert('Localização', apiErrorMessage(e));
         }
       } finally {
         geoBusyRef.current = false;
@@ -200,6 +201,7 @@ export function ProfileScreen() {
     syncApi
       .me(auth.token)
       .then(me => {
+        setPasskeyOn(!!me.hasPasskey);
         const role = me.role as 'user' | 'admin' | undefined;
         if (!role || role === auth.role) return;
         setAuth({
@@ -289,7 +291,7 @@ export function ProfileScreen() {
                             email: auth.email,
                             channel: 'email',
                           });
-                          Alert.alert(
+                          appAlert(
                             'Código no e-mail',
                             data.hint ??
                               (data.devCode
@@ -297,7 +299,7 @@ export function ProfileScreen() {
                                 : 'Enviamos um novo código para o seu e-mail.'),
                           );
                         } catch (e) {
-                          Alert.alert('PegouPreço', apiErrorMessage(e));
+                          appAlert('PegouPreço', apiErrorMessage(e));
                         }
                       }}>
                       <Text style={styles.linkBtnText}>
@@ -409,17 +411,50 @@ export function ProfileScreen() {
               ) : null}
               <ActionRow
                 icon={<Fingerprint size={20} color={colors.navy} />}
-                label="Ativar passkey"
-                hint="Entrar neste aparelho com biometria"
+                label={passkeyOn ? 'Desabilitar passkey' : 'Ativar passkey'}
+                hint={
+                  passkeyOn
+                    ? 'Biometria já está ativa neste aparelho'
+                    : 'Entrar neste aparelho com biometria'
+                }
                 onPress={() => {
+                  if (passkeyOn) {
+                    appAlert(
+                      'Desabilitar passkey',
+                      'Este aparelho deixa de entrar com biometria.',
+                      [
+                        {label: 'Cancelar', style: 'cancel'},
+                        {
+                          label: 'Desabilitar',
+                          style: 'destructive',
+                          onPress: () => {
+                            void syncApi
+                              .disablePasskey(auth.token)
+                              .then(() => {
+                                setPasskeyOn(false);
+                                appAlert(
+                                  'Passkey',
+                                  'Passkey desabilitada neste aparelho.',
+                                );
+                              })
+                              .catch(e =>
+                                appAlert('PegouPreço', apiErrorMessage(e)),
+                              );
+                          },
+                        },
+                      ],
+                    );
+                    return;
+                  }
                   void registerPasskey(auth.token)
-                    .then(() =>
-                      Alert.alert(
+                    .then(() => {
+                      setPasskeyOn(true);
+                      appAlert(
                         'PegouPreço',
                         'Passkey ativada. Na próxima vez use Entrar com passkey.',
-                      ),
-                    )
-                    .catch(e => Alert.alert('PegouPreço', apiErrorMessage(e)));
+                      );
+                    })
+                    .catch(e => appAlert('PegouPreço', apiErrorMessage(e)));
                 }}
               />
               <ActionRow

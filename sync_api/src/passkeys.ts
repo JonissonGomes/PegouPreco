@@ -131,6 +131,13 @@ export function mountPasskeyRoutes(router: Router, store: DataStore): void {
     return res.json({ok: true});
   });
 
+  router.post('/auth/passkey/disable', async (req, res) => {
+    const userId = await bearerUserId(req, store);
+    if (!userId) return sendError(res, 401, 'unauthorized');
+    await store.clearPasskeys(userId);
+    return res.json({ok: true, hasPasskey: false});
+  });
+
   router.post('/auth/passkey/login/options', async (_req, res) => {
     const options = await generateAuthenticationOptions({
       rpID: config.passkeyRpId,

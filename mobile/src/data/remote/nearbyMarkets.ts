@@ -17,7 +17,7 @@ export const CONFIRM_AT_MARKET_KM = 0.2;
 
 /** Marcas / tipos aceitos no mapa. */
 const BRAND_HINT =
-  /atacad[aã]o|atacarejo|assa[ií]|carrefour|extra|bompre[cç]o|sam'?s|makro|fort\b|hiper|supermercado|mercado|atacadista|rede\s*compra|prezunic|guanabara|pao\s*de\s*acucar|p[aã]o\s*de\s*a[cç][uú]car|big\b|walmart|save\s*money|mix\s*mateus|mix\s*matheus|mateus\s*sup|comercial\s*esperan/i;
+  /atacad[aã]o|atacarejo|assa[ií]|carrefour|extra|bompre[cç]o|sam'?s|makro|fort\b|hiper|supermercado|mercado|atacadista|rede\s*compra|prezunic|guanabara|pao\s*de\s*acucar|p[aã]o\s*de\s*a[cç][uú]car|big\b|walmart|save\s*money|mix\s*mateus|mix\s*matheus|mateus\s*sup|comercial\s*esperan|arco\s*mix|arcomix/i;
 
 const SOURCE_RANK: Record<NearbyMarketHit['source'], number> = {
   osm: 3,
@@ -139,14 +139,27 @@ function formatOsmName(tags: Record<string, string>): string {
 }
 
 function formatOsmAddress(tags: Record<string, string>): string | null {
-  const addr = [
-    tags['addr:street'],
-    tags['addr:housenumber'],
-    tags['addr:suburb'] || tags['addr:city'],
-  ]
+  const street = [tags['addr:street'], tags['addr:housenumber']]
     .filter(Boolean)
     .join(', ');
-  return addr || null;
+  const hood = (
+    tags['addr:suburb'] ||
+    tags['addr:neighbourhood'] ||
+    ''
+  ).trim();
+  const city = (
+    tags['addr:city'] ||
+    tags['addr:town'] ||
+    tags['addr:municipality'] ||
+    ''
+  ).trim();
+  const parts = [street, hood, city].filter(Boolean);
+  const unique = parts.filter(
+    (part, index) =>
+      parts.findIndex(other => other.toLowerCase() === part.toLowerCase()) ===
+      index,
+  );
+  return unique.length ? unique.join(', ') : null;
 }
 
 /** OpenStreetMap Overpass — fonte principal (nome + coordenada reais). */
@@ -164,6 +177,10 @@ export async function fetchOsmNearbyMarkets(
   way["shop"="wholesale"](around:${radiusM},${lat},${lng});
   node["shop"="convenience"]["brand"~"Assa|Extra|Bompre|Carrefour",i](around:${radiusM},${lat},${lng});
   node["amenity"="marketplace"](around:${Math.min(radiusM, 8000)},${lat},${lng});
+  node["name"~"Arco.?Mix",i](around:${radiusM},${lat},${lng});
+  way["name"~"Arco.?Mix",i](around:${radiusM},${lat},${lng});
+  node["brand"~"Arco",i](around:${radiusM},${lat},${lng});
+  way["brand"~"Arco",i](around:${radiusM},${lat},${lng});
 );
 out center tags;
 `;
@@ -287,6 +304,7 @@ async function fetchMapboxNearbyMarkets(
     'Makro',
     'Fort Atacadista',
     'supermercado',
+    'Arco Mix',
   ];
   const hits: NearbyMarketHit[] = [];
   await Promise.all(
@@ -308,11 +326,19 @@ async function fetchMapboxNearbyMarkets(
           if (haversineKm({lat, lng}, {lat: plat, lng: plng}) > radiusKm) {
             continue;
           }
+          const city =
+            f.context?.find(c => c.id?.startsWith('place.'))?.text ?? '';
+          const place = (f.place_name ?? '').trim();
+          const street = (f.properties?.address ?? '').trim();
+          let address = place || null;
+          if (street && city && !street.toLowerCase().includes(city.toLowerCase())) {
+            address = place.includes(',') ? place : `${street}, ${city}`;
+          }
           hits.push({
             name,
             lng: plng,
             lat: plat,
-            address: f.place_name ?? null,
+            address,
             source: 'mapbox',
           });
         }

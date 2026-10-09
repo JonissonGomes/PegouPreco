@@ -15,14 +15,38 @@ import {
   type PriceBand,
 } from '@/domain/marketUi';
 import type {Market} from '@/data/types';
-import {canContribute, useAppStore} from '@/store/appStore';
+import {canContribute, prefs, useAppStore} from '@/store/appStore';
 import {syncApi} from '@/data/remote/syncApi';
 import {apiErrorMessage} from '@/data/remote/apiError';
+import {reverseGeocode} from '@/data/remote/reverseGeocode';
+import {MAPBOX_ACCESS_TOKEN} from '@/config/env';
+import {PIN_REPORTS, type PinReportId} from '@/domain/pinReports';
+import {getState} from '@/data/db';
 
 function BandIcon({band}: {band: PriceBand}) {
   if (band === 'low') return <TrendingDown size={16} color={colors.trustGreen} />;
   if (band === 'high') return <TrendingUp size={16} color={colors.danger} />;
   return <Minus size={16} color={colors.trustYellow} />;
+}
+
+function marketKey(market: Market) {
+  return market.remoteId || `local:${market.id}`;
+}
+
+function localWeeklyVisitors(marketId: number) {
+  const since = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const users = new Set<string>();
+  for (const log of getState().price_logs) {
+    if (log.marketId !== marketId) continue;
+    if (Date.parse(log.capturedAt) < since) continue;
+    if (log.contributorId) users.add(log.contributorId);
+  }
+  for (const list of getState().shopping_lists) {
+    if (list.marketId !== marketId) continue;
+    if (Date.parse(list.finishedAt) < since) continue;
+    users.add('local-shopper');
+  }
+  return users.size;
 }
 
 function bandStyle(band: PriceBand) {
@@ -52,6 +76,10 @@ export function MarketPinSheet({
   const [burst, setBurst] = useState<{points: number; title: string} | null>(
     null,
   );
+  const [addressLine, setAddressLine] = useState('');
+  const [confirmedKeys, setConfirmedKeys] = useState<string[]>(() =>
+    prefs.confirmedMarketKeys(),
+  );
 
   useEffect(() => {
     if (market) {
@@ -65,6 +93,40 @@ export function MarketPinSheet({
   const dist = market ? distanceKm : cachedDist;
   const band = shown ? resolvePriceBand(shown) : 'unknown';
   const rating = shown?.avgRating ?? 0;
+  const visitors = shown
+    ? Math.max(shown.weeklyVisitors ?? 0, localWeeklyVisitors(shown.id))
+    : 0;
+  const locationConfirmed = shown
+    ? confirmedKeys.includes(marketKey(shown))
+    : false;
+
+  useEffect(() => {
+    if (!shown?.lat || shown.lng == null) {
+      setAddressLine(shown?.address || '');
+      return;
+    }
+    const current = shown.address?.trim() || '';
+    const thin =
+      !current || !current.includes(',') || /^BR[-\s]?\d+$/i.test(current);
+    if (!thin) {
+      setAddressLine(current);
+      return;
+    }
+    let cancelled = false;
+    setAddressLine(current);
+    void reverseGeocode(shown.lat, shown.lng, MAPBOX_ACCESS_TOKEN).then(hit => {
+      if (cancelled || !hit?.city) return;
+      const base = current && !/^BR[-\s]?\d+$/i.test(current) ? current : '';
+      const line = [base, hit.neighborhood, hit.city]
+        .filter(Boolean)
+        .filter((part, index, all) => all.indexOf(part) === index)
+        .join(', ');
+      setAddressLine(line || hit.city);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [shown?.id, shown?.address, shown?.lat, shown?.lng]);
 
   const requireVerified = (action: string) => {
     if (!canContribute(auth) || !auth?.token) {
@@ -115,7 +177,11 @@ export function MarketPinSheet({
     }
   };
 
-  const submitSuggestion = async (kind: 'confirm' | 'fix') => {
+  const submitSuggestion = async (
+    kind: 'confirm' | 'fix',
+    reportType?: PinReportId,
+    reportLabel?: string,
+  ) => {
     if (!shown) return;
     if (!requireVerified('contribuir com mercados')) return;
     if (shown.lat == null || shown.lng == null) {
@@ -128,15 +194,21 @@ export function MarketPinSheet({
         name: shown.name,
         lat: shown.lat,
         lng: shown.lng,
-        address: shown.address,
+        address: addressLine || shown.address,
         cnpj: shown.cnpj,
         kind,
+        reportType,
         targetMarketId: shown.remoteId,
         note:
           kind === 'fix'
-            ? 'Usuário reportou pin incorreto'
+            ? reportLabel ?? 'Usuário reportou pin incorreto'
             : 'Usuário confirmou localização',
       });
+      if (kind === 'confirm') {
+        const key = marketKey(shown);
+        prefs.markMarketConfirmed(key);
+        setConfirmedKeys(prefs.confirmedMarketKeys());
+      }
       appAlert(
         'Obrigado!',
         kind === 'confirm'
@@ -150,6 +222,16 @@ export function MarketPinSheet({
     }
   };
 
+  const reportPin = () => {
+    appAlert('Reportar erro', 'O que está errado neste pin?', [
+      ...PIN_REPORTS.map(item => ({
+        label: item.label,
+        onPress: () => void submitSuggestion('fix', item.id, item.label),
+      })),
+      {label: 'Cancelar', style: 'cancel' as const},
+    ]);
+  };
+
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
       <KeyboardSafeSheet visible={!!market && !reviewOpen} onClose={onClose}>
@@ -161,8 +243,8 @@ export function MarketPinSheet({
               </View>
               <View style={{flex: 1}}>
                 <Text style={styles.title}>{shown.name}</Text>
-                <Text style={styles.addr} numberOfLines={2}>
-                  {shown.address || 'Endereço não informado'}
+                <Text style={styles.addr} numberOfLines={3}>
+                  {addressLine || 'Buscando endereço…'}
                 </Text>
               </View>
             </View>
@@ -191,7 +273,7 @@ export function MarketPinSheet({
                 </Text>
               </View>
               <View style={[styles.stat, bandStyle(band)]}>
-                <Text style={styles.statLabel}>Preço</Text>
+                <Text style={styles.statLabel}>Tendência</Text>
                 <View style={styles.ratingRow}>
                   <BandIcon band={band} />
                   <Text style={styles.statValue}>{priceBandLabel(band)}</Text>
@@ -199,6 +281,11 @@ export function MarketPinSheet({
                 <Text style={styles.statHint}>pela comunidade</Text>
               </View>
             </View>
+            <Text style={styles.visits}>
+              {visitors === 1
+                ? '1 pessoa passou neste mercado na semana'
+                : `${visitors} pessoas passaram neste mercado na semana`}
+            </Text>
 
             {onUse ? (
               <AppButton
@@ -214,15 +301,17 @@ export function MarketPinSheet({
               label="Avaliar mercado · +5 pts"
               onPress={() => setReviewOpen(true)}
             />
-            <AppButton
-              outlined
-              label="Confirmar localização"
-              onPress={() => void submitSuggestion('confirm')}
-            />
+            {locationConfirmed ? null : (
+              <AppButton
+                outlined
+                label="Confirmar localização"
+                onPress={() => void submitSuggestion('confirm')}
+              />
+            )}
             <AppButton
               outlined
               label="Reportar erro neste pin"
-              onPress={() => void submitSuggestion('fix')}
+              onPress={reportPin}
             />
             <Pressable style={styles.secondary} onPress={onClose}>
               <Text style={styles.secondaryText}>Fechar</Text>
@@ -268,6 +357,12 @@ const styles = StyleSheet.create({
     letterSpacing: -0.3,
   },
   addr: {marginTop: 4, color: colors.muted, fontWeight: '600', fontSize: 13},
+  visits: {
+    marginTop: 10,
+    color: colors.navy,
+    fontWeight: '700',
+    fontSize: 13,
+  },
   stats: {flexDirection: 'row', gap: 8, marginTop: 16, marginBottom: 8},
   stat: {
     flex: 1,

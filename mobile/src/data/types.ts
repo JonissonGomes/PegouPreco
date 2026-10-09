@@ -31,6 +31,8 @@ export type Market = {
   avgRating: number | null;
   ratingsCount: number;
   priceLevel: string | null;
+  weeklyVisitors?: number;
+  featured?: boolean;
   remoteId: string | null;
   updatedAt: string;
   synced: number;

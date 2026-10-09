@@ -41,14 +41,30 @@ export function resolvePriceBand(market: Market): PriceBand {
 export function priceBandLabel(band: PriceBand): string {
   switch (band) {
     case 'low':
-      return 'Preço baixo';
+      return 'Em baixa';
     case 'fair':
-      return 'Preço médio';
+      return 'Estável';
     case 'high':
-      return 'Preço alto';
+      return 'Em alta';
     default:
       return 'Sem dados';
   }
+}
+
+/** Prefere o texto que já traz cidade, em vez de só a via (ex.: BR-101). */
+export function preferAddress(
+  current: string | null | undefined,
+  incoming: string | null | undefined,
+): string | null {
+  const score = (value: string | null | undefined) => {
+    const text = (value ?? '').trim();
+    if (!text) return 0;
+    if (/^BR[-\s]?\d+$/i.test(text)) return 1;
+    return text.length + (text.includes(',') ? 24 : 0);
+  };
+  return score(incoming) >= score(current)
+    ? (incoming ?? current ?? null)
+    : (current ?? null);
 }
 
 export function formatDistanceKm(km: number | null | undefined): string {

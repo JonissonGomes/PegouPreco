@@ -6,6 +6,7 @@ import {
   lineWholesaleTotal,
 } from '@/domain/pricing';
 import {haversineKm} from '@/data/remote/nearbyMarkets';
+import {preferAddress} from '@/domain/marketUi';
 import {
   getState,
   metaGet,
@@ -114,6 +115,20 @@ export const prefs = {
   },
   getLastSyncAt: () => metaGet('lastSyncAt') || new Date(0).toISOString(),
   setLastSyncAt: (iso: string) => metaSet('lastSyncAt', iso),
+  confirmedMarketKeys: (): string[] => {
+    try {
+      const raw = metaGet('confirmedMarkets');
+      const parsed = raw ? (JSON.parse(raw) as string[]) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  },
+  markMarketConfirmed: (key: string) => {
+    const next = new Set(prefs.confirmedMarketKeys());
+    next.add(key);
+    metaSet('confirmedMarkets', JSON.stringify([...next]));
+  },
 };
 
 /** Conta verificada por e-mail pode contribuir/votar. */
@@ -196,7 +211,7 @@ export const marketRepo = {
     marketRepo.upsertGeo(m.id, {
       lat: hit.lat,
       lng: hit.lng,
-      address: hit.address ?? m.address,
+      address: preferAddress(m.address, hit.address),
     });
     return m;
   },
@@ -231,6 +246,8 @@ export const marketRepo = {
         | 'avgRating'
         | 'ratingsCount'
         | 'priceLevel'
+        | 'weeklyVisitors'
+        | 'featured'
         | 'remoteId'
       >
     >,
