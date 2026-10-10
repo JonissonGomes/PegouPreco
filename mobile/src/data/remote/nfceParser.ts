@@ -36,6 +36,55 @@ function issuedAtFromHtml(html: string): string | null {
   return date.toISOString();
 }
 
+function decodeXml(value: string): string {
+  return value
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .trim();
+}
+
+function xmlTag(block: string, name: string): string | null {
+  const m = block.match(new RegExp(`<(?:\\w+:)?${name}>([^<]*)</`));
+  return m ? decodeXml(m[1]) : null;
+}
+
+const SEFAZ_ERRORS: Record<string, string> = {
+  '217': 'A SEFAZ não encontrou essa nota.',
+  '236': 'O QR não confere. Enquadre o código inteiro, inclusive as bordas.',
+};
+
+export function sefazErrorMessage(code: string): string {
+  return SEFAZ_ERRORS[code] ?? `A SEFAZ recusou a consulta (código ${code}).`;
+}
+
+/** Resposta XML da consulta por QR (nfeProc), usada em Pernambuco. */
+export function parseNfceXml(xml: string): NfceParseResult {
+  const items: NfceItem[] = [];
+  for (const det of xml.split(/<(?:\w+:)?det[\s>]/).slice(1)) {
+    const description = xmlTag(det, 'xProd');
+    const qty = Number.parseFloat(xmlTag(det, 'qCom') ?? '1');
+    const unit = Number.parseFloat(xmlTag(det, 'vUnCom') ?? '');
+    if (!description || !Number.isFinite(unit) || unit <= 0 || !(qty > 0)) {
+      continue;
+    }
+    items.push({description, quantity: qty, unitPrice: unit});
+  }
+  const emit = xml.split(/<(?:\w+:)?dest[\s>]/)[0] ?? xml;
+  const issued = xmlTag(xml, 'dhEmi');
+  const issuedDate = issued ? new Date(issued) : null;
+  return {
+    marketName: xmlTag(emit, 'xFant') ?? xmlTag(emit, 'xNome'),
+    marketCnpj: xmlTag(emit, 'CNPJ'),
+    issuedAt:
+      issuedDate && !Number.isNaN(issuedDate.getTime())
+        ? issuedDate.toISOString()
+        : null,
+    items,
+  };
+}
+
 /** Parser genérico de HTML NFC-e (tabelas + regex Qtd x Unit). */
 export function parseNfceHtml(html: string): NfceParseResult {
   const items: NfceItem[] = [];

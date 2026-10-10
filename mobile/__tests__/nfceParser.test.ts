@@ -1,4 +1,4 @@
-import {parseNfceHtml} from '../src/data/remote/nfceParser';
+import {parseNfceHtml, parseNfceXml} from '../src/data/remote/nfceParser';
 
 describe('nfceParser', () => {
   it('extrai itens de padrão Qtd x Unit', () => {
@@ -13,6 +13,23 @@ describe('nfceParser', () => {
     const result = parseNfceHtml(html);
     expect(result.items.length).toBeGreaterThanOrEqual(1);
     expect(result.items[0].unitPrice).toBeGreaterThan(0);
+  });
+
+  it('lê o XML devolvido pelo QR de Pernambuco', () => {
+    const xml = `
+      <nfeProc xmlns="http://www.portalfiscal.inf.br/nfe">
+        <NFe><infNFe>
+          <ide><dhEmi>2026-10-10T15:32:29-03:00</dhEmi></ide>
+          <emit><CNPJ>20308157085103</CNPJ><xNome>ATACAREJO IGARASSU</xNome></emit>
+          <det nItem="1"><prod><xProd>CEBOLA ROXA KG</xProd><qCom>0.1600</qCom><vUnCom>7.98</vUnCom></prod></det>
+        </infNFe></NFe>
+      </nfeProc>`;
+    const result = parseNfceXml(xml);
+    expect(result.marketName).toBe('ATACAREJO IGARASSU');
+    expect(result.items).toEqual([
+      {description: 'CEBOLA ROXA KG', quantity: 0.16, unitPrice: 7.98},
+    ]);
+    expect(result.issuedAt).toBe(new Date('2026-10-10T15:32:29-03:00').toISOString());
   });
 
   it('guarda a data de emissão', () => {

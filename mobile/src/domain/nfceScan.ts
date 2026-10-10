@@ -3,10 +3,6 @@
 const RECEIPT_HINT =
   /nfc[\s-]*e|danfe|documento auxiliar|chave de acesso|consumidor eletr/i;
 
-const CUF_CONSULT: Record<string, string> = {
-  '26': 'https://nfce.sefaz.pe.gov.br/nfce/consulta',
-};
-
 export function isValidAccessKey(key: string): boolean {
   if (!/^\d{44}$/.test(key)) return false;
   let weight = 2;
@@ -40,27 +36,31 @@ export function looksLikeReceipt(text: string): boolean {
   return RECEIPT_HINT.test(text) || extractAccessKey(text) != null;
 }
 
-function urlFromPrintedHost(text: string, key: string): string | null {
-  const host = text.match(
-    /nfce\.sefaz\.[a-z]{2}\.gov\.br(?:\/[\w./-]+)?/i,
-  );
-  if (!host) return null;
-  const path = host[0].replace(/\/$/, '');
-  const base = path.includes('/') ? path : `${path}/nfce/consulta`;
-  return `https://${base}?p=${key}`;
+/**
+ * Pernambuco publica o QR em `www.sefaz.pe.gov.br/nfce/consulta`, que responde 404.
+ * A consulta que devolve a nota é `nfce-web/consultarNFCe` na porta 444.
+ * A chave impressa, sem o hash do QR, não abre a nota.
+ */
+export function normalizeNfceConsultUrl(raw: string): string {
+  const trimmed = raw.trim().replace(/^http:\/\//i, 'https://');
+  const qIndex = trimmed.indexOf('?');
+  const query = qIndex >= 0 ? trimmed.slice(qIndex) : '';
+  const before = (qIndex >= 0 ? trimmed.slice(0, qIndex) : trimmed).toLowerCase();
+  const pe = /sefaz\.pe\.gov\.br/.test(before);
+  const hasParams = /[?&](?:p|chnfe)=/i.test(query);
+  if (!pe || !hasParams) return trimmed;
+  const host = /nfcehomolog/.test(before)
+    ? 'nfcehomolog.sefaz.pe.gov.br'
+    : 'nfce.sefaz.pe.gov.br';
+  return `https://${host}:444/nfce-web/consultarNFCe${query}`;
 }
 
-/** URL pronta do QR, ou consulta montada com a chave impressa. */
+/** URL do QR, já no endereço que a SEFAZ responde. */
 export function nfceConsultUrl(payload: string): string | null {
   const raw = payload.trim();
   if (!raw) return null;
-  if (/^https?:\/\//i.test(raw) && /nfce|sefaz|chnfe/i.test(raw)) return raw;
-  const key = extractAccessKey(raw);
-  if (!key) return null;
-  return (
-    urlFromPrintedHost(raw, key) ??
-    (CUF_CONSULT[key.slice(0, 2)]
-      ? `${CUF_CONSULT[key.slice(0, 2)]}?p=${key}`
-      : null)
-  );
+  if (/^https?:\/\//i.test(raw) && /nfce|sefaz|chnfe/i.test(raw)) {
+    return normalizeNfceConsultUrl(raw);
+  }
+  return null;
 }

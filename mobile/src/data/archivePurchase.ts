@@ -1,4 +1,5 @@
 import type {NfceParseResult} from './remote/nfceParser';
+import {fetchAndParseNfce} from './remote/sefazClient';
 import {extractAccessKey} from '@/domain/nfceScan';
 import {
   marketRepo,
@@ -11,6 +12,11 @@ import {
 export type ArchiveOutcome =
   | {ok: true; itemCount: number; marketName: string; finishedAt: string}
   | {ok: false; reason: 'empty' | 'duplicate'};
+
+export async function importPastNfce(qrUrl: string): Promise<ArchiveOutcome> {
+  const parsed = await fetchAndParseNfce(qrUrl);
+  return archiveNfcePurchase(parsed, qrUrl);
+}
 
 /** Grava a NFC-e como compra já feita, sem mexer no carrinho aberto. */
 export function archiveNfcePurchase(

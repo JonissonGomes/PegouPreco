@@ -37,6 +37,7 @@ import {
   useMarketName,
 } from '@/store/appStore';
 import {fetchAndParseNfce} from '@/data/remote/sefazClient';
+import {importPastNfce} from '@/data/archivePurchase';
 import {extractAccessKey, looksLikeReceipt, nfceConsultUrl} from '@/domain/nfceScan';
 import {geocodeMarketNear} from '@/data/remote/geocodeMarket';
 import {MAPBOX_ACCESS_TOKEN} from '@/config/env';
@@ -163,6 +164,9 @@ export function CaptureScreen() {
   const [raw, setRaw] = useState('');
   const [qrUrl, setQrUrl] = useState('');
   const [extra, setExtra] = useState<ExtraMode>('none');
+  const [pastMode, setPastMode] = useState(false);
+  const pastModeRef = useRef(false);
+  pastModeRef.current = pastMode;
   const [scanning, setScanning] = useState(false);
   const [status, setStatus] = useState('Aponte para a etiqueta');
 
@@ -239,7 +243,7 @@ export function CaptureScreen() {
             if (opts?.manual) {
               appAlert(
                 'Nota fiscal',
-                'Reconheci a nota, mas não a chave. Enquadre o QR do rodapé.',
+                'Reconheci a nota, mas só a chave impressa não abre a consulta. Enquadre o QR do rodapé.',
               );
             }
             return null;
@@ -503,7 +507,30 @@ export function CaptureScreen() {
       return false;
     }
   };
-  importNfceRef.current = fetchNfce;
+  const savePast = async (url: string): Promise<boolean> => {
+    try {
+      const outcome = await importPastNfce(url);
+      if (!outcome.ok) {
+        appAlert(
+          'Nota antiga',
+          outcome.reason === 'duplicate'
+            ? 'Essa nota já foi importada.'
+            : 'A consulta não trouxe itens. Enquadre o QR do rodapé.',
+        );
+        return false;
+      }
+      refresh();
+      appAlert(
+        'Compra passada salva',
+        `${outcome.itemCount} itens de ${outcome.marketName} foram para Listas salvas.`,
+      );
+      return true;
+    } catch (e) {
+      appAlert('SEFAZ', e instanceof Error ? e.message : String(e));
+      return false;
+    }
+  };
+  importNfceRef.current = pastModeRef.current ? savePast : fetchNfce;
 
   const codeScanner = useCodeScanner({
     codeTypes: ['qr', 'pdf-417'],
@@ -523,7 +550,7 @@ export function CaptureScreen() {
   });
 
   const onShutter = async () => {
-    if (!ensureList()) return;
+    if (!pastMode && !ensureList()) return;
     if (!cameraOn || !cameraGranted) {
       const ok = await ensureCamera();
       if (!ok) return;
@@ -634,6 +661,24 @@ export function CaptureScreen() {
             </Text>
           </Pressable>
           <Pressable
+            style={[styles.altBtn, pastMode && styles.altOn]}
+            onPress={() => {
+              setPastMode(on => {
+                const next = !on;
+                setStatus(
+                  next
+                    ? 'Nota antiga: aponte para o QR do rodapé'
+                    : 'Aponte para a etiqueta',
+                );
+                return next;
+              });
+            }}>
+            <QrCode size={16} color={pastMode ? colors.navy : '#E5E7EB'} />
+            <Text style={[styles.altText, pastMode ? styles.altTextOn : null]}>
+              Nota antiga
+            </Text>
+          </Pressable>
+          <Pressable
             style={[styles.altBtn, extra === 'nfce' && styles.altOn]}
             onPress={() => setExtra(e => (e === 'nfce' ? 'none' : 'nfce'))}>
             <QrCode
@@ -675,8 +720,14 @@ export function CaptureScreen() {
       <KeyboardSafeSheet
         visible={extra === 'nfce'}
         onClose={() => setExtra('none')}>
-        <Text style={styles.modalTitle}>QR NFC-e</Text>
-        <Text style={styles.hint}>Cole a URL do cupom fiscal</Text>
+        <Text style={styles.modalTitle}>
+          {pastMode ? 'Nota antiga' : 'QR NFC-e'}
+        </Text>
+        <Text style={styles.hint}>
+          {pastMode
+            ? 'A nota entra em Listas salvas, sem mexer na compra aberta.'
+            : 'Cole a URL do cupom para somar na compra aberta.'}
+        </Text>
         <AppField
           value={qrUrl}
           onChangeText={setQrUrl}
@@ -684,7 +735,13 @@ export function CaptureScreen() {
           autoCapitalize="none"
           compact
         />
-        <AppButton label="Buscar na SEFAZ" onPress={fetchNfce} />
+        <AppButton
+          label={pastMode ? 'Guardar compra passada' : 'Buscar na SEFAZ'}
+          onPress={() => {
+            if (!qrUrl.trim()) return;
+            void (pastMode ? savePast(qrUrl) : fetchNfce());
+          }}
+        />
       </KeyboardSafeSheet>
 
       <KeyboardSafeSheet

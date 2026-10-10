@@ -9,8 +9,7 @@ import {KeyboardSafeSheet} from '@/ui/keyboardSheet';
 import {BackCircleButton, SoftHeader} from '@/ui/screenChrome';
 import {colors, space} from '@/ui/theme';
 import {nfceConsultUrl} from '@/domain/nfceScan';
-import {archiveNfcePurchase} from '@/data/archivePurchase';
-import {fetchAndParseNfce} from '@/data/remote/sefazClient';
+import {importPastNfce} from '@/data/archivePurchase';
 import {refreshPermissionFlags} from '@/app/permissions';
 import {useAppStore} from '@/store/appStore';
 
@@ -52,8 +51,7 @@ export function ImportPurchaseScreen() {
       lock.current = target;
       setBusy(true);
       try {
-        const parsed = await fetchAndParseNfce(target);
-        const outcome = archiveNfcePurchase(parsed, target);
+        const outcome = await importPastNfce(target);
         if (!outcome.ok) {
           lock.current = null;
           appAlert(
@@ -93,8 +91,8 @@ export function ImportPurchaseScreen() {
   return (
     <View style={styles.root}>
       <SoftHeader
-        title="Importar compra"
-        subtitle="Nota de uma compra que você já fez"
+        title="Nota antiga"
+        subtitle="NFC-e de uma compra que você já fez"
         leading={
           <BackCircleButton onPress={() => nav.goBack()}>
             <ArrowLeft color={colors.navy} size={22} />

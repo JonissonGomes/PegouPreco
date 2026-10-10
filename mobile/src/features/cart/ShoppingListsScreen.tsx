@@ -119,7 +119,7 @@ export function ShoppingListsScreen() {
             style={styles.importBtn}
             accessibilityLabel="Importar compra anterior">
             <QrCode size={16} color={colors.navy} />
-            <Text style={styles.importText}>Importar</Text>
+            <Text style={styles.importText}>Nota antiga</Text>
           </Pressable>
         }
       />

@@ -30,14 +30,14 @@ describe('nfceScan', () => {
     const text = `NFC-e\nConsulta pela Chave de Acesso em nfce.sefaz.pe.gov.br/nfce/consulta\n${printed}`;
     expect(extractAccessKey(text)).toBe(KEY);
     expect(looksLikeReceipt(text)).toBe(true);
-    expect(nfceConsultUrl(text)).toBe(
-      `https://nfce.sefaz.pe.gov.br/nfce/consulta?p=${KEY}`,
-    );
+    expect(nfceConsultUrl(text)).toBeNull();
   });
 
-  it('aceita a URL que vem do QR', () => {
-    const url = `https://nfce.sefaz.pe.gov.br/nfce/consulta?p=${KEY}|2|1|1|ABC`;
-    expect(nfceConsultUrl(url)).toBe(url);
+  it('troca a URL antiga de PE, que responde 404, pela consulta na porta 444', () => {
+    const url = `http://www.sefaz.pe.gov.br/nfce/consulta?p=${KEY}|2|1|1|ABC`;
+    expect(nfceConsultUrl(url)).toBe(
+      `https://nfce.sefaz.pe.gov.br:444/nfce-web/consultarNFCe?p=${KEY}|2|1|1|ABC`,
+    );
   });
 
   it('não trata etiqueta de gôndola como nota', () => {
