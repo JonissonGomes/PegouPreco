@@ -22,6 +22,7 @@ import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {HomeScreen} from '@/features/home/HomeScreen';
 import {CartScreen} from '@/features/cart/CartScreen';
 import {ShoppingListsScreen} from '@/features/cart/ShoppingListsScreen';
+import {ImportPurchaseScreen} from '@/features/cart/ImportPurchaseScreen';
 import {MapScreen} from '@/features/map/MapScreen';
 import {CaptureScreen} from '@/features/capture/CaptureScreen';
 import {CommunityScreen} from '@/features/community/CommunityScreen';
@@ -176,6 +177,7 @@ export function RootNavigation() {
           <>
             <Stack.Screen name="Main" component={Tabs} />
             <Stack.Screen name="ShoppingLists" component={ShoppingListsScreen} />
+            <Stack.Screen name="ImportPurchase" component={ImportPurchaseScreen} />
             <Stack.Screen name="History" component={HistoryScreen} />
             <Stack.Screen name="ProductDetail" component={ProductDetailScreen} />
             <Stack.Screen name="AdminMarkets" component={AdminMarketsScreen} />

@@ -14,4 +14,10 @@ describe('nfceParser', () => {
     expect(result.items.length).toBeGreaterThanOrEqual(1);
     expect(result.items[0].unitPrice).toBeGreaterThan(0);
   });
+
+  it('guarda a data de emissão', () => {
+    const html = 'Data de autorização: 10/10/2026 15:32:29';
+    const result = parseNfceHtml(html);
+    expect(result.issuedAt).toBe(new Date(2026, 9, 10, 15, 32, 29).toISOString());
+  });
 });

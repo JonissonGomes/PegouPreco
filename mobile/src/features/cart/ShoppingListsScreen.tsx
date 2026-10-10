@@ -13,6 +13,7 @@ import {useNavigation} from '@react-navigation/native';
 import {
   ArrowLeft,
   ClipboardList,
+  QrCode,
   ShoppingCart,
   Store,
 } from 'lucide-react-native';
@@ -112,6 +113,15 @@ export function ShoppingListsScreen() {
             <ArrowLeft color={colors.navy} size={22} />
           </BackCircleButton>
         }
+        trailing={
+          <Pressable
+            onPress={() => nav.navigate('ImportPurchase')}
+            style={styles.importBtn}
+            accessibilityLabel="Importar compra anterior">
+            <QrCode size={16} color={colors.navy} />
+            <Text style={styles.importText}>Importar</Text>
+          </Pressable>
+        }
       />
       <FlatList
         data={lists}
@@ -124,7 +134,7 @@ export function ShoppingListsScreen() {
           <FeatureEmptyGuide
             HeroIcon={ClipboardList}
             title="Nenhuma lista salva ainda"
-            subtitle="Listas finalizadas ficam aqui para você refazer a mesma cesta depois."
+            subtitle="Finalize uma compra ou importe uma nota antiga. As listas ficam aqui para você refazer a cesta."
             stepsLabel="O que é esta tela"
             steps={[
               {
@@ -149,8 +159,8 @@ export function ShoppingListsScreen() {
             PrimaryIcon={ShoppingCart}
             primaryLabel="Ir para Compras"
             onPrimary={() => nav.navigate('Main', {screen: 'Lists'})}
-            secondaryLabel="Ver mercados no mapa"
-            onSecondary={() => nav.navigate('Main', {screen: 'Map'})}
+            secondaryLabel="Importar nota antiga"
+            onSecondary={() => nav.navigate('ImportPurchase')}
           />
         }
         ListFooterComponent={
@@ -292,6 +302,16 @@ const styles = StyleSheet.create({
   name: {fontWeight: '900', color: colors.navy, fontSize: 16},
   muted: {color: colors.muted, marginTop: 4, fontWeight: '600', fontSize: 13},
   price: {fontWeight: '900', color: colors.navy, fontSize: 17},
+  importBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#fff',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  importText: {fontWeight: '800', color: colors.navy, fontSize: 13},
   footerHint: {
     textAlign: 'center',
     color: colors.muted,

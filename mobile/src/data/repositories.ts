@@ -356,6 +356,9 @@ export const priceLogRepo = {
     getState().price_logs.push({...log, id: nextId('price_logs')});
     saveState();
   },
+  hasNfceKey(key: string): boolean {
+    return getState().price_logs.some(l => l.nfceKey === key);
+  },
   statsForProduct(productId: number) {
     const logs = priceLogRepo.forProduct(productId);
     if (!logs.length) return null;
