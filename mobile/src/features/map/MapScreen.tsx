@@ -177,6 +177,30 @@ function buildMapHtml(
     map.on('dragstart', function (e) {
       if (e && e.originalEvent) userMoved = true;
     });
+    function postHold(lat, lng) {
+      window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({
+        type: 'hold',
+        lat: lat,
+        lng: lng,
+      }));
+    }
+    map.on('contextmenu', function (e) {
+      if (e.originalEvent && e.originalEvent.preventDefault) {
+        e.originalEvent.preventDefault();
+      }
+      postHold(e.latlng.lat, e.latlng.lng);
+    });
+    const box = map.getContainer();
+    let holdTimer = null;
+    box.addEventListener('touchstart', function (ev) {
+      const t = ev.touches && ev.touches[0];
+      if (!t) return;
+      const at = map.mouseEventToLatLng(t);
+      clearTimeout(holdTimer);
+      holdTimer = setTimeout(function () { postHold(at.lat, at.lng); }, 650);
+    }, {passive: true});
+    box.addEventListener('touchend', function () { clearTimeout(holdTimer); });
+    box.addEventListener('touchmove', function () { clearTimeout(holdTimer); });
 
     function renderMarkets(list) {
       layer.clearLayers();
@@ -242,6 +266,9 @@ export function MapScreen() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [addName, setAddName] = useState('');
+  const [addPoint, setAddPoint] = useState<{lat: number; lng: number} | null>(
+    null,
+  );
   const [addBusy, setAddBusy] = useState(false);
   const auth = useAppStore(s => s.auth);
 
@@ -466,7 +493,18 @@ export function MapScreen() {
 
   const onMessage = (e: WebViewMessageEvent) => {
     try {
-      const msg = JSON.parse(e.nativeEvent.data) as {type?: string; id?: string};
+      const msg = JSON.parse(e.nativeEvent.data) as {
+        type?: string;
+        id?: string;
+        lat?: number;
+        lng?: number;
+      };
+      if (msg.type === 'hold' && msg.lat != null && msg.lng != null) {
+        setAddPoint({lat: msg.lat, lng: msg.lng});
+        setAddName('');
+        setAddOpen(true);
+        return;
+      }
       if (msg.type === 'market' && msg.id) {
         const m = markets.find(x => String(x.id) === String(msg.id));
         if (m) {
@@ -606,6 +644,7 @@ export function MapScreen() {
         style={styles.addFab}
         onPress={() => {
           setAddName('');
+          setAddPoint(null);
           setAddOpen(true);
         }}
         accessibilityLabel="Adicionar mercado aqui">
@@ -624,9 +663,11 @@ export function MapScreen() {
       />
 
       <KeyboardSafeSheet visible={addOpen} onClose={() => setAddOpen(false)}>
-        <Text style={styles.addTitle}>Adicionar mercado aqui</Text>
+        <Text style={styles.addTitle}>Adicionar supermercado</Text>
         <Text style={styles.addHint}>
-          Usa sua posição atual (ou o centro do mapa) e envia para moderação.
+          {addPoint
+            ? 'Ponto escolhido ao segurar o mapa. O mercado entra como pin neste local.'
+            : 'Usa sua posição atual. Você também pode segurar um ponto do mapa para escolher o local.'}
         </Text>
         <AppField
           label="Nome do mercado"
@@ -646,14 +687,18 @@ export function MapScreen() {
             }
             setAddBusy(true);
             try {
-              const m = marketRepo.resolveOrCreateNear(
-                name,
-                center.latitude,
-                center.longitude,
-              );
-              marketRepo.upsertGeo(m.id, {
+              const point = addPoint ?? {
                 lat: center.latitude,
                 lng: center.longitude,
+              };
+              const m = marketRepo.resolveOrCreateNear(
+                name,
+                point.lat,
+                point.lng,
+              );
+              marketRepo.upsertGeo(m.id, {
+                lat: point.lat,
+                lng: point.lng,
               });
               setPinIds(prev =>
                 prev ? Array.from(new Set([...prev, m.id])) : [m.id],
@@ -662,8 +707,8 @@ export function MapScreen() {
               if (canContribute(auth) && auth?.token) {
                 await syncApi.submitMarketSuggestion(auth.token, {
                   name,
-                  lat: center.latitude,
-                  lng: center.longitude,
+                  lat: point.lat,
+                  lng: point.lng,
                   kind: 'add',
                   note: 'Sugestão pelo mapa',
                 });

@@ -9,7 +9,12 @@ import {KeyboardSafeSheet} from '@/ui/keyboardSheet';
 import {BackCircleButton, SoftHeader} from '@/ui/screenChrome';
 import {colors, space} from '@/ui/theme';
 import {nfceConsultUrl} from '@/domain/nfceScan';
-import {importPastNfce} from '@/data/archivePurchase';
+import {
+  archiveNfcePurchase,
+  previewPastNfce,
+  type NfceDraft,
+} from '@/data/archivePurchase';
+import {NfceReviewSheet} from '@/features/cart/NfceReviewSheet';
 import {refreshPermissionFlags} from '@/app/permissions';
 import {useAppStore} from '@/store/appStore';
 
@@ -21,6 +26,8 @@ export function ImportPurchaseScreen() {
   const [url, setUrl] = useState('');
   const [busy, setBusy] = useState(false);
   const [pasteOpen, setPasteOpen] = useState(false);
+  const [draft, setDraft] = useState<NfceDraft | null>(null);
+  const [saving, setSaving] = useState(false);
   const lock = useRef<string | null>(null);
 
   const ensureCamera = useCallback(async () => {
@@ -51,23 +58,18 @@ export function ImportPurchaseScreen() {
       lock.current = target;
       setBusy(true);
       try {
-        const outcome = await importPastNfce(target);
-        if (!outcome.ok) {
+        const preview = await previewPastNfce(target);
+        if ('ok' in preview) {
           lock.current = null;
           appAlert(
             'Nota fiscal',
-            outcome.reason === 'duplicate'
-              ? 'Essa nota já foi importada.'
+            preview.reason === 'duplicate'
+              ? 'Essa nota já está no histórico.'
               : 'A consulta não trouxe itens. Tente o QR do rodapé.',
           );
           return;
         }
-        refresh();
-        appAlert(
-          'Compra importada',
-          `${outcome.itemCount} itens de ${outcome.marketName} entraram no histórico.`,
-          [{label: 'Ver listas', style: 'primary', onPress: () => nav.goBack()}],
-        );
+        setDraft(preview);
       } catch (e) {
         lock.current = null;
         appAlert('SEFAZ', e instanceof Error ? e.message : String(e));
@@ -75,8 +77,41 @@ export function ImportPurchaseScreen() {
         setBusy(false);
       }
     },
-    [nav, refresh],
+    [],
   );
+
+  const saveDraft = async () => {
+    if (!draft) return;
+    setSaving(true);
+    try {
+      const outcome = await archiveNfcePurchase(draft.parsed, draft.qrUrl);
+      if (!outcome.ok) {
+        appAlert(
+          'Nota fiscal',
+          outcome.reason === 'duplicate'
+            ? 'Essa nota já está no histórico.'
+            : 'A consulta não trouxe itens.',
+        );
+        return;
+      }
+      refresh();
+      setDraft(null);
+      const mapNote = outcome.placedOnMap
+        ? ' O mercado foi cadastrado no mapa.'
+        : outcome.mapKnown
+          ? ''
+          : ' Se o mercado não aparecer no mapa, segure o local para adicionar.';
+      appAlert(
+        'Compra salva',
+        `${outcome.itemCount} itens de ${outcome.marketName} entraram no histórico.${mapNote}`,
+        [{label: 'Ver listas', style: 'primary', onPress: () => nav.goBack()}],
+      );
+    } catch (e) {
+      appAlert('SEFAZ', e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const codeScanner = useCodeScanner({
     codeTypes: ['qr', 'pdf-417'],
@@ -104,7 +139,7 @@ export function ImportPurchaseScreen() {
           <Camera
             style={StyleSheet.absoluteFill}
             device={device}
-            isActive={!pasteOpen && !busy}
+            isActive={!pasteOpen && !busy && draft == null}
             codeScanner={codeScanner}
           />
         ) : (
@@ -123,7 +158,7 @@ export function ImportPurchaseScreen() {
       </View>
       <View style={styles.footer}>
         <Text style={styles.hint}>
-          Aponte para o QR do rodapé. A compra entra no histórico, com a data da nota, sem alterar a lista aberta.
+          Aponte para o QR do rodapé. Você vê o resumo e decide se salva no histórico.
         </Text>
         <AppButton label="Colar link da consulta" outlined onPress={() => setPasteOpen(true)} />
       </View>
@@ -145,6 +180,15 @@ export function ImportPurchaseScreen() {
           }}
         />
       </KeyboardSafeSheet>
+      <NfceReviewSheet
+        draft={draft}
+        saving={saving}
+        onClose={() => {
+          lock.current = null;
+          setDraft(null);
+        }}
+        onSave={() => void saveDraft()}
+      />
     </View>
   );
 }

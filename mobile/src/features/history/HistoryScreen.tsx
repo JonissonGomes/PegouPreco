@@ -17,10 +17,29 @@ import {
   SoftHeader,
 } from '@/ui/screenChrome';
 import {colors, radii, space, spacing} from '@/ui/theme';
-import {formatBrl} from '@/domain/money';
+import {formatBrl, formatQty} from '@/domain/money';
+import {lineTotal} from '@/domain/pricing';
+import {guessCategory} from '@/domain/productCategory';
 import {priceLogRepo, useAppStore} from '@/store/appStore';
+import {KeyboardSafeSheet} from '@/ui/keyboardSheet';
+import type {CartItem, ShoppingList} from '@/data/types';
 
 type Filter = 'all' | 'lowest' | 'above';
+type ViewMode = 'purchase' | 'category' | 'price';
+
+function parseItems(list: ShoppingList): CartItem[] {
+  try {
+    const raw = JSON.parse(list.itemsJson) as CartItem[];
+    return Array.isArray(raw) ? raw : [];
+  } catch {
+    return [];
+  }
+}
+
+function formatWhen(iso: string) {
+  const d = new Date(iso);
+  return d.toLocaleDateString('pt-BR', {day: '2-digit', month: 'short'});
+}
 
 function pctAboveMin(last: number, min: number): number {
   if (min <= 0) return 0;
@@ -30,8 +49,12 @@ function pctAboveMin(last: number, min: number): number {
 export function HistoryScreen() {
   const nav = useNavigation<any>();
   const products = useAppStore(s => s.products);
+  const lists = useAppStore(s => s.lists);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
+  const [view, setView] = useState<ViewMode>('purchase');
+  const [category, setCategory] = useState('Todas');
+  const [openList, setOpenList] = useState<ShoppingList | null>(null);
 
   const rows = useMemo(
     () =>
@@ -61,6 +84,41 @@ export function HistoryScreen() {
     {key: 'lowest', label: 'No menor preço'},
     {key: 'above', label: 'Acima do menor'},
   ];
+  const views: {key: ViewMode; label: string}[] = [
+    {key: 'purchase', label: 'Por compra'},
+    {key: 'category', label: 'Por categoria'},
+    {key: 'price', label: 'Por preço'},
+  ];
+  const categories = useMemo(() => {
+    const set = new Set<string>();
+    for (const p of products) set.add(p.category?.trim() || guessCategory(p.name));
+    return ['Todas', ...Array.from(set).sort((a, b) => a.localeCompare(b, 'pt-BR'))];
+  }, [products]);
+  const purchases = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return lists.filter(l => {
+      if (!q) return true;
+      if (l.name.toLowerCase().includes(q)) return true;
+      if ((l.marketName ?? '').toLowerCase().includes(q)) return true;
+      return parseItems(l).some(it => it.productName.toLowerCase().includes(q));
+    });
+  }, [lists, query]);
+  const byCategory = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const groups = new Map<string, typeof rows>();
+    for (const row of rows) {
+      const cat = row.product.category?.trim() || guessCategory(row.product.name);
+      if (category !== 'Todas' && cat !== category) continue;
+      if (q && !row.product.name.toLowerCase().includes(q)) continue;
+      const bucket = groups.get(cat) ?? [];
+      bucket.push(row);
+      groups.set(cat, bucket);
+    }
+    return Array.from(groups.entries()).sort((a, b) =>
+      a[0].localeCompare(b[0], 'pt-BR'),
+    );
+  }, [rows, query, category]);
+  const openItems = openList ? parseItems(openList) : [];
 
   return (
     <View style={styles.root}>
@@ -85,12 +143,12 @@ export function HistoryScreen() {
       </View>
 
       <View style={styles.chips}>
-        {chips.map(c => {
-          const on = filter === c.key;
+        {views.map(c => {
+          const on = view === c.key;
           return (
             <Pressable
               key={c.key}
-              onPress={() => setFilter(c.key)}
+              onPress={() => setView(c.key)}
               style={[styles.chip, on && styles.chipOn]}>
               <Text style={[styles.chipText, on && styles.chipTextOn]}>
                 {c.label}
@@ -99,7 +157,133 @@ export function HistoryScreen() {
           );
         })}
       </View>
+      {view === 'price' ? (
+        <View style={styles.chips}>
+          {chips.map(c => {
+            const on = filter === c.key;
+            return (
+              <Pressable
+                key={c.key}
+                onPress={() => setFilter(c.key)}
+                style={[styles.chip, on && styles.chipOn]}>
+                <Text style={[styles.chipText, on && styles.chipTextOn]}>
+                  {c.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      ) : null}
+      {view === 'category' ? (
+        <View style={styles.chips}>
+          {categories.map(c => {
+            const on = category === c;
+            return (
+              <Pressable
+                key={c}
+                onPress={() => setCategory(c)}
+                style={[styles.chip, on && styles.chipOn]}>
+                <Text style={[styles.chipText, on && styles.chipTextOn]}>
+                  {c}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      ) : null}
 
+      {view === 'purchase' ? (
+        <FlatList
+          data={purchases}
+          keyExtractor={l => String(l.id)}
+          contentContainerStyle={[
+            styles.list,
+            purchases.length === 0 && styles.listEmpty,
+          ]}
+          ListEmptyComponent={
+            <FeatureEmptyGuide
+              HeroIcon={History}
+              title="Nenhuma compra no histórico"
+              subtitle="Importe uma nota antiga ou finalize uma compra para ver o resumo aqui."
+              stepsLabel="Como agrupar"
+              steps={[
+                {
+                  n: '1',
+                  title: 'Por compra',
+                  text: 'Cada nota ou lista finalizada aparece com mercado, data e total.',
+                  Icon: History,
+                },
+                {
+                  n: '2',
+                  title: 'Por categoria',
+                  text: 'Os itens se agrupam em hortifruti, mercearia, limpeza e outras.',
+                  Icon: TrendingDown,
+                },
+                {
+                  n: '3',
+                  title: 'Por preço',
+                  text: 'Compare o último preço com o menor que você já viu.',
+                  Icon: ScanLine,
+                },
+              ]}
+              PrimaryIcon={ScanLine}
+              primaryLabel="Importar nota"
+              onPrimary={() => nav.navigate('ImportPurchase')}
+              secondaryLabel="Ir para Compras"
+              onSecondary={() => nav.navigate('Main', {screen: 'Lists'})}
+            />
+          }
+          renderItem={({item}) => (
+            <SoftCard onPress={() => setOpenList(item)} style={styles.productCard}>
+              <View style={styles.row}>
+                <View style={{flex: 1, minWidth: 0}}>
+                  <Text style={styles.name} numberOfLines={1}>
+                    {item.marketName || item.name}
+                  </Text>
+                  <Text style={styles.muted}>
+                    {formatWhen(item.finishedAt)} · {item.itemCount} itens
+                  </Text>
+                </View>
+                <Text style={styles.price}>{formatBrl(item.subtotal)}</Text>
+              </View>
+            </SoftCard>
+          )}
+        />
+      ) : null}
+
+      {view === 'category' ? (
+        <FlatList
+          data={byCategory}
+          keyExtractor={([cat]) => cat}
+          contentContainerStyle={styles.list}
+          renderItem={({item: [cat, group]}) => (
+            <View style={styles.group}>
+              <Text style={styles.groupTitle}>
+                {cat} · {group.length}
+              </Text>
+              {group.map(row => (
+                <SoftCard
+                  key={row.product.id}
+                  onPress={() =>
+                    nav.navigate('ProductDetail', {productId: row.product.id})
+                  }
+                  style={styles.productCard}>
+                  <View style={styles.row}>
+                    <Text style={[styles.name, {flex: 1}]} numberOfLines={1}>
+                      {row.product.name}
+                    </Text>
+                    {row.stats ? (
+                      <Text style={styles.price}>{formatBrl(row.stats.lastPrice)}</Text>
+                    ) : null}
+                  </View>
+                </SoftCard>
+              ))}
+            </View>
+          )}
+        />
+      ) : null}
+
+      {view === 'price' ? (
       <FlatList
         data={filtered}
         keyExtractor={r => String(r.product.id)}
@@ -181,6 +365,36 @@ export function HistoryScreen() {
           );
         }}
       />
+      ) : null}
+      <KeyboardSafeSheet visible={openList != null} onClose={() => setOpenList(null)}>
+        {openList ? (
+          <>
+            <Text style={styles.groupTitle}>{openList.marketName || openList.name}</Text>
+            <Text style={styles.muted}>
+              {formatWhen(openList.finishedAt)} · {formatBrl(openList.subtotal)}
+            </Text>
+            <FlatList
+              data={openItems}
+              keyExtractor={(it, i) => `${it.productId}-${i}`}
+              style={{maxHeight: 360, marginTop: 12}}
+              renderItem={({item}) => (
+                <View style={styles.detailRow}>
+                  <View style={{flex: 1}}>
+                    <Text style={styles.name}>{item.productName}</Text>
+                    <Text style={styles.muted}>
+                      {item.productName
+                        ? guessCategory(item.productName)
+                        : 'Outros'}{' '}
+                      · {formatQty(item.quantity)} × {formatBrl(item.retailPrice)}
+                    </Text>
+                  </View>
+                  <Text style={styles.price}>{formatBrl(lineTotal(item))}</Text>
+                </View>
+              )}
+            />
+          </>
+        ) : null}
+      </KeyboardSafeSheet>
     </View>
   );
 }
@@ -231,4 +445,13 @@ const styles = StyleSheet.create({
   muted: {color: colors.muted, marginTop: 4, fontWeight: '600', fontSize: 12},
   rightCol: {alignItems: 'flex-end', gap: 6},
   price: {fontWeight: '900', color: colors.navy, fontSize: 18},
+  group: {marginBottom: space.md},
+  groupTitle: {fontWeight: '900', color: colors.navy, fontSize: 16, marginBottom: 8},
+  detailRow: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingVertical: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
 });

@@ -29,6 +29,7 @@ import {
 } from '@/ui/screenChrome';
 import {colors, space, spacing} from '@/ui/theme';
 import {formatBrl, formatQty} from '@/domain/money';
+import {guessCategory} from '@/domain/productCategory';
 import {lineTotal} from '@/domain/pricing';
 import {
   cartRepo,
@@ -43,8 +44,6 @@ if (
 ) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
-
-const DETAIL_PREVIEW = 4;
 
 function parseListItems(list: ShoppingList): CartItem[] {
   try {
@@ -73,9 +72,6 @@ export function ShoppingListsScreen() {
     () => (selected ? parseListItems(selected) : []),
     [selected],
   );
-  const preview = detailItems.slice(0, DETAIL_PREVIEW);
-  const extraCount = Math.max(0, detailItems.length - DETAIL_PREVIEW);
-
   const redoList = (list: ShoppingList) => {
     const items = parseListItems(list);
     cartRepo.clear();
@@ -223,19 +219,20 @@ export function ShoppingListsScreen() {
               {formatBrl(selected.subtotal)}
             </Text>
             <ScrollView style={styles.detailScroll}>
-              {preview.map((it, idx) => (
+              {detailItems.map((it, idx) => (
                 <View
                   key={`${it.productId}-${idx}`}
                   style={[
                     styles.detailRow,
-                    idx < preview.length - 1 && styles.detailRowBorder,
+                    idx < detailItems.length - 1 && styles.detailRowBorder,
                   ]}>
                   <View style={{flex: 1, minWidth: 0}}>
                     <Text style={styles.detailName} numberOfLines={2}>
                       {it.productName}
                     </Text>
                     <Text style={styles.detailQty}>
-                      {formatQty(it.quantity)} un
+                      {guessCategory(it.productName)} · {formatQty(it.quantity)} ×{' '}
+                      {formatBrl(it.retailPrice)}
                     </Text>
                   </View>
                   <Text style={styles.detailLine}>
@@ -243,9 +240,6 @@ export function ShoppingListsScreen() {
                   </Text>
                 </View>
               ))}
-              {extraCount > 0 ? (
-                <Text style={styles.moreItems}>+ {extraCount} itens</Text>
-              ) : null}
             </ScrollView>
             <View style={styles.detailActions}>
               <View style={{flex: 1}}>

@@ -37,7 +37,12 @@ import {
   useMarketName,
 } from '@/store/appStore';
 import {fetchAndParseNfce} from '@/data/remote/sefazClient';
-import {importPastNfce} from '@/data/archivePurchase';
+import {
+  archiveNfcePurchase,
+  previewPastNfce,
+  type NfceDraft,
+} from '@/data/archivePurchase';
+import {NfceReviewSheet} from '@/features/cart/NfceReviewSheet';
 import {extractAccessKey, looksLikeReceipt, nfceConsultUrl} from '@/domain/nfceScan';
 import {geocodeMarketNear} from '@/data/remote/geocodeMarket';
 import {MAPBOX_ACCESS_TOKEN} from '@/config/env';
@@ -165,6 +170,8 @@ export function CaptureScreen() {
   const [qrUrl, setQrUrl] = useState('');
   const [extra, setExtra] = useState<ExtraMode>('none');
   const [pastMode, setPastMode] = useState(false);
+  const [pastDraft, setPastDraft] = useState<NfceDraft | null>(null);
+  const [pastSaving, setPastSaving] = useState(false);
   const pastModeRef = useRef(false);
   pastModeRef.current = pastMode;
   const [scanning, setScanning] = useState(false);
@@ -509,25 +516,46 @@ export function CaptureScreen() {
   };
   const savePast = async (url: string): Promise<boolean> => {
     try {
-      const outcome = await importPastNfce(url);
-      if (!outcome.ok) {
+      const preview = await previewPastNfce(url);
+      if ('ok' in preview) {
         appAlert(
           'Nota antiga',
-          outcome.reason === 'duplicate'
-            ? 'Essa nota já foi importada.'
+          preview.reason === 'duplicate'
+            ? 'Essa nota já está no histórico.'
             : 'A consulta não trouxe itens. Enquadre o QR do rodapé.',
         );
         return false;
       }
-      refresh();
-      appAlert(
-        'Compra passada salva',
-        `${outcome.itemCount} itens de ${outcome.marketName} foram para Listas salvas.`,
-      );
+      setPastDraft(preview);
       return true;
     } catch (e) {
       appAlert('SEFAZ', e instanceof Error ? e.message : String(e));
       return false;
+    }
+  };
+  const confirmPast = async () => {
+    if (!pastDraft) return;
+    setPastSaving(true);
+    try {
+      const outcome = await archiveNfcePurchase(pastDraft.parsed, pastDraft.qrUrl);
+      if (!outcome.ok) {
+        appAlert('Nota antiga', 'Não foi possível salvar esta nota.');
+        return;
+      }
+      refresh();
+      setPastDraft(null);
+      appAlert(
+        'Compra salva',
+        outcome.placedOnMap
+          ? `${outcome.itemCount} itens de ${outcome.marketName} no histórico. Mercado cadastrado no mapa.`
+          : outcome.mapKnown
+            ? `${outcome.itemCount} itens de ${outcome.marketName} no histórico.`
+            : `${outcome.itemCount} itens de ${outcome.marketName} no histórico. Se o mercado não aparecer, segure o local no mapa.`,
+      );
+    } catch (e) {
+      appAlert('SEFAZ', e instanceof Error ? e.message : String(e));
+    } finally {
+      setPastSaving(false);
     }
   };
   importNfceRef.current = pastModeRef.current ? savePast : fetchNfce;
@@ -843,6 +871,15 @@ export function CaptureScreen() {
           }}
         />
       </KeyboardSafeSheet>
+      <NfceReviewSheet
+        draft={pastDraft}
+        saving={pastSaving}
+        onClose={() => {
+          lastNfceRef.current = null;
+          setPastDraft(null);
+        }}
+        onSave={() => void confirmPast()}
+      />
     </View>
   );
 }

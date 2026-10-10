@@ -292,7 +292,15 @@ export const productRepo = {
         best = p;
       }
     }
-    if (best) return best;
+    if (best) {
+      if (!best.category && category) {
+        best.category = category;
+        best.updatedAt = nowIso();
+        best.synced = 0;
+        saveState();
+      }
+      return best;
+    }
     const product: Product = {
       id: nextId('products'),
       name: trimmed,

@@ -1,6 +1,9 @@
 import type {NfceParseResult} from './remote/nfceParser';
 import {fetchAndParseNfce} from './remote/sefazClient';
+import {geocodeMarketNear} from './remote/geocodeMarket';
 import {extractAccessKey} from '@/domain/nfceScan';
+import {guessCategory} from '@/domain/productCategory';
+import {MAPBOX_ACCESS_TOKEN} from '@/config/env';
 import {
   marketRepo,
   prefs,
@@ -9,29 +12,111 @@ import {
   shoppingListRepo,
 } from '@/store/appStore';
 
+export type NfceDraft = {
+  qrUrl: string;
+  parsed: NfceParseResult;
+  subtotal: number;
+};
+
 export type ArchiveOutcome =
-  | {ok: true; itemCount: number; marketName: string; finishedAt: string}
+  | {
+      ok: true;
+      itemCount: number;
+      marketName: string;
+      finishedAt: string;
+      placedOnMap: boolean;
+      mapKnown: boolean;
+    }
   | {ok: false; reason: 'empty' | 'duplicate'};
 
-export async function importPastNfce(qrUrl: string): Promise<ArchiveOutcome> {
+export async function previewPastNfce(
+  qrUrl: string,
+): Promise<NfceDraft | {ok: false; reason: 'empty' | 'duplicate'}> {
   const parsed = await fetchAndParseNfce(qrUrl);
-  return archiveNfcePurchase(parsed, qrUrl);
+  if (!parsed.items.length) return {ok: false, reason: 'empty'};
+  const nfceKey = extractAccessKey(qrUrl);
+  if (nfceKey && shoppingListRepo.byNfceKey(nfceKey)) {
+    return {ok: false, reason: 'duplicate'};
+  }
+  const subtotal = parsed.items.reduce(
+    (sum, it) => sum + it.quantity * it.unitPrice,
+    0,
+  );
+  return {qrUrl, parsed, subtotal};
+}
+
+async function ensureMarketOnMap(
+  name: string,
+  cnpj: string | null,
+): Promise<{
+  marketId: number | null;
+  marketName: string;
+  placedOnMap: boolean;
+  mapKnown: boolean;
+}> {
+  const origin = prefs.getLastLocation();
+  const existing = marketRepo
+    .all()
+    .find(m => m.name.toLowerCase() === name.trim().toLowerCase());
+  if (existing?.lat != null && existing.lng != null) {
+    return {
+      marketId: existing.id,
+      marketName: existing.name,
+      placedOnMap: false,
+      mapKnown: true,
+    };
+  }
+  if (origin) {
+    const geo = await geocodeMarketNear(name, origin, MAPBOX_ACCESS_TOKEN);
+    if (geo) {
+      const market = marketRepo.resolveOrCreateNear(
+        name,
+        geo.lat,
+        geo.lng,
+        cnpj,
+      );
+      marketRepo.upsertGeo(market.id, {
+        lat: geo.lat,
+        lng: geo.lng,
+        address: geo.address,
+      });
+      return {
+        marketId: market.id,
+        marketName: market.name,
+        placedOnMap: true,
+        mapKnown: true,
+      };
+    }
+  }
+  const market = marketRepo.resolveOrCreate(name, cnpj);
+  return {
+    marketId: market.id,
+    marketName: market.name,
+    placedOnMap: false,
+    mapKnown: false,
+  };
 }
 
 /** Grava a NFC-e como compra já feita, sem mexer no carrinho aberto. */
-export function archiveNfcePurchase(
+export async function archiveNfcePurchase(
   parsed: NfceParseResult,
   qrUrl: string,
-): ArchiveOutcome {
+): Promise<ArchiveOutcome> {
   if (!parsed.items.length) return {ok: false, reason: 'empty'};
   const nfceKey = extractAccessKey(qrUrl);
   if (nfceKey && shoppingListRepo.byNfceKey(nfceKey)) {
     return {ok: false, reason: 'duplicate'};
   }
 
-  const market = parsed.marketName
-    ? marketRepo.resolveOrCreate(parsed.marketName, parsed.marketCnpj)
-    : null;
+  const placed = parsed.marketName
+    ? await ensureMarketOnMap(parsed.marketName, parsed.marketCnpj)
+    : {
+        marketId: null,
+        marketName: 'Nota fiscal',
+        placedOnMap: false,
+        mapKnown: false,
+      };
+  const marketId = placed.marketId;
   const finishedAt = parsed.issuedAt ?? new Date().toISOString();
   const alreadyLogged = nfceKey ? priceLogRepo.forNfceKey(nfceKey) : [];
   if (alreadyLogged.length) {
@@ -46,11 +131,14 @@ export function archiveNfcePurchase(
   }
   const contributorId = prefs.getLocalUserId();
   const items = parsed.items.map((it, index) => {
-    const product = productRepo.resolveOrCreate(it.description);
+    const product = productRepo.resolveOrCreate(
+      it.description,
+      guessCategory(it.description),
+    );
     if (!alreadyLogged.length) {
       priceLogRepo.insert({
         productId: product.id,
-        marketId: market?.id ?? null,
+        marketId,
         retailPrice: it.unitPrice,
         wholesalePrice: null,
         minWholesaleQty: null,
@@ -85,10 +173,10 @@ export function archiveNfcePurchase(
     (sum, it) => sum + it.quantity * it.retailPrice,
     0,
   );
-  const marketName = market?.name ?? 'Nota fiscal';
+  const marketName = placed.marketName;
   shoppingListRepo.insert({
     name: marketName,
-    marketId: market?.id ?? null,
+    marketId,
     marketName,
     itemsJson: JSON.stringify(items),
     subtotal,
@@ -101,5 +189,12 @@ export function archiveNfcePurchase(
     synced: 0,
   });
 
-  return {ok: true, itemCount: items.length, marketName, finishedAt};
+  return {
+    ok: true,
+    itemCount: items.length,
+    marketName,
+    finishedAt,
+    placedOnMap: placed.placedOnMap,
+    mapKnown: placed.mapKnown,
+  };
 }
