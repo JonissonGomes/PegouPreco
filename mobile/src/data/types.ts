@@ -83,6 +83,7 @@ export type ShoppingList = {
   savings: number;
   itemCount: number;
   finishedAt: string;
+  nfceKey?: string | null;
   remoteId: string | null;
   updatedAt: string;
   synced: number;

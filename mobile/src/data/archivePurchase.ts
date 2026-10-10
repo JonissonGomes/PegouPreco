@@ -25,7 +25,7 @@ export function archiveNfcePurchase(
 ): ArchiveOutcome {
   if (!parsed.items.length) return {ok: false, reason: 'empty'};
   const nfceKey = extractAccessKey(qrUrl);
-  if (nfceKey && priceLogRepo.hasNfceKey(nfceKey)) {
+  if (nfceKey && shoppingListRepo.byNfceKey(nfceKey)) {
     return {ok: false, reason: 'duplicate'};
   }
 
@@ -33,27 +33,40 @@ export function archiveNfcePurchase(
     ? marketRepo.resolveOrCreate(parsed.marketName, parsed.marketCnpj)
     : null;
   const finishedAt = parsed.issuedAt ?? new Date().toISOString();
+  const alreadyLogged = nfceKey ? priceLogRepo.forNfceKey(nfceKey) : [];
+  if (alreadyLogged.length) {
+    const capturedAt = alreadyLogged[0].capturedAt;
+    const saved = shoppingListRepo
+      .all()
+      .find(l => !l.nfceKey && l.finishedAt === capturedAt);
+    if (saved && nfceKey) {
+      shoppingListRepo.setNfceKey(saved.id, nfceKey);
+      return {ok: false, reason: 'duplicate'};
+    }
+  }
   const contributorId = prefs.getLocalUserId();
   const items = parsed.items.map((it, index) => {
     const product = productRepo.resolveOrCreate(it.description);
-    priceLogRepo.insert({
-      productId: product.id,
-      marketId: market?.id ?? null,
-      retailPrice: it.unitPrice,
-      wholesalePrice: null,
-      minWholesaleQty: null,
-      source: 'nfce',
-      capturedAt: finishedAt,
-      remoteId: null,
-      nfceKey,
-      confirmScore: 0,
-      rejectScore: 0,
-      trustLevel: 'suspect',
-      lastConfirmedAt: null,
-      contributorId,
-      updatedAt: finishedAt,
-      synced: 0,
-    });
+    if (!alreadyLogged.length) {
+      priceLogRepo.insert({
+        productId: product.id,
+        marketId: market?.id ?? null,
+        retailPrice: it.unitPrice,
+        wholesalePrice: null,
+        minWholesaleQty: null,
+        source: 'nfce',
+        capturedAt: finishedAt,
+        remoteId: null,
+        nfceKey,
+        confirmScore: 0,
+        rejectScore: 0,
+        trustLevel: 'suspect',
+        lastConfirmedAt: null,
+        contributorId,
+        updatedAt: finishedAt,
+        synced: 0,
+      });
+    }
     return {
       id: index + 1,
       productId: product.id,
@@ -82,6 +95,7 @@ export function archiveNfcePurchase(
     savings: 0,
     itemCount: items.length,
     finishedAt,
+    nfceKey,
     remoteId: null,
     updatedAt: finishedAt,
     synced: 0,

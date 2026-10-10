@@ -13,6 +13,7 @@ import {
   ClipboardList,
   History,
   Fingerprint,
+  QrCode,
   LogOut,
   Map,
   ScanLine,
@@ -382,6 +383,12 @@ export function ProfileScreen() {
                 label="Listas salvas"
                 hint="Compras finalizadas"
                 onPress={() => nav.navigate('ShoppingLists')}
+              />
+              <ActionRow
+                icon={<QrCode size={20} color={colors.navy} />}
+                label="Importar nota"
+                hint="NFC-e de uma compra que você já fez"
+                onPress={() => nav.navigate('ImportPurchase')}
               />
               <ActionRow
                 icon={<History size={20} color={colors.navy} />}

@@ -359,6 +359,9 @@ export const priceLogRepo = {
   hasNfceKey(key: string): boolean {
     return getState().price_logs.some(l => l.nfceKey === key);
   },
+  forNfceKey(key: string): PriceLog[] {
+    return getState().price_logs.filter(l => l.nfceKey === key);
+  },
   statsForProduct(productId: number) {
     const logs = priceLogRepo.forProduct(productId);
     if (!logs.length) return null;
@@ -607,6 +610,17 @@ export const shoppingListRepo = {
   remove(id: number) {
     const st = getState();
     st.shopping_lists = st.shopping_lists.filter(l => l.id !== id);
+    saveState();
+  },
+  byNfceKey(key: string): ShoppingList | null {
+    return getState().shopping_lists.find(l => l.nfceKey === key) ?? null;
+  },
+  setNfceKey(id: number, key: string) {
+    const list = getState().shopping_lists.find(l => l.id === id);
+    if (!list) return;
+    list.nfceKey = key;
+    list.synced = 0;
+    list.updatedAt = nowIso();
     saveState();
   },
 };
