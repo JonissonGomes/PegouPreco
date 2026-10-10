@@ -8,7 +8,11 @@ import {
   View,
 } from 'react-native';
 import {useFocusEffect, useNavigation} from '@react-navigation/native';
-import {Camera, useCameraDevice} from 'react-native-vision-camera';
+import {
+  Camera,
+  useCameraDevice,
+  useCodeScanner,
+} from 'react-native-vision-camera';
 import {ChevronRight, FileText, QrCode, ScanLine, X} from 'lucide-react-native';
 import {AppButton, AppField, AppScreenHeader} from '@/ui/chrome';
 import {appAlert} from '@/ui/appDialog';
@@ -33,6 +37,7 @@ import {
   useMarketName,
 } from '@/store/appStore';
 import {fetchAndParseNfce} from '@/data/remote/sefazClient';
+import {extractAccessKey, looksLikeReceipt, nfceConsultUrl} from '@/domain/nfceScan';
 import {geocodeMarketNear} from '@/data/remote/geocodeMarket';
 import {MAPBOX_ACCESS_TOKEN} from '@/config/env';
 import Geolocation from 'react-native-geolocation-service';
@@ -147,6 +152,10 @@ export function CaptureScreen() {
   const cameraRef = useRef<Camera>(null);
   const busyRef = useRef(false);
   const lastFpRef = useRef<string | null>(null);
+  const lastNfceRef = useRef<string | null>(null);
+  const importNfceRef = useRef<(url: string) => Promise<boolean>>(
+    async () => false,
+  );
 
   const [cameraOn, setCameraOn] = useState(false);
   const [fields, setFields] = useState<LabelFields | null>(null);
@@ -216,6 +225,26 @@ export function CaptureScreen() {
           photo.path,
         );
         if (rawText) setRaw(rawText);
+        if (rawText && looksLikeReceipt(rawText)) {
+          const url = nfceConsultUrl(rawText);
+          if (url && url !== lastNfceRef.current) {
+            lastNfceRef.current = url;
+            setStatus('Lendo a nota fiscal…');
+            const ok = await importNfceRef.current(url);
+            if (!ok) lastNfceRef.current = null;
+            return null;
+          }
+          if (!url) {
+            setStatus('Aponte para o QR da nota, no rodapé');
+            if (opts?.manual) {
+              appAlert(
+                'Nota fiscal',
+                'Reconheci a nota, mas não a chave. Enquadre o QR do rodapé.',
+              );
+            }
+            return null;
+          }
+        }
         if (parsed?.retailPrice != null) {
           const fp = fingerprint(parsed);
           if (fp !== lastFpRef.current || opts?.manual) {
@@ -377,10 +406,12 @@ export function CaptureScreen() {
       );
     });
 
-  const fetchNfce = async () => {
-    if (!ensureList() || !qrUrl.trim()) return;
+  const fetchNfce = async (explicit?: string): Promise<boolean> => {
+    const target = (explicit ?? qrUrl).trim();
+    if (!ensureList() || !target) return false;
+    const nfceKey = extractAccessKey(target);
     try {
-      const parsed = await fetchAndParseNfce(qrUrl.trim());
+      const parsed = await fetchAndParseNfce(target);
       let marketNotice: string | null = null;
       if (parsed.marketName) {
         const origin = await resolveGps();
@@ -426,7 +457,7 @@ export function CaptureScreen() {
       }
       if (!parsed.items.length) {
         appAlert('NFC-e', 'Nenhum item encontrado');
-        return;
+        return false;
       }
       const marketId = prefs.getActiveMarketId();
       for (const it of parsed.items) {
@@ -441,7 +472,7 @@ export function CaptureScreen() {
           source: 'nfce',
           capturedAt: now,
           remoteId: null,
-          nfceKey: null,
+          nfceKey,
           confirmScore: 0,
           rejectScore: 0,
           trustLevel: 'suspect',
@@ -466,10 +497,30 @@ export function CaptureScreen() {
           ? `${parsed.items.length} itens adicionados.\n${marketNotice}`
           : `${parsed.items.length} itens adicionados`,
       );
+      return true;
     } catch (e) {
       appAlert('SEFAZ', e instanceof Error ? e.message : String(e));
+      return false;
     }
   };
+  importNfceRef.current = fetchNfce;
+
+  const codeScanner = useCodeScanner({
+    codeTypes: ['qr', 'pdf-417'],
+    onCodeScanned: codes => {
+      const value = codes.map(c => c.value).find((v): v is string => !!v);
+      if (!value || busyRef.current) return;
+      const url = nfceConsultUrl(value);
+      if (!url || url === lastNfceRef.current) return;
+      lastNfceRef.current = url;
+      busyRef.current = true;
+      setStatus('Nota fiscal encontrada');
+      void importNfceRef.current(url).then(ok => {
+        if (!ok) lastNfceRef.current = null;
+        busyRef.current = false;
+      });
+    },
+  });
 
   const onShutter = async () => {
     if (!ensureList()) return;
@@ -498,6 +549,7 @@ export function CaptureScreen() {
             device={device}
             isActive={cameraOn && !fields && extra === 'none'}
             photo
+            codeScanner={codeScanner}
             enableZoomGesture
           />
         ) : (

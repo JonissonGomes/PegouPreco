@@ -1,4 +1,5 @@
 import {parseBrl} from './money';
+import {looksLikeReceipt} from './nfceScan';
 
 export type LabelFields = {
   productName: string | null;
@@ -190,6 +191,7 @@ function allPrices(text: string): number[] {
 export function parseLabel(rawText: string): LabelFields | null {
   const full = normalizeRaw(rawText);
   if (!full) return null;
+  if (looksLikeReceipt(full)) return null;
   const lines = linesOf(full);
   const cleaned = stripDiscardPrices(full);
 
