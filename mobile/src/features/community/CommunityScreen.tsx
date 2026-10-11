@@ -159,7 +159,9 @@ export function CommunityScreen() {
   }, [markets, origin]);
 
   const feed = useMemo(() => {
-    const logs = getState().price_logs.filter(l => l.trustLevel === 'suspect');
+    const logs = getState().price_logs.filter(
+      l => l.source === 'nfce' && l.trustLevel !== 'hidden' && l.nfceKey,
+    );
     return logs
       .filter(log => {
         if (skipped.has(log.id)) return false;

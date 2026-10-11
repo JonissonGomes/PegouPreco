@@ -7,7 +7,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import {useFocusEffect, useNavigation} from '@react-navigation/native';
+import {useFocusEffect, useNavigation, useRoute} from '@react-navigation/native';
 import {
   Camera,
   useCameraDevice,
@@ -37,6 +37,7 @@ import {
   useMarketName,
 } from '@/store/appStore';
 import {fetchAndParseNfce} from '@/data/remote/sefazClient';
+import {requestAutoSync} from '@/data/syncWorker';
 import {
   archiveNfcePurchase,
   previewPastNfce,
@@ -147,6 +148,7 @@ function LabelHitPreview({
 
 export function CaptureScreen() {
   const nav = useNavigation<any>();
+  const route = useRoute<any>();
   const activeListName = useAppStore(s => s.activeListName);
   const activeMarketId = useAppStore(s => s.activeMarketId);
   const refresh = useAppStore(s => s.refresh);
@@ -365,35 +367,30 @@ export function CaptureScreen() {
         ],
       );
     }
-    const product = productRepo.resolveOrCreate(fields.productName);
-    const marketId = prefs.getActiveMarketId();
-    const now = new Date().toISOString();
-    priceLogRepo.insert({
-      productId: product.id,
-      marketId,
-      retailPrice: fields.retailPrice,
-      wholesalePrice: fields.wholesalePrice,
-      minWholesaleQty: fields.minWholesaleQty,
-      source: 'label',
-      capturedAt: now,
-      remoteId: null,
-      nfceKey: null,
-      confirmScore: 0,
-      rejectScore: 0,
-      trustLevel: 'suspect',
-      lastConfirmedAt: null,
-      contributorId: prefs.getLocalUserId(),
-      updatedAt: now,
-      synced: 0,
-    });
-    cartRepo.upsert({
-      productId: product.id,
-      productName: fields.productName,
-      quantity: 1,
-      retailPrice: fields.retailPrice,
-      wholesalePrice: fields.wholesalePrice,
-      minWholesaleQty: fields.minWholesaleQty,
-    });
+    const targetId = route.params?.cartItemId as number | undefined;
+    if (targetId) {
+      const current = cartRepo.all().find(c => c.id === targetId);
+      cartRepo.updateItem(targetId, {
+        productName: fields.productName,
+        quantity: current?.quantity ?? 1,
+        retailPrice: fields.retailPrice,
+        wholesalePrice: fields.wholesalePrice,
+        minWholesaleQty: fields.minWholesaleQty,
+      });
+      if (current) productRepo.rename(current.productId, fields.productName);
+      if (current && !current.checkedOff) cartRepo.toggleChecked(targetId);
+      nav.setParams({cartItemId: undefined});
+    } else {
+      const product = productRepo.resolveOrCreate(fields.productName);
+      cartRepo.upsert({
+        productId: product.id,
+        productName: fields.productName,
+        quantity: 1,
+        retailPrice: fields.retailPrice,
+        wholesalePrice: fields.wholesalePrice,
+        minWholesaleQty: fields.minWholesaleQty,
+      });
+    }
     refresh();
     setFields(null);
     lastFpRef.current = null;
@@ -519,7 +516,7 @@ export function CaptureScreen() {
       const preview = await previewPastNfce(url);
       if ('ok' in preview) {
         appAlert(
-          'Nota antiga',
+          'Cadastrar nota',
           preview.reason === 'duplicate'
             ? 'Essa nota já está no histórico.'
             : 'A consulta não trouxe itens. Enquadre o QR do rodapé.',
@@ -539,11 +536,12 @@ export function CaptureScreen() {
     try {
       const outcome = await archiveNfcePurchase(pastDraft.parsed, pastDraft.qrUrl);
       if (!outcome.ok) {
-        appAlert('Nota antiga', 'Não foi possível salvar esta nota.');
+        appAlert('Cadastrar nota', 'Não foi possível salvar esta nota.');
         return;
       }
       refresh();
       setPastDraft(null);
+      requestAutoSync('nfce');
       appAlert(
         'Compra salva',
         outcome.placedOnMap
@@ -695,7 +693,7 @@ export function CaptureScreen() {
                 const next = !on;
                 setStatus(
                   next
-                    ? 'Nota antiga: aponte para o QR do rodapé'
+                    ? 'Cadastrar nota: aponte para o QR do rodapé'
                     : 'Aponte para a etiqueta',
                 );
                 return next;
@@ -703,7 +701,7 @@ export function CaptureScreen() {
             }}>
             <QrCode size={16} color={pastMode ? colors.navy : '#E5E7EB'} />
             <Text style={[styles.altText, pastMode ? styles.altTextOn : null]}>
-              Nota antiga
+              Cadastrar nota
             </Text>
           </Pressable>
           <Pressable
@@ -749,7 +747,7 @@ export function CaptureScreen() {
         visible={extra === 'nfce'}
         onClose={() => setExtra('none')}>
         <Text style={styles.modalTitle}>
-          {pastMode ? 'Nota antiga' : 'QR NFC-e'}
+          {pastMode ? 'Cadastrar nota' : 'QR NFC-e'}
         </Text>
         <Text style={styles.hint}>
           {pastMode

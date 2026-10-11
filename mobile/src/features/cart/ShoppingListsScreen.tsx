@@ -115,7 +115,7 @@ export function ShoppingListsScreen() {
             style={styles.importBtn}
             accessibilityLabel="Importar compra anterior">
             <QrCode size={16} color={colors.navy} />
-            <Text style={styles.importText}>Nota antiga</Text>
+            <Text style={styles.importText}>Cadastrar nota</Text>
           </Pressable>
         }
       />
@@ -155,7 +155,7 @@ export function ShoppingListsScreen() {
             PrimaryIcon={ShoppingCart}
             primaryLabel="Ir para Compras"
             onPrimary={() => nav.navigate('Main', {screen: 'Lists'})}
-            secondaryLabel="Importar nota antiga"
+            secondaryLabel="Cadastrar nota"
             onSecondary={() => nav.navigate('ImportPurchase')}
           />
         }

@@ -131,12 +131,20 @@ async function doFullSync(): Promise<{ok: boolean; message: string}> {
         updatedAt: m.updatedAt,
       }));
     const priceLogs = st.price_logs
-      .filter(l => !l.synced)
+      .filter(
+        l =>
+          !l.synced &&
+          l.source === 'nfce' &&
+          l.nfceKey != null &&
+          /^\d{44}$/.test(l.nfceKey),
+      )
       .map(l => ({
         localId: l.id,
         remoteId: l.remoteId,
         productLocalId: l.productId,
         marketLocalId: l.marketId,
+        marketRemoteId:
+          st.markets.find(m => m.id === l.marketId)?.remoteId ?? null,
         retailPrice: l.retailPrice,
         wholesalePrice: l.wholesalePrice,
         minWholesaleQty: l.minWholesaleQty,
@@ -203,7 +211,8 @@ export function requestAutoSync(_reason?: string) {
   if (
     now - lastAutoAttempt < AUTO_MIN_MS &&
     _reason !== 'login' &&
-    _reason !== 'vote'
+    _reason !== 'vote' &&
+    _reason !== 'nfce'
   ) {
     return;
   }
@@ -266,6 +275,7 @@ function applyPull(pull: Record<string, unknown>) {
   for (const r of logs) {
     const remoteId = String(r.id ?? '');
     if (!remoteId) continue;
+    if (r.source != null && r.source !== 'nfce') continue;
     const existing = st.price_logs.find(l => l.remoteId === remoteId);
     if (existing) {
       existing.trustLevel =
@@ -286,7 +296,7 @@ function applyPull(pull: Record<string, unknown>) {
         r.wholesalePrice != null ? Number(r.wholesalePrice) : null,
       minWholesaleQty:
         r.minWholesaleQty != null ? Number(r.minWholesaleQty) : null,
-      source: (r.source as 'label' | 'nfce' | 'manual') ?? 'manual',
+      source: (r.source as 'label' | 'nfce' | 'manual') ?? 'nfce',
       capturedAt: String(r.capturedAt ?? nowIso()),
       remoteId,
       nfceKey: (r.nfceKey as string) ?? null,

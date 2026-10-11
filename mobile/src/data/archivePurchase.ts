@@ -1,6 +1,7 @@
 import type {NfceParseResult} from './remote/nfceParser';
 import {fetchAndParseNfce} from './remote/sefazClient';
 import {geocodeMarketNear} from './remote/geocodeMarket';
+import {haversineKm} from './remote/nearbyMarkets';
 import {extractAccessKey} from '@/domain/nfceScan';
 import {guessCategory} from '@/domain/productCategory';
 import {MAPBOX_ACCESS_TOKEN} from '@/config/env';
@@ -58,7 +59,12 @@ async function ensureMarketOnMap(
   const existing = marketRepo
     .all()
     .find(m => m.name.toLowerCase() === name.trim().toLowerCase());
-  if (existing?.lat != null && existing.lng != null) {
+  if (
+    existing?.lat != null &&
+    existing.lng != null &&
+    origin &&
+    haversineKm(origin, {lat: existing.lat, lng: existing.lng}) <= 30
+  ) {
     return {
       marketId: existing.id,
       marketName: existing.name,
@@ -68,17 +74,22 @@ async function ensureMarketOnMap(
   }
   if (origin) {
     const geo = await geocodeMarketNear(name, origin, MAPBOX_ACCESS_TOKEN);
-    if (geo) {
+    const point = geo ?? {
+      lat: origin.lat,
+      lng: origin.lng,
+      address: null as string | null,
+    };
+    {
       const market = marketRepo.resolveOrCreateNear(
         name,
-        geo.lat,
-        geo.lng,
+        point.lat,
+        point.lng,
         cnpj,
       );
       marketRepo.upsertGeo(market.id, {
-        lat: geo.lat,
-        lng: geo.lng,
-        address: geo.address,
+        lat: point.lat,
+        lng: point.lng,
+        address: point.address,
       });
       return {
         marketId: market.id,

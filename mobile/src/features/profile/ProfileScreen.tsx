@@ -386,8 +386,8 @@ export function ProfileScreen() {
               />
               <ActionRow
                 icon={<QrCode size={20} color={colors.navy} />}
-                label="Importar nota"
-                hint="NFC-e de uma compra que você já fez"
+                label="Cadastrar nota"
+                hint="QR da NFC-e entra no comparador"
                 onPress={() => nav.navigate('ImportPurchase')}
               />
               <ActionRow

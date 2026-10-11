@@ -17,6 +17,7 @@ import {
 import {NfceReviewSheet} from '@/features/cart/NfceReviewSheet';
 import {refreshPermissionFlags} from '@/app/permissions';
 import {useAppStore} from '@/store/appStore';
+import {requestAutoSync} from '@/data/syncWorker';
 
 export function ImportPurchaseScreen() {
   const nav = useNavigation<any>();
@@ -95,6 +96,7 @@ export function ImportPurchaseScreen() {
         return;
       }
       refresh();
+      requestAutoSync('nfce');
       setDraft(null);
       const mapNote = outcome.placedOnMap
         ? ' O mercado foi cadastrado no mapa.'
@@ -126,8 +128,8 @@ export function ImportPurchaseScreen() {
   return (
     <View style={styles.root}>
       <SoftHeader
-        title="Nota antiga"
-        subtitle="NFC-e de uma compra que você já fez"
+        title="Cadastrar nota"
+        subtitle="O QR da NFC-e alimenta o comparador"
         leading={
           <BackCircleButton onPress={() => nav.goBack()}>
             <ArrowLeft color={colors.navy} size={22} />

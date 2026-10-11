@@ -227,7 +227,7 @@ export function HistoryScreen() {
                 },
               ]}
               PrimaryIcon={ScanLine}
-              primaryLabel="Importar nota"
+              primaryLabel="Cadastrar nota"
               onPrimary={() => nav.navigate('ImportPurchase')}
               secondaryLabel="Ir para Compras"
               onSecondary={() => nav.navigate('Main', {screen: 'Lists'})}

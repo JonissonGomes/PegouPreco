@@ -505,6 +505,13 @@ export class DataStore {
     stars: number;
     comment?: string | null;
   }): Promise<Record<string, unknown>> {
+    const allowed = await this._userHasNfce(args.userId, args.marketId);
+    if (!allowed) {
+      return {
+        error: 'cadastre uma nota deste mercado antes de avaliar',
+        status: 403,
+      };
+    }
     const voterHash = sha256(`review|${args.userId}|${args.marketId}`);
     const weight = await this._userWeight(args.userId);
     const now = new Date();
@@ -553,7 +560,43 @@ export class DataStore {
       }
     }
     const agg = await this._aggregateReviews(args.marketId);
+    await this._writeMarketRating(args.marketId, agg.avg, agg.count);
     return {ok: true, avgRating: agg.avg, ratingsCount: agg.count};
+  }
+
+  private async _userHasNfce(userId: string, marketId: string): Promise<boolean> {
+    const match = (log: Record<string, unknown>) =>
+      String(log.contributorId ?? '') === userId &&
+      String(log.marketId ?? '') === marketId &&
+      String(log.source ?? '') === 'nfce' &&
+      /^\d{44}$/.test(String(log.nfceKey ?? ''));
+    if (this.mode === 'memory') {
+      return Object.values(this._memLogs).some(match);
+    }
+    const found = await this.col('price_logs').findOne({
+      contributorId: userId,
+      marketId,
+      source: 'nfce',
+    });
+    return found != null && /^\d{44}$/.test(String(found.nfceKey ?? ''));
+  }
+
+  private async _writeMarketRating(
+    marketId: string,
+    avg: number,
+    count: number,
+  ): Promise<void> {
+    const patch = {
+      avgRating: avg,
+      ratingsCount: count,
+      updatedAt: new Date().toISOString(),
+    };
+    if (this.mode === 'memory') {
+      const market = this._memMarkets[marketId];
+      if (market) Object.assign(market, patch);
+      return;
+    }
+    await this.col('markets').updateOne({id: marketId}, {$set: patch});
   }
 
   private async _userWeight(userId: string): Promise<number> {
@@ -770,14 +813,17 @@ export class DataStore {
         productIdMap[String(l.productLocalId)] ??
         (await this._resolveProductRemote(l.productLocalId));
       const marketRemote =
-        l.marketLocalId == null
+        (l.marketRemoteId != null ? String(l.marketRemoteId) : null) ??
+        (l.marketLocalId == null
           ? null
-          : marketIdMap[String(l.marketLocalId)] ?? null;
+          : marketIdMap[String(l.marketLocalId)] ?? null);
 
       const source = String(l.source ?? 'label');
+      const nfceKey = String(l.nfceKey ?? '');
+      if (source !== 'nfce' || !/^\d{44}$/.test(nfceKey)) continue;
       let trustLevel = String(l.trustLevel ?? 'suspect');
       let confirmScore = Number(l.confirmScore ?? 0);
-      if (source === 'nfce' && confirmScore < 1) confirmScore = 1;
+      if (confirmScore < 1) confirmScore = 1;
 
       const classified = await this._classifyWithJev({
         productId: productRemote,
@@ -811,7 +857,7 @@ export class DataStore {
           minWholesaleQty: l.minWholesaleQty,
           source,
           capturedAt: l.capturedAt,
-          nfceKey: l.nfceKey,
+          nfceKey,
           confirmScore,
           rejectScore: l.rejectScore ?? 0,
           trustLevel,
@@ -819,9 +865,9 @@ export class DataStore {
           jevAction: classified.action,
           jevRisk: classified.risk,
           updatedAt: l.updatedAt,
-          contributorId: l.contributorId ?? userId,
+          contributorId: userId,
         },
-        matchKeys: ['nfceKey'],
+        matchKeys: [],
       });
       priceLogIdMap[String(l.localId)] = remoteId;
       await this.stats.recordVisit(

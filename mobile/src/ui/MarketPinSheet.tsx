@@ -15,7 +15,7 @@ import {
   type PriceBand,
 } from '@/domain/marketUi';
 import type {Market} from '@/data/types';
-import {canContribute, prefs, useAppStore} from '@/store/appStore';
+import {canContribute, marketRepo, prefs, useAppStore} from '@/store/appStore';
 import {syncApi} from '@/data/remote/syncApi';
 import {apiErrorMessage} from '@/data/remote/apiError';
 import {reverseGeocode} from '@/data/remote/reverseGeocode';
@@ -27,6 +27,12 @@ function BandIcon({band}: {band: PriceBand}) {
   if (band === 'low') return <TrendingDown size={16} color={colors.trustGreen} />;
   if (band === 'high') return <TrendingUp size={16} color={colors.danger} />;
   return <Minus size={16} color={colors.trustYellow} />;
+}
+
+function userRegisteredReceipt(marketId: number) {
+  return getState().price_logs.some(
+    log => log.marketId === marketId && log.source === 'nfce' && !!log.nfceKey,
+  );
 }
 
 function marketKey(market: Market) {
@@ -167,7 +173,18 @@ export function MarketPinSheet({
     }
     setReviewBusy(true);
     try {
-      await syncApi.submitMarketReview(auth.token!, shown.remoteId, stars);
+      const data = (await syncApi.submitMarketReview(
+        auth.token!,
+        shown.remoteId,
+        stars,
+      )) as {avgRating?: number; ratingsCount?: number};
+      if (data?.avgRating != null) {
+        marketRepo.upsertGeo(shown.id, {
+          avgRating: Number(data.avgRating),
+          ratingsCount: Number(data.ratingsCount ?? shown.ratingsCount),
+        });
+        useAppStore.getState().refresh();
+      }
       setReviewOpen(false);
       setBurst({points: 5, title: `${stars}★ no ${shown.name}`});
     } catch (e) {
@@ -298,8 +315,29 @@ export function MarketPinSheet({
               icon={
                 <Star size={18} color={colors.navy} fill={colors.navy} />
               }
-              label="Avaliar mercado · +5 pts"
-              onPress={() => setReviewOpen(true)}
+              label={
+                userRegisteredReceipt(shown.id)
+                  ? 'Avaliar mercado · +5 pts'
+                  : 'Avaliar depois de cadastrar a nota'
+              }
+              onPress={() => {
+                if (!userRegisteredReceipt(shown.id)) {
+                  appAlert(
+                    'Cadastre a nota',
+                    'A avaliação deste mercado abre depois que você cadastra uma NFC-e dele.',
+                    [
+                      {label: 'Agora não', style: 'cancel'},
+                      {
+                        label: 'Cadastrar nota',
+                        style: 'primary',
+                        onPress: () => nav.navigate('ImportPurchase'),
+                      },
+                    ],
+                  );
+                  return;
+                }
+                setReviewOpen(true);
+              }}
             />
             {locationConfirmed ? null : (
               <AppButton

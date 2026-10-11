@@ -17,6 +17,7 @@ import {
   ClipboardList,
   History,
   MoreVertical,
+  Barcode,
   ScanLine,
   Trash2,
 } from 'lucide-react-native';
@@ -90,6 +91,7 @@ export function CartScreen() {
     'loading',
   );
   const [confirmHint, setConfirmHint] = useState<string | null>(null);
+  const [itemDraft, setItemDraft] = useState('');
 
   const totals = useMemo(() => cartRepo.computeTotals(cart), [cart]);
   const selectedCount = totals.checkedCount;
@@ -104,6 +106,33 @@ export function CartScreen() {
   );
   const progress =
     totals.itemCount > 0 ? selectedCount / totals.itemCount : 0;
+
+  const addWrittenItem = () => {
+    if (!activeListName || !activeMarketId) {
+      setStartOpen(true);
+      return;
+    }
+    const name = itemDraft.trim();
+    if (!name) return;
+    const product = productRepo.resolveOrCreate(name);
+    cartRepo.upsert({
+      productId: product.id,
+      productName: name,
+      quantity: 1,
+      retailPrice: 0,
+      checkedOff: 0,
+    });
+    setItemDraft('');
+    refresh();
+  };
+
+  const scanListItem = (item: CartItem) => {
+    if (!activeListName || !activeMarketId) {
+      setStartOpen(true);
+      return;
+    }
+    nav.navigate('Capture', {cartItemId: item.id});
+  };
 
   const goCapture = () => {
     if (!activeListName || !activeMarketId) {
@@ -299,6 +328,17 @@ export function CartScreen() {
                 ) : null}
               </View>
               <ProgressBar progress={progress} height={8} />
+              <View style={styles.writeRow}>
+                <AppField
+                  compact
+                  value={itemDraft}
+                  onChangeText={setItemDraft}
+                  placeholder="Escrever item da lista"
+                  onSubmitEditing={addWrittenItem}
+                  returnKeyType="done"
+                />
+                <AppButton label="Adicionar" onPress={addWrittenItem} />
+              </View>
             </SoftCard>
 
             {inCart.length > 0 ? (
@@ -334,6 +374,7 @@ export function CartScreen() {
                       cartRepo.toggleChecked(item.id);
                       refresh();
                     }}
+                    onScan={() => scanListItem(item)}
                   />
                 ))}
               </>
@@ -374,6 +415,7 @@ export function CartScreen() {
                       cartRepo.toggleChecked(item.id);
                       refresh();
                     }}
+                    onScan={() => scanListItem(item)}
                   />
                 ))}
               </>
@@ -612,12 +654,14 @@ function CartRow({
   onEdit,
   onDelete,
   onToggle,
+  onScan,
 }: {
   item: CartItem;
   muted?: boolean;
   onEdit: () => void;
   onDelete: () => void;
   onToggle: () => void;
+  onScan: () => void;
 }) {
   const refresh = useAppStore(s => s.refresh);
   const total = lineTotal(item);
@@ -653,8 +697,14 @@ function CartRow({
               numberOfLines={2}>
               {item.productName}
             </Text>
+            <Pressable
+              onPress={onScan}
+              hitSlop={8}
+              accessibilityLabel="Escanear preço">
+              <Barcode size={20} color={colors.navy} />
+            </Pressable>
             <Text style={[styles.price, muted && {opacity: 0.5}]}>
-              {formatBrl(total)}
+              {item.retailPrice > 0 ? formatBrl(total) : 'Sem preço'}
             </Text>
           </View>
           <View style={styles.rowMeta}>
@@ -804,6 +854,7 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   summaryCard: {marginBottom: space.md, gap: 10},
+  writeRow: {marginTop: 8, gap: 8},
   summaryLabel: {
     fontSize: 13,
     fontWeight: '700',
