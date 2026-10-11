@@ -2,6 +2,7 @@ import React, {useEffect, useMemo, useRef, useState} from 'react';
 import {
   Animated,
   Easing,
+  Keyboard,
   KeyboardAvoidingView,
   LayoutAnimation,
   Platform,
@@ -242,6 +243,9 @@ export function AuthPanel({location}: {location?: string}) {
   const [busy, setBusy] = useState(false);
   const [devHint, setDevHint] = useState<string | null>(null);
   const [otpSent, setOtpSent] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [keyboardPad, setKeyboardPad] = useState(0);
+  const scrollRef = useRef<ScrollView>(null);
 
   const heroOpacity = useRef(new Animated.Value(0)).current;
   const heroY = useRef(new Animated.Value(-18)).current;
@@ -297,6 +301,27 @@ export function AuthPanel({location}: {location?: string}) {
     return () => pulse.stop();
   }, [heroOpacity, heroY, sheetY, sheetOpacity, logoScale]);
 
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', e => {
+      setKeyboardPad(e.endCoordinates.height);
+    });
+    const hide = Keyboard.addListener('keyboardDidHide', () => {
+      setKeyboardPad(0);
+    });
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (mode !== 'verify' && !(mode === 'otp' && otpSent)) return;
+    const t = setTimeout(() => {
+      scrollRef.current?.scrollToEnd({animated: true});
+    }, 280);
+    return () => clearTimeout(t);
+  }, [mode, otpSent]);
+
   const copy = useMemo(() => {
     if (mode === 'register') {
       return {
@@ -339,8 +364,17 @@ export function AuthPanel({location}: {location?: string}) {
 
   function resetTransient() {
     setDevHint(null);
+    setNotice(null);
     setCode('');
     setOtpSent(false);
+  }
+
+  function openCodeStep(message: string) {
+    animateLayout();
+    setOtpSent(true);
+    setNotice(message);
+    setMode('verify');
+    Keyboard.dismiss();
   }
 
   async function withBusy(fn: () => Promise<void>) {
@@ -351,10 +385,20 @@ export function AuthPanel({location}: {location?: string}) {
     } catch (e) {
       const msg = apiErrorMessage(e);
       if (msg.includes('não confirmada') || msg.includes('código')) {
-        switchMode('verify');
-        appAlert(
-          'Confirme seu e-mail',
-          'Sua conta ainda não foi confirmada. Use o código enviado por e-mail.',
+        const emailNorm = normalizeEmail(email);
+        if (isValidEmail(emailNorm)) {
+          try {
+            const data = await syncApi.resendCode({
+              email: emailNorm,
+              channel: 'email',
+            });
+            noteDevCode(data);
+          } catch {
+            // A tela de código abre mesmo se o reenvio falhar.
+          }
+        }
+        openCodeStep(
+          'Sua conta ainda não foi confirmada. Digite o código de 6 dígitos enviado ao e-mail.',
         );
       } else {
         appAlert('PegouPreço', msg);
@@ -387,28 +431,36 @@ export function AuthPanel({location}: {location?: string}) {
     <Screen style={styles.root}>
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        behavior="padding"
+        keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top : 0}>
         <Animated.View
           style={[
             styles.hero,
             {
-              paddingTop: insets.top + space.md,
+              paddingTop: insets.top + (keyboardPad > 0 ? space.sm : space.md),
+              paddingBottom: keyboardPad > 0 ? space.sm : space.xxl + 12,
               opacity: heroOpacity,
               transform: [{translateY: heroY}],
             },
           ]}>
           <View style={styles.blobA} />
           <View style={styles.blobB} />
-          <Animated.View style={{transform: [{scale: logoScale}]}}>
-            <View style={styles.logoRing}>
-              <BrandLogo size={56} />
-            </View>
-          </Animated.View>
-          <Text style={styles.brand}>PegouPreço</Text>
+          {keyboardPad === 0 ? (
+            <Animated.View style={{transform: [{scale: logoScale}]}}>
+              <View style={styles.logoRing}>
+                <BrandLogo size={56} />
+              </View>
+            </Animated.View>
+          ) : null}
+          {keyboardPad === 0 ? (
+            <Text style={styles.brand}>PegouPreço</Text>
+          ) : null}
           <Text style={styles.kicker}>{copy.kicker}</Text>
           <Text style={styles.heroTitle}>{copy.title}</Text>
-          <Text style={styles.heroSub}>{copy.subtitle}</Text>
-          {location ? (
+          {keyboardPad === 0 ? (
+            <Text style={styles.heroSub}>{copy.subtitle}</Text>
+          ) : null}
+          {location && keyboardPad === 0 ? (
             <View style={styles.locChip}>
               <MapPin size={12} color={colors.navy} />
               <Text style={styles.locText} numberOfLines={1}>
@@ -424,14 +476,18 @@ export function AuthPanel({location}: {location?: string}) {
             {
               opacity: sheetOpacity,
               transform: [{translateY: sheetY}],
-              paddingBottom: Math.max(insets.bottom, space.md) + 88,
+              paddingBottom: Math.max(insets.bottom, space.md),
             },
           ]}>
           <View style={styles.sheetHandle} />
           <ScrollView
+            ref={scrollRef}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
-            contentContainerStyle={styles.sheetBody}>
+            contentContainerStyle={[
+              styles.sheetBody,
+              {paddingBottom: space.xl + (keyboardPad > 0 ? 24 : 88)},
+            ]}>
             <Animated.View style={{opacity: formOpacity, gap: 14}}>
               {mode === 'login' || mode === 'otp' ? (
                 <ModeTabs
@@ -539,6 +595,7 @@ export function AuthPanel({location}: {location?: string}) {
                 </>
               ) : null}
 
+              {notice ? <Text style={styles.notice}>{notice}</Text> : null}
               {devHint ? <Text style={styles.devHint}>{devHint}</Text> : null}
 
               <PulseCta
@@ -603,11 +660,8 @@ export function AuthPanel({location}: {location?: string}) {
                         setAuth(sessionFrom(data, fallback));
                         return;
                       }
-                      setOtpSent(true);
-                      switchMode('verify');
-                      appAlert(
-                        'Confirme seu e-mail',
-                        'Enviamos um código de 6 dígitos para o e-mail informado.',
+                      openCodeStep(
+                        `Enviamos um código de 6 dígitos para ${emailNorm}. Digite abaixo para concluir o cadastro.`,
                       );
                       return;
                     }
@@ -620,11 +674,8 @@ export function AuthPanel({location}: {location?: string}) {
                         email: emailNorm,
                       });
                       noteDevCode(data);
-                      setOtpSent(true);
-                      animateLayout();
-                      appAlert(
-                        'Código enviado',
-                        'Confira o e-mail e digite o código de 6 dígitos.',
+                      openCodeStep(
+                        `Código enviado para ${emailNorm}. Digite os 6 dígitos abaixo para entrar.`,
                       );
                       return;
                     }
@@ -646,6 +697,7 @@ export function AuthPanel({location}: {location?: string}) {
                             code: code.trim(),
                           });
                     if (!data.token) throw new Error('Token ausente');
+                    setNotice(null);
                     setAuth(sessionFrom(data, fallback));
                   })
                 }
@@ -886,6 +938,16 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: '800',
     textAlign: 'center',
+  },
+  notice: {
+    backgroundColor: '#EEF2FF',
+    color: colors.navy,
+    fontWeight: '700',
+    fontSize: 13,
+    lineHeight: 18,
+    borderRadius: radii.md,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
   hint: {color: colors.muted, fontSize: 13, fontWeight: '600', lineHeight: 18},
   devHint: {
