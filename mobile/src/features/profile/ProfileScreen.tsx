@@ -310,9 +310,11 @@ export function ProfileScreen() {
                   ) : null}
                 </View>
               </View>
-              {rep?.badges?.length ? (
+              {rep?.badges?.filter(id => id !== 'primeira_nfce').length ? (
                 <View style={styles.badgeWrap}>
-                  {rep.badges.map(id => {
+                  {rep.badges
+                    .filter(id => id !== 'primeira_nfce')
+                    .map(id => {
                     const b = badgeById(id);
                     return (
                       <View key={id} style={styles.badgeChip}>
