@@ -1,6 +1,7 @@
 import React, {useEffect, useMemo, useState} from 'react';
 import {
   ActivityIndicator,
+  Keyboard,
   LayoutAnimation,
   Modal,
   Platform,
@@ -17,6 +18,7 @@ import {
   ClipboardList,
   History,
   MoreVertical,
+  Plus,
   Barcode,
   ScanLine,
   Trash2,
@@ -92,6 +94,8 @@ export function CartScreen() {
   );
   const [confirmHint, setConfirmHint] = useState<string | null>(null);
   const [itemDraft, setItemDraft] = useState('');
+  const [addOpen, setAddOpen] = useState(false);
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
 
   const totals = useMemo(() => cartRepo.computeTotals(cart), [cart]);
   const selectedCount = totals.checkedCount;
@@ -123,6 +127,7 @@ export function CartScreen() {
       checkedOff: 0,
     });
     setItemDraft('');
+    setAddOpen(false);
     refresh();
   };
 
@@ -146,6 +151,19 @@ export function CartScreen() {
     setMenuOpen(false);
     action();
   };
+
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', () =>
+      setKeyboardOpen(true),
+    );
+    const hide = Keyboard.addListener('keyboardDidHide', () =>
+      setKeyboardOpen(false),
+    );
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
 
   useEffect(() => {
     if (!startOpen) return;
@@ -237,12 +255,22 @@ export function CartScreen() {
             : 'Comece uma compra e registre os itens no mercado'
         }
         trailing={
-          <Pressable
-            onPress={() => setMenuOpen(true)}
-            style={styles.menuCircle}
-            accessibilityLabel="Menu da lista">
-            <MoreVertical color={colors.navy} size={20} />
-          </Pressable>
+          <View style={styles.headerActions}>
+            {activeListName ? (
+              <Pressable
+                onPress={() => setAddOpen(true)}
+                style={styles.menuCircle}
+                accessibilityLabel="Adicionar item">
+                <Plus color={colors.navy} size={20} />
+              </Pressable>
+            ) : null}
+            <Pressable
+              onPress={() => setMenuOpen(true)}
+              style={styles.menuCircle}
+              accessibilityLabel="Menu da lista">
+              <MoreVertical color={colors.navy} size={20} />
+            </Pressable>
+          </View>
         }
       />
       <Modal
@@ -301,7 +329,7 @@ export function CartScreen() {
           </View>
         </Pressable>
       </Modal>
-      {cart.length === 0 ? (
+      {!activeListName && cart.length === 0 ? (
         <CartEmptyGuide
           hasActiveList={!!activeListName}
           onStartScan={goCapture}
@@ -310,9 +338,11 @@ export function CartScreen() {
       ) : (
         <>
           <ScrollView
+            style={styles.list}
+            keyboardShouldPersistTaps="handled"
             contentContainerStyle={[
               styles.listPad,
-              {paddingBottom: bottomPad + 72},
+              {paddingBottom: keyboardOpen ? space.md : 16},
             ]}>
             <SoftCard style={styles.summaryCard}>
               <Text style={styles.summaryLabel}>
@@ -328,18 +358,12 @@ export function CartScreen() {
                 ) : null}
               </View>
               <ProgressBar progress={progress} height={8} />
-              <View style={styles.writeRow}>
-                <AppField
-                  compact
-                  value={itemDraft}
-                  onChangeText={setItemDraft}
-                  placeholder="Escrever item da lista"
-                  onSubmitEditing={addWrittenItem}
-                  returnKeyType="done"
-                />
-                <AppButton label="Adicionar" onPress={addWrittenItem} />
-              </View>
             </SoftCard>
+            {cart.length === 0 ? (
+              <Text style={styles.emptyList}>
+                Lista vazia. Toque em + no topo para escrever um item.
+              </Text>
+            ) : null}
 
             {inCart.length > 0 ? (
               <>
@@ -421,6 +445,7 @@ export function CartScreen() {
               </>
             ) : null}
           </ScrollView>
+          {keyboardOpen ? null : (
           <View style={[styles.finalizeBar, {paddingBottom: bottomPad}]}>
             <AppButton
               label={`Finalizar compra · ${formatBrl(totals.subtotal)}`}
@@ -455,8 +480,25 @@ export function CartScreen() {
               }}
             />
           </View>
+          )}
         </>
       )}
+
+      <KeyboardSafeSheet
+        visible={addOpen}
+        onClose={() => setAddOpen(false)}>
+        <Text style={styles.modalTitle}>Adicionar item</Text>
+        <AppField
+          compact
+          value={itemDraft}
+          onChangeText={setItemDraft}
+          placeholder="Nome do item"
+          onSubmitEditing={addWrittenItem}
+          returnKeyType="done"
+          autoFocus
+        />
+        <AppButton label="Adicionar" onPress={addWrittenItem} />
+      </KeyboardSafeSheet>
 
       <KeyboardSafeSheet
         visible={startOpen}
@@ -665,6 +707,7 @@ function CartRow({
 }) {
   const refresh = useAppStore(s => s.refresh);
   const total = lineTotal(item);
+  const priced = item.retailPrice > 0;
   const hasWholesale = item.wholesalePrice != null;
   const useWholesale = !!item.useWholesale && hasWholesale;
 
@@ -687,26 +730,30 @@ function CartRow({
   return (
     <SwipeableActions dense onEdit={onEdit} onDelete={onDelete}>
       <Pressable
-        onPress={onEdit}
+        onPress={priced ? onEdit : onScan}
         onLongPress={onToggle}
-        style={[styles.rowCard, muted && styles.cardDim]}>
+        style={[styles.rowCard, muted && priced && styles.cardDim]}>
         <View style={styles.rowBody}>
           <View style={styles.rowMain}>
             <Text
-              style={[styles.itemName, muted && {color: colors.muted}]}
+              style={[styles.itemName, muted && priced && {color: colors.muted}]}
               numberOfLines={2}>
               {item.productName}
             </Text>
             <Pressable
               onPress={onScan}
               hitSlop={8}
-              accessibilityLabel="Escanear preço">
-              <Barcode size={20} color={colors.navy} />
+              style={styles.scanBtn}
+              accessibilityLabel="Ler código de barras">
+              <Barcode size={22} color={colors.navy} />
             </Pressable>
-            <Text style={[styles.price, muted && {opacity: 0.5}]}>
-              {item.retailPrice > 0 ? formatBrl(total) : 'Sem preço'}
-            </Text>
+            {priced ? (
+              <Text style={[styles.price, muted && {opacity: 0.5}]}>
+                {formatBrl(total)}
+              </Text>
+            ) : null}
           </View>
+          {priced ? (
           <View style={styles.rowMeta}>
             <Text style={styles.metaText}>{qtyPhrase(item.quantity)}</Text>
             <View style={styles.modeSeg}>
@@ -746,6 +793,7 @@ function CartRow({
               </Pressable>
             </View>
           </View>
+          ) : null}
         </View>
       </Pressable>
     </SwipeableActions>
@@ -840,6 +888,7 @@ function EditItemModal({
 
 const styles = StyleSheet.create({
   root: {flex: 1, backgroundColor: colors.bg},
+  headerActions: {flexDirection: 'row', alignItems: 'center', gap: 8},
   menuCircle: {
     width: 40,
     height: 40,
@@ -854,7 +903,12 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   summaryCard: {marginBottom: space.md, gap: 10},
-  writeRow: {marginTop: 8, gap: 8},
+  emptyList: {
+    color: colors.muted,
+    fontWeight: '600',
+    fontSize: 14,
+    lineHeight: 20,
+  },
   summaryLabel: {
     fontSize: 13,
     fontWeight: '700',
@@ -917,7 +971,16 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   menuItemText: {fontSize: 15, fontWeight: '700', color: colors.ink},
+  list: {flex: 1},
   listPad: {paddingHorizontal: space.md, paddingTop: 4},
+  scanBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.bg,
+  },
   finalizeBar: {
     paddingHorizontal: 16,
     paddingTop: 8,

@@ -1,6 +1,8 @@
-import React from 'react';
+import React, {useEffect, useState} from 'react';
 import {
   Animated,
+  Dimensions,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -25,6 +27,30 @@ export function KeyboardSafeSheet({
 }) {
   const insets = useSafeAreaInsets();
   const {mounted, backdropStyle, sheetStyle} = useAnimatedSheet(visible);
+  const [keyboardPad, setKeyboardPad] = useState(0);
+
+  useEffect(() => {
+    if (!visible) {
+      setKeyboardPad(0);
+      return;
+    }
+    const baseHeight = Dimensions.get('window').height;
+    const apply = (height: number) => {
+      const shrunk = baseHeight - Dimensions.get('window').height;
+      // Se a janela já encolheu, não soma a altura do teclado de novo.
+      setKeyboardPad(shrunk > 80 ? 0 : height);
+    };
+    const show = Keyboard.addListener('keyboardDidShow', e => {
+      const height = e.endCoordinates.height;
+      apply(height);
+      setTimeout(() => apply(height), 60);
+    });
+    const hide = Keyboard.addListener('keyboardDidHide', () => setKeyboardPad(0));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, [visible]);
 
   if (!mounted) return null;
 
@@ -47,7 +73,10 @@ export function KeyboardSafeSheet({
           style={[
             styles.sheet,
             sheetStyle,
-            {paddingBottom: Math.max(insets.bottom, 16)},
+            {
+              paddingBottom:
+                Math.max(insets.bottom, 16) + keyboardPad,
+            },
           ]}>
           <View style={styles.handle} />
           <ScrollView

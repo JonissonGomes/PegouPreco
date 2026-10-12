@@ -338,6 +338,7 @@ export function CommunityScreen() {
         }
         ListEmptyComponent={
           <FeatureEmptyGuide
+            style={styles.emptyGuide}
             HeroIcon={UsersRound}
             title={
               origin
@@ -435,7 +436,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   listHeading: {fontWeight: '900', fontSize: 18, color: colors.navy, flex: 1},
-  list: {padding: space.md, paddingBottom: 120},
+  list: {paddingHorizontal: space.md, paddingTop: 4, paddingBottom: 120},
+  emptyGuide: {paddingHorizontal: 0, paddingTop: 0},
   listEmpty: {
     flexGrow: 1,
     paddingBottom: spacing.bottomNavClearance,
