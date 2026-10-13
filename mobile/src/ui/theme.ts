@@ -48,5 +48,5 @@ export const spacing = {
   cardRadius: radii.md,
   controlRadius: radii.md,
   bottomBarHeight: 72,
-  bottomNavClearance: 96,
+  bottomNavClearance: 120,
 };

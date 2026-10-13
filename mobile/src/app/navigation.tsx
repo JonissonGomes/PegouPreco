@@ -33,7 +33,7 @@ import {AdminMarketsScreen} from '@/features/admin/AdminMarketsScreen';
 import {HistoryScreen} from '@/features/history/HistoryScreen';
 import {OnboardingScreen} from '@/features/onboarding/OnboardingScreen';
 import {BrandLogo} from '@/ui/chrome';
-import {colors, spacing} from '@/ui/theme';
+import {colors} from '@/ui/theme';
 import {useAppStore} from '@/store/appStore';
 
 if (
@@ -49,7 +49,8 @@ const Stack = createNativeStackNavigator();
 function Tabs() {
   const insets = useSafeAreaInsets();
   const visible = useAppStore(s => s.bottomNavVisible);
-  const bottom = visible ? 0 : -140;
+  const floatBottom = Math.max(insets.bottom, 10);
+  const bottom = visible ? floatBottom : -180;
 
   useEffect(() => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -63,22 +64,26 @@ function Tabs() {
         tabBarHideOnKeyboard: true,
         tabBarStyle: {
           position: 'absolute',
-          left: 0,
-          right: 0,
+          left: 16,
+          right: 16,
           bottom,
-          height: spacing.bottomBarHeight + Math.max(insets.bottom, 0),
-          paddingBottom: Math.max(insets.bottom, 8),
-          paddingTop: 10,
+          height: 68,
+          paddingBottom: 8,
+          paddingTop: 6,
+          borderRadius: 34,
           backgroundColor: '#fff',
-          borderTopWidth: 1,
-          borderTopColor: colors.border,
-          elevation: 0,
+          borderTopWidth: 0,
+          shadowColor: '#0B2A6B',
+          shadowOpacity: 0.12,
+          shadowRadius: 16,
+          shadowOffset: {width: 0, height: 6},
+          elevation: 10,
           opacity: visible ? 1 : 0,
         },
         tabBarActiveTintColor: colors.navy,
         tabBarInactiveTintColor: colors.muted,
-        tabBarLabelStyle: {fontSize: 10, fontWeight: '700'},
-        tabBarItemStyle: {paddingTop: 2},
+        tabBarLabelStyle: {fontSize: 10, fontWeight: '700', marginTop: 2},
+        tabBarItemStyle: {borderRadius: 28, paddingTop: 2},
       }}>
       <Tab.Screen
         name="Lists"
@@ -199,20 +204,13 @@ export function RootNavigation() {
 
 const styles = StyleSheet.create({
   homeFab: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: colors.yellowBright,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 28,
-    borderWidth: 4,
-    borderColor: '#fff',
-    shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
-    shadowOffset: {width: 0, height: 4},
-    elevation: 6,
+    marginBottom: 2,
   },
   boot: {
     flex: 1,
