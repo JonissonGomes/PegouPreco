@@ -37,15 +37,15 @@ import {
 import {ensureNearbyMarketsDiscovered} from '@/data/remote/ensureNearbyMarkets';
 import {HomeWelcome} from '@/features/home/HomeWelcome';
 import {HomeHowItWorks} from '@/features/home/HomeHowItWorks';
-import {lifetimeSavings} from '@/domain/homeInsights';
-
-const RECIFE = {lat: -8.0476, lng: -34.8813};
+import {buildHomeDash, type HomePeriodDays} from '@/domain/homeDashboard';
+import {HomeDashboard} from '@/features/home/HomeDashboard';
 
 export function HomeScreen() {
   const nav = useNavigation<any>();
   const cart = useAppStore(s => s.cart);
   const markets = useAppStore(s => s.markets);
   const lists = useAppStore(s => s.lists);
+  const products = useAppStore(s => s.products);
   const refresh = useAppStore(s => s.refresh);
   const activeListName = useAppStore(s => s.activeListName);
   const auth = useAppStore(s => s.auth);
@@ -58,10 +58,12 @@ export function HomeScreen() {
   const [remoteRanks, setRemoteRanks] = useState<MarketBasketRank[] | null>(
     null,
   );
-  const [mapOrigin, setMapOrigin] = useState(() => {
-    const last = prefs.getLastLocation();
-    return last ?? RECIFE;
-  });
+  const [mapOrigin, setMapOrigin] = useState<{lat: number; lng: number} | null>(
+    () => prefs.getLastLocation(),
+  );
+  const [period, setPeriod] = useState<HomePeriodDays>(30);
+  const [dashMarket, setDashMarket] = useState<number | null>(null);
+  const [dashCategory, setDashCategory] = useState<string | null>(null);
 
   const loc = locSnapshot;
   const logsKey = lists.length + cart.length + markets.length;
@@ -89,7 +91,10 @@ export function HomeScreen() {
     : 'Iniciar compra';
 
   const nearbyMarkets = useMemo(
-    () => filterMarketsInRadius(markets, mapOrigin, NEARBY_RADIUS_KM, 20),
+    () =>
+      mapOrigin
+        ? filterMarketsInRadius(markets, mapOrigin, NEARBY_RADIUS_KM, 20)
+        : [],
     [markets, mapOrigin],
   );
   const mapMarkers = useMemo(
@@ -106,24 +111,24 @@ export function HomeScreen() {
   );
 
   const hasGeoMarkets = mapMarkers.length > 0;
-  const hasHistory = lists.length > 0;
-  const hasDashboard = cart.length > 0 && ranks.length > 0;
-  /** Usuário com dados locais — mapa reduzido em vez do empty "Monte sua lista". */
-  const isReturning = hasGeoMarkets || hasHistory || hasDashboard;
-  const savedTotal = useMemo(() => lifetimeSavings(lists), [lists]);
+  const hasLists = lists.length > 0;
+  const hasBasket = cart.length > 0 && ranks.length > 0;
+  const dash = useMemo(
+    () => buildHomeDash(lists, products, period, dashMarket, dashCategory),
+    [lists, products, period, dashMarket, dashCategory],
+  );
 
-  const discoverNearHome = useCallback(async (origin: {
-    lat: number;
-    lng: number;
-  }) => {
+  const discoverNearHome = useCallback(async (
+    origin: {lat: number; lng: number},
+    force = false,
+  ) => {
     try {
-      const {marketIds} = await ensureNearbyMarketsDiscovered(
+      const found = await ensureNearbyMarketsDiscovered(
         origin.lat,
         origin.lng,
-        {mapboxToken: MAPBOX_ACCESS_TOKEN},
+        {mapboxToken: MAPBOX_ACCESS_TOKEN, force},
       );
-      // Só refresh se algo novo entrou — evita piscar o WebView do mini-mapa
-      if (marketIds.length > 0) refresh();
+      if (found.added > 0) refresh();
     } catch {
       // offline / Overpass ok
     }
@@ -137,9 +142,10 @@ export function HomeScreen() {
     }
     if (!permissions.location) {
       setGeoAttempted(true);
-      const last = prefs.getLastLocation() ?? RECIFE;
+      const last = prefs.getLastLocation();
+      if (!last) return;
       setMapOrigin(prev =>
-        prev.lat === last.lat && prev.lng === last.lng ? prev : last,
+        prev && prev.lat === last.lat && prev.lng === last.lng ? prev : last,
       );
       void discoverNearHome(last);
       return;
@@ -155,6 +161,7 @@ export function HomeScreen() {
             };
             prefs.setLastLocation(next.lat, next.lng);
             setMapOrigin(prev =>
+              prev &&
               Math.abs(prev.lat - next.lat) < 1e-5 &&
               Math.abs(prev.lng - next.lng) < 1e-5
                 ? prev
@@ -183,11 +190,15 @@ export function HomeScreen() {
             resolve();
           },
           () => {
-            const last = prefs.getLastLocation() ?? RECIFE;
-            setMapOrigin(prev =>
-              prev.lat === last.lat && prev.lng === last.lng ? prev : last,
-            );
-            void discoverNearHome(last);
+            const last = prefs.getLastLocation();
+            if (last) {
+              setMapOrigin(prev =>
+                prev && prev.lat === last.lat && prev.lng === last.lng
+                  ? prev
+                  : last,
+              );
+              void discoverNearHome(last);
+            }
             resolve();
           },
           {enableHighAccuracy: false, timeout: 12000, maximumAge: 60000},
@@ -266,9 +277,9 @@ export function HomeScreen() {
   const goLists = useCallback(() => nav.navigate('Lists'), [nav]);
   const goCapture = useCallback(() => nav.navigate('Capture'), [nav]);
 
-  const headerTitle = hasDashboard
-    ? 'Onde comprar hoje'
-    : isReturning
+  const headerTitle = hasLists
+    ? 'Suas compras'
+    : hasGeoMarkets
       ? 'Mercados perto de você'
       : 'PegouPreço';
 
@@ -298,7 +309,7 @@ export function HomeScreen() {
             onRefresh={async () => {
               setRefreshing(true);
               refresh();
-              await discoverNearHome(mapOrigin);
+              if (mapOrigin) await discoverNearHome(mapOrigin, true);
               await loadRemote();
               setRefreshing(false);
             }}
@@ -306,7 +317,21 @@ export function HomeScreen() {
           />
         }>
         <ScreenScrollPad>
-          {hasDashboard && best ? (
+          {hasLists ? (
+            <HomeDashboard
+              dash={dash}
+              period={period}
+              marketId={dashMarket}
+              category={dashCategory}
+              onPeriod={setPeriod}
+              onMarket={setDashMarket}
+              onCategory={setDashCategory}
+              onOpenHistory={() => nav.navigate('History')}
+              onOpenList={() => nav.navigate('History')}
+            />
+          ) : null}
+
+          {hasBasket && best ? (
             <>
               <Pressable style={styles.heroCard} onPress={goLists}>
                 <Text style={styles.heroKicker}>
@@ -327,23 +352,25 @@ export function HomeScreen() {
                 <Text style={styles.heroCta}>{openListLabel}</Text>
               </Pressable>
 
-              <SectionHeader
-                title="Perto de você"
-                actionLabel="Mapa completo"
-                onAction={goMap}
-              />
-              <MiniMapPreview
-                center={mapOrigin}
-                markers={mapMarkers}
-                onPress={goMap}
-                caption={
-                  mapMarkers.length
-                    ? `${mapMarkers.length} mercados · ${NEARBY_RADIUS_KM} km`
-                    : 'Abrir mapa'
-                }
-              />
-              {howItWorks}
-
+              {mapOrigin ? (
+                <>
+                  <SectionHeader
+                    title="Perto de você"
+                    actionLabel="Mapa completo"
+                    onAction={goMap}
+                  />
+                  <MiniMapPreview
+                    center={mapOrigin}
+                    markers={mapMarkers}
+                    onPress={goMap}
+                    caption={
+                      mapMarkers.length
+                        ? `${mapMarkers.length} mercados · ${NEARBY_RADIUS_KM} km`
+                        : 'Abrir mapa'
+                    }
+                  />
+                </>
+              ) : null}
               <SectionHeader
                 title="Ranking"
                 actionLabel="Ver compras"
@@ -378,7 +405,7 @@ export function HomeScreen() {
                 </Pressable>
               </View>
             </>
-          ) : isReturning ? (
+          ) : hasGeoMarkets && mapOrigin ? (
             <>
               <MiniMapPreview
                 center={mapOrigin}
@@ -391,19 +418,12 @@ export function HomeScreen() {
                     : 'Explorar mapa'
                 }
               />
-              {howItWorks}
               <View style={styles.returnBlock}>
                 <Text style={styles.returnTitle}>
-                  {hasHistory
-                    ? 'Pronto para a próxima compra'
-                    : 'Mercados descobertos na sua área'}
+                  Mercados descobertos na sua área
                 </Text>
                 <Text style={styles.returnMsg}>
-                  {hasHistory
-                    ? savedTotal > 0
-                      ? `Você já economizou ${formatBrl(savedTotal)} em compras finalizadas. Abra o mapa ou inicie outra compra.`
-                      : 'Toque no mapa para ver pinos ou inicie uma compra para comparar preços.'
-                    : 'Toque no mapa para explorar ou inicie uma compra para comparar preços da comunidade.'}
+                  Toque no mapa para explorar ou inicie uma compra para comparar preços.
                 </Text>
                 <AppButton label="Abrir mapa" onPress={goMap} />
                 <AppButton
@@ -417,7 +437,7 @@ export function HomeScreen() {
                 />
               </View>
             </>
-          ) : (
+          ) : !hasLists ? (
             <>
               <HomeWelcome
                 regionLabel={regionLabel || undefined}
@@ -426,9 +446,9 @@ export function HomeScreen() {
               />
               {howItWorks}
             </>
-          )}
+          ) : null}
 
-          {cart.length > 0 && !hasDashboard ? (
+          {cart.length > 0 && !hasBasket ? (
             <EmptyState
               title="Poucos dados na região"
               message="Ainda não há preços verificados o bastante. Capture etiquetas ou valide preços na Comunidade."

@@ -8,14 +8,9 @@ import {
   View,
 } from 'react-native';
 import {useNavigation} from '@react-navigation/native';
-import {ArrowLeft, History, ScanLine, TrendingDown} from 'lucide-react-native';
+import {History, ScanLine, TrendingDown} from 'lucide-react-native';
 import {FeatureEmptyGuide} from '@/ui/FeatureEmptyGuide';
-import {
-  BackCircleButton,
-  SavePill,
-  SoftCard,
-  SoftHeader,
-} from '@/ui/screenChrome';
+import {SavePill, SoftCard, SoftHeader} from '@/ui/screenChrome';
 import {colors, radii, space, spacing} from '@/ui/theme';
 import {formatBrl, formatQty} from '@/domain/money';
 import {lineTotal} from '@/domain/pricing';
@@ -125,11 +120,6 @@ export function HistoryScreen() {
       <SoftHeader
         title="Histórico"
         subtitle={`${products.length} produtos rastreados`}
-        leading={
-          <BackCircleButton onPress={() => nav.goBack()}>
-            <ArrowLeft color={colors.navy} size={22} />
-          </BackCircleButton>
-        }
       />
 
       <View style={styles.searchWrap}>
@@ -230,7 +220,7 @@ export function HistoryScreen() {
               primaryLabel="Cadastrar nota"
               onPrimary={() => nav.navigate('ImportPurchase')}
               secondaryLabel="Ir para Compras"
-              onSecondary={() => nav.navigate('Main', {screen: 'Lists'})}
+              onSecondary={() => nav.navigate('Lists')}
             />
           }
           renderItem={({item}) => (
@@ -319,9 +309,9 @@ export function HistoryScreen() {
             ]}
             PrimaryIcon={ScanLine}
             primaryLabel="Registrar um preço"
-            onPrimary={() => nav.navigate('Main', {screen: 'Capture'})}
+            onPrimary={() => nav.navigate('Capture')}
             secondaryLabel="Ir para Compras"
-            onSecondary={() => nav.navigate('Main', {screen: 'Lists'})}
+            onSecondary={() => nav.navigate('Lists')}
           />
         }
         renderItem={({item}) => {
@@ -434,7 +424,11 @@ const styles = StyleSheet.create({
   },
   chipText: {fontWeight: '800', color: colors.navy, fontSize: 13},
   chipTextOn: {color: colors.navy},
-  list: {paddingHorizontal: space.md, paddingBottom: 40, gap: space.sm},
+  list: {
+    paddingHorizontal: space.md,
+    paddingBottom: spacing.bottomNavClearance,
+    gap: space.sm,
+  },
   listEmpty: {
     flexGrow: 1,
     paddingBottom: spacing.bottomNavClearance,

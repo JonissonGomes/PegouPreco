@@ -38,12 +38,10 @@ import type {Market} from '@/data/types';
 
 type GeoPoint = {latitude: number; longitude: number};
 
-const RECIFE: GeoPoint = {latitude: -8.0476, longitude: -34.8813};
-
-function initialCenter(): GeoPoint {
+function initialCenter(): GeoPoint | null {
   const last = prefs.getLastLocation();
-  if (last) return {latitude: last.lat, longitude: last.lng};
-  return RECIFE;
+  if (!last) return null;
+  return {latitude: last.lat, longitude: last.lng};
 }
 
 function tileLayerJs(token: string) {
@@ -253,7 +251,9 @@ export function MapScreen() {
   const refresh = useAppStore(s => s.refresh);
   const locationGranted = useAppStore(s => s.permissions.location);
   const webRef = useRef<WebView>(null);
-  const [center, setCenter] = useState<GeoPoint>(initialCenter);
+  const [center, setCenter] = useState<GeoPoint | null>(initialCenter);
+  const [html, setHtml] = useState<string | null>(null);
+  const htmlLocked = useRef(false);
   const [loading, setLoading] = useState(true);
   const [discovering, setDiscovering] = useState(false);
   const [blocked, setBlocked] = useState(!locationGranted);
@@ -279,12 +279,13 @@ export function MapScreen() {
         m => set.has(m.id) && m.lat != null && m.lng != null,
       );
     }
+    if (!center) return [];
     return filterMarketsInRadius(
       markets,
       {lat: center.latitude, lng: center.longitude},
       NEARBY_RADIUS_KM,
     );
-  }, [markets, center.latitude, center.longitude, pinIds]);
+  }, [markets, center, pinIds]);
   const rated = nearby.filter(m => (m.avgRating ?? 0) > 0).length;
 
   const markerData = useMemo(
@@ -301,7 +302,7 @@ export function MapScreen() {
   );
 
   const selectedDistance =
-    selected?.lat != null && selected?.lng != null
+    center && selected?.lat != null && selected?.lng != null
       ? haversineKm(
           {lat: center.latitude, lng: center.longitude},
           {lat: selected.lat, lng: selected.lng},
@@ -310,7 +311,7 @@ export function MapScreen() {
 
   const searchHits = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return [];
+    if (!q || !center) return [];
     return nearby
       .filter(
         m =>
@@ -325,7 +326,7 @@ export function MapScreen() {
           {lat: m.lat!, lng: m.lng!},
         ),
       }));
-  }, [nearby, query, center.latitude, center.longitude]);
+  }, [nearby, query, center]);
 
   const flyToMarket = (m: Market) => {
     if (m.lat == null || m.lng == null) return;
@@ -338,12 +339,11 @@ export function MapScreen() {
     setQuery('');
   };
 
-  const html = useMemo(
-    () => buildMapHtml(center, [], MAPBOX_ACCESS_TOKEN),
-    // O HTML não pode depender dos pins: trocar a source recria o mapa e perde o zoom.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [MAPBOX_ACCESS_TOKEN],
-  );
+  useEffect(() => {
+    if (!center || htmlLocked.current) return;
+    htmlLocked.current = true;
+    setHtml(buildMapHtml(center, [], MAPBOX_ACCESS_TOKEN));
+  }, [center]);
 
   const pushMarkersToWeb = (list = markerData) => {
     webRef.current?.injectJavaScript(
@@ -351,7 +351,7 @@ export function MapScreen() {
     );
   };
 
-  const discoverAround = async (point: GeoPoint) => {
+  const discoverAround = async (point: GeoPoint, force = false) => {
     setDiscovering(true);
     setStatus('Buscando mercados próximos…');
     // Mostra pins locais imediatamente enquanto OSM/Mapbox respondem.
@@ -365,17 +365,32 @@ export function MapScreen() {
       setStatus(`${local.length} salvos · buscando mais…`);
     }
     try {
-      const {marketIds} = await ensureNearbyMarketsDiscovered(
+      const found = await ensureNearbyMarketsDiscovered(
         point.latitude,
         point.longitude,
-        {radiusKm: NEARBY_RADIUS_KM, mapboxToken: MAPBOX_ACCESS_TOKEN},
+        {
+          radiusKm: NEARBY_RADIUS_KM,
+          mapboxToken: MAPBOX_ACCESS_TOKEN,
+          force,
+        },
       );
-      // União com os já salvos no raio — a descoberta não esconde os da API.
+      if (found.fromCache) {
+        const ids = [
+          ...new Set([...local.map(m => m.id), ...found.marketIds]),
+        ];
+        setPinIds(ids.length ? ids : null);
+        setStatus(
+          ids.length
+            ? `${ids.length} mercados nesta localidade`
+            : 'Nenhum mercado próximo encontrado',
+        );
+        return;
+      }
       const ids = [
-        ...new Set([...local.map(m => m.id), ...marketIds]),
+        ...new Set([...local.map(m => m.id), ...found.marketIds]),
       ];
       setPinIds(ids.length ? ids : null);
-      refresh();
+      if (found.added > 0) refresh();
       setStatus(
         ids.length
           ? `${ids.length} mercados nesta localidade`
@@ -398,8 +413,12 @@ export function MapScreen() {
     useAppStore.setState({permissions: flags});
     if (!flags.location) {
       setBlocked(true);
-      setStatus('Localização desativada');
-      await discoverAround(center);
+      setStatus(
+        center
+          ? 'Localização desativada · usando última posição'
+          : 'Ative a localização para ver mercados perto de você',
+      );
+      if (center) await discoverAround(center);
       return;
     }
     setStatus('Buscando mercados próximos…');
@@ -419,15 +438,19 @@ export function MapScreen() {
       },
       async () => {
         setBlocked(true);
-        setStatus('GPS indisponível · usando última posição');
-        await discoverAround(center);
+        setStatus(
+          center
+            ? 'GPS indisponível · usando última posição'
+            : 'GPS indisponível',
+        );
+        if (center) await discoverAround(center);
       },
       {enableHighAccuracy: true, timeout: 15000, maximumAge: 5000},
     );
   };
 
   const loadRemote = async (
-    origin: GeoPoint = center,
+    origin: GeoPoint,
     discoveredIds?: number[],
   ) => {
     try {
@@ -540,7 +563,9 @@ export function MapScreen() {
               <LocateFixed color={colors.navy} size={20} />
             </Pressable>
             <Pressable
-              onPress={() => discoverAround(center)}
+              onPress={() => {
+                if (center) void discoverAround(center, true);
+              }}
               style={styles.iconBtn}>
               <RefreshCw color={colors.navy} size={20} />
             </Pressable>
@@ -585,6 +610,10 @@ export function MapScreen() {
       <View style={{flex: 1}}>
         {loading ? (
           <ActivityIndicator style={{marginTop: 40}} color={colors.navy} />
+        ) : !html ? (
+          <Text style={[styles.overlayText, styles.locateHint]}>
+            Ative a localização para ver os mercados perto de você.
+          </Text>
         ) : (
           <WebView
             ref={webRef}
@@ -687,10 +716,13 @@ export function MapScreen() {
             }
             setAddBusy(true);
             try {
-              const point = addPoint ?? {
-                lat: center.latitude,
-                lng: center.longitude,
-              };
+              const point = addPoint ?? (center
+                ? {lat: center.latitude, lng: center.longitude}
+                : null);
+              if (!point) {
+                appAlert('Localização', 'Ative o GPS ou segure um ponto no mapa.');
+                return;
+              }
               const m = marketRepo.resolveOrCreateNear(
                 name,
                 point.lat,
@@ -833,6 +865,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.muted,
     marginBottom: 10,
+  },
+  locateHint: {
+    margin: 24,
+    textAlign: 'center',
+    overflow: 'hidden',
   },
   overlayText: {
     marginTop: 8,

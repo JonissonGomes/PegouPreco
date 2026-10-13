@@ -12,8 +12,8 @@ import {NavigationContainer} from '@react-navigation/native';
 import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
 import {
+  History,
   Home,
-  ScanLine,
   ShoppingCart,
   UsersRound,
   UserRound,
@@ -57,6 +57,7 @@ function Tabs() {
 
   return (
     <Tab.Navigator
+      initialRouteName="Home"
       screenOptions={{
         headerShown: false,
         tabBarHideOnKeyboard: true,
@@ -80,14 +81,6 @@ function Tabs() {
         tabBarItemStyle: {paddingTop: 2},
       }}>
       <Tab.Screen
-        name="Home"
-        component={HomeScreen}
-        options={{
-          title: 'Início',
-          tabBarIcon: ({color}) => <Home size={20} color={color} />,
-        }}
-      />
-      <Tab.Screen
         name="Lists"
         component={CartScreen}
         options={{
@@ -96,13 +89,21 @@ function Tabs() {
         }}
       />
       <Tab.Screen
-        name="Capture"
-        component={CaptureScreen}
+        name="History"
+        component={HistoryScreen}
         options={{
-          title: '',
+          title: 'Histórico',
+          tabBarIcon: ({color}) => <History size={20} color={color} />,
+        }}
+      />
+      <Tab.Screen
+        name="Home"
+        component={HomeScreen}
+        options={{
+          title: 'Início',
           tabBarIcon: () => (
-            <View style={styles.scanFab}>
-              <ScanLine size={28} color={colors.navy} />
+            <View style={styles.homeFab}>
+              <Home size={26} color={colors.navy} />
             </View>
           ),
         }}
@@ -138,6 +139,15 @@ function Tabs() {
         component={InsightsScreen}
         options={{
           title: 'Insights',
+          tabBarButton: () => null,
+          tabBarItemStyle: {display: 'none'},
+        }}
+      />
+      <Tab.Screen
+        name="Capture"
+        component={CaptureScreen}
+        options={{
+          title: 'Captura',
           tabBarButton: () => null,
           tabBarItemStyle: {display: 'none'},
         }}
@@ -178,7 +188,6 @@ export function RootNavigation() {
             <Stack.Screen name="Main" component={Tabs} />
             <Stack.Screen name="ShoppingLists" component={ShoppingListsScreen} />
             <Stack.Screen name="ImportPurchase" component={ImportPurchaseScreen} />
-            <Stack.Screen name="History" component={HistoryScreen} />
             <Stack.Screen name="ProductDetail" component={ProductDetailScreen} />
             <Stack.Screen name="AdminMarkets" component={AdminMarketsScreen} />
           </>
@@ -189,7 +198,7 @@ export function RootNavigation() {
 }
 
 const styles = StyleSheet.create({
-  scanFab: {
+  homeFab: {
     width: 64,
     height: 64,
     borderRadius: 32,
