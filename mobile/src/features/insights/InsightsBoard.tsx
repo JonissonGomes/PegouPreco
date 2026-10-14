@@ -3,7 +3,8 @@ import {StyleSheet, Text, View} from 'react-native';
 import {Reveal, GrowBar} from '@/ui/reveal';
 import {colors, radii, space} from '@/ui/theme';
 
-const BAR_COLORS = ['#EF4444', '#F5B400', '#7C3AED'];
+const BAR_COLORS = ['#EF4444', '#00C2FF', '#7C3AED', '#16A34A', '#F5B400'];
+const BAR_TINTS = ['#FEE2E2', '#E0F7FF', '#F3E8FF', '#DCFCE7', '#FFF6D8'];
 
 export function InsightsBoard({
   spentLabel,
@@ -26,7 +27,7 @@ export function InsightsBoard({
           <Text style={styles.kicker}>{spentLabel}</Text>
           <Text style={styles.big}>{spent}</Text>
         </View>
-        <View style={styles.ring}>
+        <View style={[styles.ring, {borderColor: '#00C2FF'}]}>
           <Text style={styles.ringValue}>{ringValue}</Text>
           <Text style={styles.ringLabel}>{ringLabel}</Text>
         </View>
@@ -34,7 +35,7 @@ export function InsightsBoard({
       {bars.length > 0 ? (
         <View style={styles.barRow}>
           {bars.slice(0, 3).map((bar, i) => (
-            <Reveal key={bar.label} delay={120 + i * 80} style={styles.barCard}>
+            <Reveal key={bar.label} delay={120 + i * 90} style={[styles.barCard, {backgroundColor: BAR_TINTS[i % BAR_TINTS.length]}]}>
               <Text style={styles.barName} numberOfLines={1}>
                 {bar.label}
               </Text>
@@ -43,7 +44,8 @@ export function InsightsBoard({
                 <GrowBar
                   ratio={Math.max(0.08, Math.min(1, bar.ratio))}
                   color={BAR_COLORS[i % BAR_COLORS.length]}
-                  delay={180 + i * 80}
+                  delay={200 + i * 120}
+                  height={8}
                 />
               </View>
             </Reveal>
@@ -94,9 +96,9 @@ const styles = StyleSheet.create({
   barName: {fontSize: 11, fontWeight: '800', color: colors.muted},
   barValue: {fontSize: 16, fontWeight: '900', color: colors.navy},
   track: {
-    height: 4,
-    borderRadius: 4,
-    backgroundColor: '#E5E7EB',
+    height: 8,
+    borderRadius: 8,
+    backgroundColor: '#FFFFFF',
     overflow: 'hidden',
   },
 });

@@ -1,10 +1,10 @@
 import React from 'react';
 import {Pressable, StyleSheet, Text, View} from 'react-native';
-import Svg, {Circle, Polyline} from 'react-native-svg';
+import Svg, {Circle, Defs, LinearGradient, Polyline, Stop} from 'react-native-svg';
 import {formatBrl} from '@/domain/money';
 import type {HomeDash, HomePeriodDays} from '@/domain/homeDashboard';
 import {categoryTone} from '@/features/history/categoryTone';
-import {Reveal} from '@/ui/reveal';
+import {Reveal, useDraw} from '@/ui/reveal';
 import {colors, space} from '@/ui/theme';
 
 const PERIOD_LABEL: Record<HomePeriodDays, string> = {
@@ -27,6 +27,7 @@ export function HomeSpendBoard({
   const lead = slices[0];
   const leadPct = lead ? Math.round((lead.total / total) * 100) : 0;
   const trendMax = Math.max(...dash.trend.map(point => point.total), 1);
+  const draw = useDraw(160, 900);
 
   return (
     <View style={styles.wrap}>
@@ -57,25 +58,25 @@ export function HomeSpendBoard({
             />
           </View>
           <View style={styles.tiles}>
-            <View style={styles.tile}>
-              <Text style={styles.tileValue}>{formatBrl(dash.spent)}</Text>
+            <View style={[styles.tile, {backgroundColor: '#E0F2FE'}]}>
+              <Text style={[styles.tileValue, {color: '#0369A1'}]}>{formatBrl(dash.spent)}</Text>
               <Text style={styles.tileLabel}>Gasto</Text>
             </View>
-            <View style={styles.tile}>
-              <Text style={styles.tileValue}>{formatBrl(dash.savings)}</Text>
+            <View style={[styles.tile, {backgroundColor: '#DCFCE7'}]}>
+              <Text style={[styles.tileValue, {color: '#15803D'}]}>{formatBrl(dash.savings)}</Text>
               <Text style={styles.tileLabel}>Economia</Text>
             </View>
-            <View style={styles.tile}>
-              <Text style={styles.tileValue}>{dash.categories.length}</Text>
+            <View style={[styles.tile, {backgroundColor: '#FFF6D8'}]}>
+              <Text style={[styles.tileValue, {color: '#92400E'}]}>{dash.categories.length}</Text>
               <Text style={styles.tileLabel}>Categorias</Text>
             </View>
           </View>
-          <View style={styles.track}>
+          <View style={[styles.track, dash.savings > 0 && {backgroundColor: colors.yellow}]}>
             <View
               style={[
                 styles.trackSpend,
                 {
-                  flex: dash.spent + dash.savings > 0 ? dash.spent : 1,
+                  flex: dash.spent + dash.savings > 0 ? dash.spent * draw : 1,
                 },
               ]}
             />
@@ -142,8 +143,9 @@ function MiniRing({ratio}: {ratio: number}) {
   const stroke = 10;
   const radius = (size - stroke) / 2;
   const length = 2 * Math.PI * radius;
-  const part = Math.max(0, Math.min(1, ratio)) * length;
-  const pct = Math.round(ratio * 100);
+  const progress = useDraw(80, 800);
+  const part = Math.max(0, Math.min(1, ratio)) * length * progress;
+  const pct = Math.round(ratio * progress * 100);
   return (
     <View style={{width: size, height: size}}>
       <Svg width={size} height={size}>
@@ -151,28 +153,26 @@ function MiniRing({ratio}: {ratio: number}) {
           cx={size / 2}
           cy={size / 2}
           r={radius}
-          stroke="#E5E7EB"
+          stroke="#BAE6FD"
           strokeWidth={stroke}
           fill="none"
         />
-        {part > 0 ? (
-          <Circle
-            cx={size / 2}
-            cy={size / 2}
-            r={radius}
-            stroke={colors.yellow}
-            strokeWidth={stroke}
-            fill="none"
-            strokeDasharray={`${part} ${length - part}`}
-            strokeLinecap="round"
-            originX={size / 2}
-            originY={size / 2}
-            rotation={-90}
-          />
-        ) : null}
+        <Circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke="#16A34A"
+          strokeWidth={stroke}
+          fill="none"
+          strokeDasharray={`${part} ${length - part}`}
+          strokeLinecap="round"
+          originX={size / 2}
+          originY={size / 2}
+          rotation={-90}
+        />
       </Svg>
       <View style={styles.donutCenter}>
-        <Text style={styles.ringPct}>{pct}%</Text>
+        <Text style={[styles.ringPct, {color: '#15803D'}]}>{pct}%</Text>
       </View>
     </View>
   );
@@ -189,8 +189,15 @@ function Donut({
   const stroke = 16;
   const radius = (size - stroke) / 2;
   const length = 2 * Math.PI * radius;
+  const progress = useDraw(200, 1100);
   const sum = slices.reduce((acc, item) => acc + item.total, 0) || 1;
+  const arcs: {color: string; start: number; part: number}[] = [];
   let cursor = 0;
+  for (const slice of slices) {
+    const part = (slice.total / sum) * length;
+    arcs.push({color: slice.color, start: cursor, part});
+    cursor += part;
+  }
   return (
     <View style={{width: size, height: size}}>
       <Svg width={size} height={size}>
@@ -202,27 +209,25 @@ function Donut({
           strokeWidth={stroke}
           fill="none"
         />
-        {slices.map(slice => {
-          const part = (slice.total / sum) * length;
-          const node = (
+        {arcs.map(arc => {
+          const shown = arc.part * progress;
+          return (
             <Circle
-              key={`${slice.color}-${cursor}`}
+              key={`${arc.color}-${arc.start}`}
               cx={size / 2}
               cy={size / 2}
               r={radius}
-              stroke={slice.color}
+              stroke={arc.color}
               strokeWidth={stroke}
               fill="none"
-              strokeDasharray={`${part} ${length - part}`}
-              strokeDashoffset={-cursor}
-              strokeLinecap="butt"
+              strokeDasharray={`${shown} ${length - shown}`}
+              strokeDashoffset={-arc.start}
+              strokeLinecap="round"
               originX={size / 2}
               originY={size / 2}
               rotation={-90}
             />
           );
-          cursor += part;
-          return node;
         })}
       </Svg>
       <View style={styles.donutCenter}>
@@ -242,23 +247,38 @@ function Trend({
   const width = 280;
   const height = 72;
   const step = points.length > 1 ? width / (points.length - 1) : width;
-  const coords = points
-    .map((point, index) => {
-      const x = index * step;
-      const y = height - 8 - (point.total / max) * (height - 16);
-      return `${x},${y}`;
-    })
-    .join(' ');
+  const progress = useDraw(280, 1000);
+  const coords = points.map((point, index) => {
+    const x = index * step;
+    const y = height - 8 - (point.total / max) * (height - 16);
+    return {x, y};
+  });
+  let length = 0;
+  for (let i = 1; i < coords.length; i += 1) {
+    const dx = coords[i].x - coords[i - 1].x;
+    const dy = coords[i].y - coords[i - 1].y;
+    length += Math.hypot(dx, dy);
+  }
+  length = Math.max(length, 1);
+  const drawn = coords.map(point => `${point.x},${point.y}`).join(' ');
   return (
     <View>
       <Svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`}>
+        <Defs>
+          <LinearGradient id="spendLine" x1="0" y1="0" x2="1" y2="0">
+            <Stop offset="0" stopColor="#00C2FF" />
+            <Stop offset="1" stopColor="#FFD400" />
+          </LinearGradient>
+        </Defs>
         <Polyline
-          points={coords}
+          points={drawn}
           fill="none"
-          stroke={colors.navy}
-          strokeWidth={3}
+          stroke="url(#spendLine)"
+          strokeWidth={4}
           strokeLinejoin="round"
           strokeLinecap="round"
+          strokeDasharray={`${length}`}
+          strokeDashoffset={length * (1 - progress)}
         />
       </Svg>
       <View style={styles.trendLabels}>
@@ -322,7 +342,7 @@ const styles = StyleSheet.create({
   donutRow: {flexDirection: 'row', alignItems: 'center', gap: 12},
   legend: {flex: 1, gap: 8},
   legendRow: {flexDirection: 'row', alignItems: 'center', gap: 6},
-  dot: {width: 8, height: 8, borderRadius: 4},
+  dot: {width: 10, height: 10, borderRadius: 5},
   legendName: {flex: 1, fontWeight: '700', color: colors.ink, fontSize: 13},
   legendValue: {fontWeight: '800', color: colors.navy, fontSize: 12},
   donutCenter: {

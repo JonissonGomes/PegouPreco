@@ -3,6 +3,7 @@ import {StyleSheet, Text, View} from 'react-native';
 import {formatBrl} from '@/domain/money';
 import type {CheaperCategory} from '@/domain/purchaseInsights';
 import {GrowBar, Reveal} from '@/ui/reveal';
+import {categoryTone} from '@/features/history/categoryTone';
 import {colors, space} from '@/ui/theme';
 
 export function HomeCheaperChart({items}: {items: CheaperCategory[]}) {
@@ -17,16 +18,16 @@ export function HomeCheaperChart({items}: {items: CheaperCategory[]}) {
         </View>
       </Reveal>
       {items.map((item, index) => {
-        const lead = index === 0;
-        const width = Math.max(0.18, item.dropPct / max);
+        const tone = categoryTone(item.category);
+        const width = Math.max(0.22, item.dropPct / max);
         return (
-          <Reveal key={item.category} delay={80 + index * 70}>
+          <Reveal key={item.category} delay={80 + index * 90}>
             <View style={styles.row}>
               <View style={styles.fill}>
                 <GrowBar
                   ratio={width}
-                  color={lead ? colors.yellow : '#E8EDF5'}
-                  delay={140 + index * 70}
+                  color={tone.fg}
+                  delay={160 + index * 90}
                   height={52}
                 />
               </View>
