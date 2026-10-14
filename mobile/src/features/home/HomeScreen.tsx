@@ -25,7 +25,7 @@ import {
   type MarketBasketRank,
 } from '@/domain/compare';
 import {formatBrl} from '@/domain/money';
-import {prefs, useAppStore} from '@/store/appStore';
+import {prefs, priceLogRepo, useAppStore} from '@/store/appStore';
 import {syncApi} from '@/data/remote/syncApi';
 import {reverseGeocode} from '@/data/remote/reverseGeocode';
 import {getState} from '@/data/db';
@@ -40,6 +40,11 @@ import {ensureNearbyMarketsDiscovered} from '@/data/remote/ensureNearbyMarkets';
 import {HomeHowItWorks} from '@/features/home/HomeHowItWorks';
 import {HomeHub, homeShortcutIcons} from '@/features/home/HomeHub';
 import {buildHomeDash, type HomePeriodDays} from '@/domain/homeDashboard';
+import {
+  cheaperCategories,
+  pointsFromLists,
+  pointsFromLogs,
+} from '@/domain/purchaseInsights';
 import {HomeDashboard} from '@/features/home/HomeDashboard';
 
 export function HomeScreen() {
@@ -123,10 +128,27 @@ export function HomeScreen() {
   const hasGeoMarkets = mapMarkers.length > 0;
   const hasLists = lists.length > 0;
   const hasBasket = cart.length > 0 && ranks.length > 0;
-  const dash = useMemo(
-    () => buildHomeDash(lists, products, period, dashMarket, dashCategory),
-    [lists, products, period, dashMarket, dashCategory],
+  const priceLogs = useMemo(
+    () => priceLogRepo.all(),
+    [lists, products],
   );
+  const dash = useMemo(
+    () =>
+      buildHomeDash(lists, products, period, dashMarket, dashCategory, priceLogs),
+    [lists, products, period, dashMarket, dashCategory, priceLogs],
+  );
+  const hero = useMemo(
+    () => buildHomeDash(lists, products, 30, null, null, priceLogs),
+    [lists, products, priceLogs],
+  );
+  const cheaper = useMemo(() => {
+    const purchases = pointsFromLists(lists, products);
+    return cheaperCategories(
+      purchases,
+      [...purchases, ...pointsFromLogs(priceLogs, products)],
+      7,
+    );
+  }, [lists, products, priceLogs]);
 
   const discoverNearHome = useCallback(async (
     origin: {lat: number; lng: number},
@@ -343,16 +365,19 @@ export function HomeScreen() {
         }>
         <ScreenScrollPad>
           <HomeHub
-            savedValue={formatBrl(dash.savings)}
+            savedValue={formatBrl(hero.savings)}
             savedLabel={
-              dash.purchaseCount > 0
-                ? 'economizados nas compras salvas'
-                : 'Cadastre uma nota para ver a economia'
+              hero.savings > 0
+                ? 'abaixo da média dos outros preços deste produto'
+                : hero.purchaseCount > 0
+                  ? 'ainda sem outro preço do mesmo produto'
+                  : 'Cadastre uma nota para ver a economia'
             }
-            spentLabel={formatBrl(dash.spent)}
-            purchaseCount={dash.purchaseCount}
+            spentLabel={formatBrl(hero.spent)}
+            purchaseCount={hero.purchaseCount}
             onOpenInsights={() => nav.navigate('Insights')}
             onOpenMarket={goMap}
+            cheaper={cheaper}
             markets={mapMarkers.map(m => ({
               id: m.id,
               name: m.name,

@@ -23,17 +23,23 @@ import {FeatureEmptyGuide} from '@/ui/FeatureEmptyGuide';
 import {InsightsBoard} from '@/features/insights/InsightsBoard';
 import {colors, radii, space, spacing} from '@/ui/theme';
 import {formatBrl} from '@/domain/money';
+import {guessCategory} from '@/domain/productCategory';
+import {
+  cheaperCategories,
+  economyAgainstAverage,
+  pointsFromLists,
+  pointsFromLogs,
+} from '@/domain/purchaseInsights';
 import {rankNearestMarkets} from '@/domain/marketUi';
 import {TrustEngine} from '@/domain/trust';
 import {
   type InsightPeriod,
   filterListsByMarketScope,
   filterLogsByMarketScope,
-  monthsAgo,
+  periodStart,
   rankCategoryMarketWins,
   rankCheapestMarkets,
   resolveInsightMarketScope,
-  savingsSince,
 } from '@/domain/homeInsights';
 import {
   filterMarketsInRadius,
@@ -148,10 +154,23 @@ export function InsightsScreen() {
     () => rankCategoryMarketWins(logs, scopeMarkets, products, period),
     [logs, scopeMarkets, products, period],
   );
-  const saved3m = useMemo(
-    () => savingsSince(scopedLists, monthsAgo(3)),
-    [scopedLists],
+  const purchasePoints = useMemo(
+    () => pointsFromLists(scopedLists, products),
+    [scopedLists, products],
   );
+  const referencePoints = useMemo(
+    () => [...purchasePoints, ...pointsFromLogs(logs, products)],
+    [purchasePoints, logs, products],
+  );
+  const periodSince = periodStart(period)?.getTime() ?? 0;
+  const periodEconomy = useMemo(
+    () => economyAgainstAverage(purchasePoints, referencePoints, periodSince),
+    [purchasePoints, referencePoints, periodSince],
+  );
+  const cheaper = useMemo(() => {
+    const days = period === 'week' ? 7 : period === 'month' ? 30 : 90;
+    return cheaperCategories(purchasePoints, referencePoints, days);
+  }, [purchasePoints, referencePoints, period]);
 
   const cheap = useMemo(() => {
     const out: Array<{
@@ -196,7 +215,7 @@ export function InsightsScreen() {
   const cheapByCat = useMemo(() => {
     const map = new Map<string, typeof cheapF>();
     for (const r of cheapF) {
-      const cat = r.product.category?.trim() || 'Outros';
+      const cat = r.product.category?.trim() || guessCategory(r.product.name);
       const arr = map.get(cat) ?? [];
       arr.push(r);
       map.set(cat, arr);
@@ -225,30 +244,37 @@ export function InsightsScreen() {
 
   const data: Array<{type: string; key: string; payload?: any}> = [];
   data.push({type: 'period', key: 'period'});
-  const barMax = Math.max(1, ...categoryWins.map(c => c.winCount));
+  const barMax = Math.max(1, ...cheaper.map(c => c.dropPct));
   data.push({
     type: 'board',
     key: 'board',
     payload: {
-      spentLabel: saved3m > 0 ? 'Economia em 3 meses' : 'Itens comparados',
-      spent: saved3m > 0 ? formatBrl(saved3m) : String(cheap.length),
+      spentLabel:
+        periodEconomy.saved > 0
+          ? `Economia · ${periodCaption(period)}`
+          : 'Itens comparados',
+      spent:
+        periodEconomy.saved > 0
+          ? formatBrl(periodEconomy.saved)
+          : String(periodEconomy.compared || cheap.length),
       ringValue: String(alerts),
       ringLabel: 'alertas',
-      bars: categoryWins.slice(0, 3).map(c => ({
+      bars: cheaper.slice(0, 3).map(c => ({
         label: c.category,
-        value: String(c.winCount),
-        ratio: c.winCount / barMax,
+        value: `-${Math.round(c.dropPct * 100)}%`,
+        ratio: c.dropPct / barMax,
       })),
     },
   });
-  if (saved3m > 0) {
+  if (periodEconomy.saved > 0) {
     data.push({
       type: 'savings',
       key: 'savings',
-      payload: {amount: saved3m},
+      payload: {amount: periodEconomy.saved, caption: periodCaption(period)},
     });
   }
   const hasInsightBody =
+    cheaper.length > 0 ||
     marketRanks.length > 0 ||
     categoryWins.length > 0 ||
     todayF.length > 0 ||
@@ -274,6 +300,23 @@ export function InsightsScreen() {
         type: 'market-rank',
         key: `mr-${r.marketId}`,
         payload: {...r, place: i + 1},
+      }),
+    );
+  }
+  if (cheaper.length) {
+    data.push({
+      type: 'section',
+      key: 'cheaper-h',
+      payload: {
+        title: 'Categorias mais baratas',
+        trailing: periodCaption(period),
+      },
+    });
+    cheaper.forEach(c =>
+      data.push({
+        type: 'cheaper',
+        key: `cheap-cat-${c.category}`,
+        payload: c,
       }),
     );
   }
@@ -489,7 +532,7 @@ export function InsightsScreen() {
             return (
               <View style={styles.savingsBanner}>
                 <Text style={styles.savingsBannerLabel}>
-                  Economia nos últimos 3 meses
+                  Abaixo da média · {item.payload.caption}
                 </Text>
                 <Text style={styles.savingsBannerValue}>
                   {formatBrl(item.payload.amount)}
@@ -533,6 +576,22 @@ export function InsightsScreen() {
                         : ''}
                     </Text>
                   </View>
+                </View>
+              </AppListCard>
+            );
+          }
+          if (item.type === 'cheaper') {
+            const c = item.payload;
+            return (
+              <AppListCard>
+                <View style={styles.row}>
+                  <View style={{flex: 1}}>
+                    <Text style={styles.name}>{c.category}</Text>
+                    <Text style={styles.muted}>
+                      {Math.round(c.dropPct * 100)}% abaixo do preço anterior
+                    </Text>
+                  </View>
+                  <Text style={styles.price}>{formatBrl(c.saved)}</Text>
                 </View>
               </AppListCard>
             );

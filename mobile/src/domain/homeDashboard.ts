@@ -1,5 +1,10 @@
 import {guessCategory} from '@/domain/productCategory';
-import type {Product, ShoppingList} from '@/data/types';
+import {
+  economyAgainstAverage,
+  pointsFromLists,
+  pointsFromLogs,
+} from '@/domain/purchaseInsights';
+import type {PriceLog, Product, ShoppingList} from '@/data/types';
 
 export type HomePeriodDays = 7 | 30 | 90;
 
@@ -51,6 +56,7 @@ export function buildHomeDash(
   periodDays: HomePeriodDays,
   marketId: number | null,
   category: string | null,
+  logs: PriceLog[] = [],
   now = Date.now(),
 ): HomeDash {
   const sinceMs = now - periodDays * 24 * 60 * 60 * 1000;
@@ -107,11 +113,13 @@ export function buildHomeDash(
       new Date(b.finishedAt).getTime() - new Date(a.finishedAt).getTime(),
   );
 
+  const purchases = pointsFromLists(matched, products);
+  const references = [...purchases, ...pointsFromLogs(logs, products)];
+  const economy = economyAgainstAverage(purchases, references, sinceMs);
+
   return {
     spent: Number(spent.toFixed(2)),
-    savings: Number(
-      matched.reduce((sum, l) => sum + (l.savings ?? 0), 0).toFixed(2),
-    ),
+    savings: economy.saved,
     purchaseCount: matched.length,
     categories,
     recent: recent.slice(0, 5),

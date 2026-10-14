@@ -9,6 +9,8 @@ import {
   UsersRound,
 } from 'lucide-react-native';
 import {colors, radii, space} from '@/ui/theme';
+import type {CheaperCategory} from '@/domain/purchaseInsights';
+import {HomeCheaperChart} from '@/features/home/HomeCheaperChart';
 
 type Shortcut = {
   label: string;
@@ -23,6 +25,7 @@ export function HomeHub({
   purchaseCount,
   onOpenInsights,
   shortcuts,
+  cheaper,
   markets,
   onOpenMarket,
 }: {
@@ -32,6 +35,7 @@ export function HomeHub({
   purchaseCount: number;
   onOpenInsights: () => void;
   shortcuts: Shortcut[];
+  cheaper: CheaperCategory[];
   markets: {id: string; name: string; detail: string}[];
   onOpenMarket: () => void;
 }) {
@@ -85,6 +89,8 @@ export function HomeHub({
           </Pressable>
         ))}
       </View>
+
+      <HomeCheaperChart items={cheaper} />
 
       <View style={styles.sectionHead}>
         <Text style={styles.sectionTitle}>Perto de você</Text>

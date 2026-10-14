@@ -26,7 +26,7 @@ import {
 import {Screen} from '@/ui/components';
 import {FiscalChip, ScreenScrollPad, SoftHeader} from '@/ui/screenChrome';
 import {colors, radii, space} from '@/ui/theme';
-import {prefs, useAppStore} from '@/store/appStore';
+import {prefs, priceLogRepo, useAppStore} from '@/store/appStore';
 import {syncApi, type ReputationRemote} from '@/data/remote/syncApi';
 import {registerPasskey} from '@/data/remote/passkeyAuth';
 import {apiErrorMessage} from '@/data/remote/apiError';
@@ -36,10 +36,10 @@ import {badgeById} from '@/domain/badges';
 import {TrustEngine} from '@/domain/trust';
 import {formatBrl} from '@/domain/money';
 import {
-  lifetimeSavings,
-  monthsAgo,
-  savingsSince,
-} from '@/domain/homeInsights';
+  economyAgainstAverage,
+  pointsFromLists,
+  pointsFromLogs,
+} from '@/domain/purchaseInsights';
 import type {FiscalLevel} from '@/data/types';
 import {MAPBOX_ACCESS_TOKEN} from '@/config/env';
 import {refreshPermissionFlags} from '@/app/permissions';
@@ -86,6 +86,7 @@ export function ProfileScreen() {
   const auth = useAppStore(s => s.auth);
   const setAuth = useAppStore(s => s.setAuth);
   const lists = useAppStore(s => s.lists);
+  const products = useAppStore(s => s.products);
   const [, setGeoBusy] = useState(false);
   const geoBusyRef = useRef(false);
   const geoOnceRef = useRef(false);
@@ -97,10 +98,16 @@ export function ProfileScreen() {
   const [rep, setRep] = useState<ReputationRemote | null>(null);
   const [passkeyOn, setPasskeyOn] = useState(false);
 
-  const savings3m = useMemo(
-    () => savingsSince(lists, monthsAgo(3)),
-    [lists],
-  );
+  const priceLogs = useMemo(() => priceLogRepo.all(), [lists, products]);
+  const savings3m = useMemo(() => {
+    const purchases = pointsFromLists(lists, products);
+    const refs = [...purchases, ...pointsFromLogs(priceLogs, products)];
+    return economyAgainstAverage(
+      purchases,
+      refs,
+      Date.now() - 90 * 86400000,
+    ).saved;
+  }, [lists, products, priceLogs]);
   const savingsRecent = useMemo(() => {
     const recent = [...lists]
       .sort(
@@ -108,9 +115,18 @@ export function ProfileScreen() {
           new Date(b.finishedAt).getTime() - new Date(a.finishedAt).getTime(),
       )
       .slice(0, 5);
-    return recent.reduce((s, l) => s + (l.savings ?? 0), 0);
-  }, [lists]);
-  const savingsAll = useMemo(() => lifetimeSavings(lists), [lists]);
+    const purchases = pointsFromLists(recent, products);
+    const refs = [
+      ...pointsFromLists(lists, products),
+      ...pointsFromLogs(priceLogs, products),
+    ];
+    return economyAgainstAverage(purchases, refs, 0).saved;
+  }, [lists, products, priceLogs]);
+  const savingsAll = useMemo(() => {
+    const purchases = pointsFromLists(lists, products);
+    const refs = [...purchases, ...pointsFromLogs(priceLogs, products)];
+    return economyAgainstAverage(purchases, refs, 0).saved;
+  }, [lists, products, priceLogs]);
 
   const headerLocation = useMemo(() => {
     const parts = [neighborhood, city, uf].filter(Boolean);
