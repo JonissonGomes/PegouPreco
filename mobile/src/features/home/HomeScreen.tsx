@@ -31,6 +31,7 @@ import {reverseGeocode} from '@/data/remote/reverseGeocode';
 import {getState} from '@/data/db';
 import {MAPBOX_ACCESS_TOKEN} from '@/config/env';
 import {
+  collapseMarketPins,
   filterMarketsInRadius,
   isInBrazil,
   NEARBY_RADIUS_KM,
@@ -100,7 +101,9 @@ export function HomeScreen() {
   const nearbyMarkets = useMemo(
     () =>
       mapOrigin
-        ? filterMarketsInRadius(markets, mapOrigin, NEARBY_RADIUS_KM, 20)
+        ? collapseMarketPins(
+            filterMarketsInRadius(markets, mapOrigin, NEARBY_RADIUS_KM, 20),
+          )
         : [],
     [markets, mapOrigin],
   );

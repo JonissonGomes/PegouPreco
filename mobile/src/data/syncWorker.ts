@@ -95,6 +95,8 @@ async function doFullSync(): Promise<{ok: boolean; message: string}> {
     const since = prefs.getLastSyncAt();
     const pull = await syncApi.pullSince(session.token, since);
     applyPull(pull);
+    await applySharedPrefs(session.token);
+    await ingestCommunityPrices(session.token);
 
     if (!sessionVerified(session)) {
       prefs.setLastSyncAt(nowIso());
@@ -311,6 +313,75 @@ function applyPull(pull: Record<string, unknown>) {
     });
   }
   saveState();
+}
+
+async function applySharedPrefs(token: string) {
+  try {
+    const remote = await syncApi.getPrefs(token);
+    const local = prefs.getLocationPrefs();
+    if (local.city.trim() || !String(remote.city ?? '').trim()) return;
+    const favLocal = (remote.favoriteMarketIds ?? [])
+      .map(rid => getState().markets.find(m => m.remoteId === rid)?.id)
+      .filter((id): id is number => id != null);
+    prefs.setLocationPrefs({
+      city: String(remote.city),
+      neighborhood: String(remote.neighborhood ?? ''),
+      favoriteMarketIds: favLocal.length ? favLocal : local.favoriteMarketIds,
+    });
+  } catch {
+    /* preferências locais seguem válidas se a rede falhar */
+  }
+}
+
+async function ingestCommunityPrices(token: string) {
+  try {
+    const city = prefs.getLocationPrefs().city.trim();
+    const data = (await syncApi.communityPrices(
+      token,
+      city ? {city} : undefined,
+    )) as {prices?: Record<string, unknown>[]};
+    const rows = data.prices ?? [];
+    const known = new Set(
+      getState()
+        .price_logs.map(l => l.remoteId)
+        .filter((id): id is string => !!id),
+    );
+    for (const row of rows) {
+      const remoteId = String(row.priceLogId ?? '');
+      const productName = String(row.productName ?? '').trim();
+      const nfceKey = row.nfceKey != null ? String(row.nfceKey) : '';
+      if (!remoteId || known.has(remoteId) || !productName || nfceKey.length < 40) {
+        continue;
+      }
+      const market = getState().markets.find(
+        m => m.remoteId === String(row.marketId ?? ''),
+      );
+      if (!market) continue;
+      const product = productRepo.resolveOrCreate(productName);
+      priceLogRepo.insert({
+        productId: product.id,
+        marketId: market.id,
+        retailPrice: Number(row.retailPrice ?? 0),
+        wholesalePrice: null,
+        minWholesaleQty: null,
+        source: 'nfce',
+        capturedAt: String(row.capturedAt ?? nowIso()),
+        remoteId,
+        nfceKey,
+        confirmScore: 0,
+        rejectScore: 0,
+        trustLevel:
+          (row.trustLevel as 'verified' | 'suspect' | 'hidden') ?? 'verified',
+        lastConfirmedAt: null,
+        contributorId: null,
+        updatedAt: String(row.capturedAt ?? nowIso()),
+        synced: 1,
+      });
+      known.add(remoteId);
+    }
+  } catch {
+    /* o feed local continua com o que o pull já trouxe */
+  }
 }
 
 function applyIdMaps(maps: Record<string, Record<string, string>>) {

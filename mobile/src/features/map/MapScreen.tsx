@@ -30,6 +30,7 @@ import {
 import {syncApi} from '@/data/remote/syncApi';
 import {ensureNearbyMarketsDiscovered} from '@/data/remote/ensureNearbyMarkets';
 import {
+  collapseMarketPins,
   filterMarketsInRadius,
   haversineKm,
   NEARBY_RADIUS_KM,
@@ -280,10 +281,12 @@ export function MapScreen() {
       );
     }
     if (!center) return [];
-    return filterMarketsInRadius(
-      markets,
-      {lat: center.latitude, lng: center.longitude},
-      NEARBY_RADIUS_KM,
+    return collapseMarketPins(
+      filterMarketsInRadius(
+        markets,
+        {lat: center.latitude, lng: center.longitude},
+        NEARBY_RADIUS_KM,
+      ),
     );
   }, [markets, center, pinIds]);
   const rated = nearby.filter(m => (m.avgRating ?? 0) > 0).length;

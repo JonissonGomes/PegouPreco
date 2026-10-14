@@ -66,6 +66,53 @@ function nearestInRadius(
     .slice(0, limit);
 }
 
+export function marketNameKey(name: string): string {
+  return name
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\b(ltda|s\/a|sa|supermercado|mercado|atacarejo|hipermercado)\b/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+export function namesLikelySame(a: string, b: string): boolean {
+  const ka = marketNameKey(a);
+  const kb = marketNameKey(b);
+  if (!ka || !kb) return false;
+  if (ka === kb) return true;
+  if (ka.includes(kb) || kb.includes(ka)) return true;
+  const ta = ka.split(' ').filter(t => t.length > 2);
+  const tb = new Set(kb.split(' ').filter(t => t.length > 2));
+  if (!ta.length || !tb.size) return false;
+  return ta.filter(t => tb.has(t)).length / Math.min(ta.length, tb.size) >= 0.6;
+}
+
+/** Um pin quando o título é o mesmo mercado e os pontos estão perto. */
+export function collapseMarketPins<T extends {name: string; lat?: number | null; lng?: number | null}>(
+  markets: T[],
+  mergeKm = 0.4,
+): T[] {
+  const out: T[] = [];
+  for (const market of markets) {
+    if (market.lat == null || market.lng == null) {
+      out.push(market);
+      continue;
+    }
+    const dup = out.find(other => {
+      if (other.lat == null || other.lng == null) return false;
+      const dist = haversineKm(
+        {lat: market.lat!, lng: market.lng!},
+        {lat: other.lat, lng: other.lng},
+      );
+      if (dist > mergeKm) return false;
+      return namesLikelySame(market.name, other.name);
+    });
+    if (!dup) out.push(market);
+  }
+  return out;
+}
+
 /** Dedupe só por proximidade — nomes iguais em lugares diferentes são filiais distintas. */
 export function dedupeByGeo(
   hits: NearbyMarketHit[],

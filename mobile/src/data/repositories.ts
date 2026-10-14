@@ -5,7 +5,7 @@ import {
   lineTotal,
   lineWholesaleTotal,
 } from '@/domain/pricing';
-import {haversineKm} from '@/data/remote/nearbyMarkets';
+import {haversineKm, namesLikelySame} from '@/data/remote/nearbyMarkets';
 import {preferAddress} from '@/domain/marketUi';
 import {
   getState,
@@ -202,6 +202,13 @@ export const marketRepo = {
       return haversineKm({lat: m.lat, lng: m.lng}, {lat, lng}) <= maxKm;
     });
     if (near) return near;
+    const similar = getState().markets.find(m => {
+      if (m.lat == null || m.lng == null) return false;
+      const dist = haversineKm({lat: m.lat, lng: m.lng}, {lat, lng});
+      if (dist > 0.4) return false;
+      return namesLikelySame(m.name, trimmed);
+    });
+    if (similar) return similar;
     return marketRepo.create(trimmed, cnpj);
   },
   /** Atualiza nome+geo a partir da descoberta local (OSM/Mapbox). */
