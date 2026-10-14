@@ -1,5 +1,5 @@
 import React from 'react';
-import {StyleSheet, Text, View} from 'react-native';
+import {Pressable, StyleSheet, Text, View} from 'react-native';
 import Svg, {Circle, Polyline} from 'react-native-svg';
 import {formatBrl} from '@/domain/money';
 import type {HomeDash, HomePeriodDays} from '@/domain/homeDashboard';
@@ -16,9 +16,11 @@ const PERIOD_LABEL: Record<HomePeriodDays, string> = {
 export function HomeSpendBoard({
   dash,
   period,
+  onPress,
 }: {
   dash: HomeDash;
   period: HomePeriodDays;
+  onPress?: () => void;
 }) {
   const slices = dash.categories.slice(0, 5);
   const total = slices.reduce((sum, item) => sum + item.total, 0) || dash.spent || 1;
@@ -29,7 +31,10 @@ export function HomeSpendBoard({
   return (
     <View style={styles.wrap}>
       <Reveal>
-        <View style={styles.card}>
+        <Pressable
+          style={styles.card}
+          onPress={onPress}
+          disabled={!onPress}>
           <View style={styles.head}>
             <Text style={styles.kicker}>Gastos</Text>
             <View style={styles.periodPill}>
@@ -82,7 +87,7 @@ export function HomeSpendBoard({
             <Text style={styles.barLabel}>Gasto</Text>
             <Text style={styles.barLabel}>Economia</Text>
           </View>
-        </View>
+        </Pressable>
       </Reveal>
 
       <Reveal delay={80}>

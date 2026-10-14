@@ -81,11 +81,15 @@ export function ImportPurchaseScreen() {
     [],
   );
 
-  const saveDraft = async () => {
+  const saveDraft = async (purchasedAt: string) => {
     if (!draft) return;
     setSaving(true);
     try {
-      const outcome = await archiveNfcePurchase(draft.parsed, draft.qrUrl);
+      const outcome = await archiveNfcePurchase(
+        draft.parsed,
+        draft.qrUrl,
+        purchasedAt,
+      );
       if (!outcome.ok) {
         appAlert(
           'Nota fiscal',
@@ -189,7 +193,7 @@ export function ImportPurchaseScreen() {
           lock.current = null;
           setDraft(null);
         }}
-        onSave={() => void saveDraft()}
+        onSave={purchasedAt => void saveDraft(purchasedAt)}
       />
     </View>
   );

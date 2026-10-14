@@ -1,5 +1,5 @@
-import React, {useState} from 'react';
-import {Pressable, ScrollView, StyleSheet, Text, View} from 'react-native';
+import React, {useEffect, useState} from 'react';
+import {Pressable, ScrollView, StyleSheet, Text, TextInput, View} from 'react-native';
 import {Check} from 'lucide-react-native';
 import {AppButton} from '@/ui/chrome';
 import {KeyboardSafeSheet} from '@/ui/keyboardSheet';
@@ -8,17 +8,35 @@ import {formatBrl, formatQty} from '@/domain/money';
 import {guessCategory} from '@/domain/productCategory';
 import type {NfceDraft} from '@/data/archivePurchase';
 
-function formatWhen(iso: string | null): string {
-  if (!iso) return 'Data da nota';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return 'Data da nota';
-  return d.toLocaleString('pt-BR', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+function maskDate(raw: string): string {
+  const digits = raw.replace(/\D/g, '').slice(0, 8);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+}
+function dateToField(iso: string | null): string {
+  const d = iso ? new Date(iso) : new Date();
+  if (Number.isNaN(d.getTime())) return '';
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  return `${day}/${month}/${d.getFullYear()}`;
+}
+
+function fieldToIso(text: string): string | null {
+  const match = text.trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!match) return null;
+  const day = Number(match[1]);
+  const month = Number(match[2]);
+  const year = Number(match[3]);
+  const date = new Date(year, month - 1, day, 12, 0, 0, 0);
+  if (
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) {
+    return null;
+  }
+  return date.toISOString();
 }
 
 const RATE_STEPS = [
@@ -37,11 +55,28 @@ export function NfceReviewSheet({
   draft: NfceDraft | null;
   saving: boolean;
   onClose: () => void;
-  onSave: () => void;
+  onSave: (purchasedAt: string) => void;
 }) {
   const [guide, setGuide] = useState(false);
+  const [dateText, setDateText] = useState('');
+  const [dateError, setDateError] = useState('');
   const items = draft?.parsed.items ?? [];
   const total = draft?.subtotal ?? 0;
+
+  useEffect(() => {
+    setDateText(dateToField(draft?.parsed.issuedAt ?? null));
+    setDateError('');
+    setGuide(false);
+  }, [draft]);
+
+  const save = () => {
+    const iso = fieldToIso(dateText);
+    if (!iso) {
+      setDateError('Use o formato dd/mm/aaaa.');
+      return;
+    }
+    onSave(iso);
+  };
 
   return (
     <KeyboardSafeSheet visible={draft != null} onClose={onClose}>
@@ -67,8 +102,20 @@ export function NfceReviewSheet({
               <Text style={styles.factValue}>{formatBrl(total)}</Text>
             </View>
           </View>
-          <Text style={styles.factLabel}>Data</Text>
-          <Text style={styles.factValue}>{formatWhen(draft.parsed.issuedAt)}</Text>
+          <Text style={styles.factLabel}>Data da compra</Text>
+          <TextInput
+            value={dateText}
+            onChangeText={text => {
+              setDateText(maskDate(text));
+              setDateError('');
+            }}
+            placeholder="dd/mm/aaaa"
+            placeholderTextColor={colors.muted}
+            keyboardType="number-pad"
+            maxLength={10}
+            style={styles.dateInput}
+          />
+          {dateError ? <Text style={styles.dateError}>{dateError}</Text> : null}
 
           <ScrollView style={styles.list} nestedScrollEnabled>
             {items.map((it, index) => (
@@ -105,7 +152,7 @@ export function NfceReviewSheet({
           <AppButton
             label={saving ? 'Salvando…' : 'Salvar no histórico'}
             disabled={saving}
-            onPress={onSave}
+            onPress={save}
           />
           <AppButton label="Agora não" outlined onPress={onClose} />
         </View>
@@ -156,6 +203,16 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
   },
   factValue: {fontWeight: '900', color: colors.navy, fontSize: 15, marginTop: 2},
+  dateInput: {
+    height: 48,
+    borderRadius: radii.lg,
+    backgroundColor: colors.bg,
+    paddingHorizontal: 14,
+    fontSize: 16,
+    fontWeight: '800',
+    color: colors.ink,
+  },
+  dateError: {color: colors.danger, fontWeight: '700', fontSize: 12},
   list: {maxHeight: 220, marginTop: 4},
   row: {
     flexDirection: 'row',

@@ -112,6 +112,7 @@ async function ensureMarketOnMap(
 export async function archiveNfcePurchase(
   parsed: NfceParseResult,
   qrUrl: string,
+  purchasedAt?: string,
 ): Promise<ArchiveOutcome> {
   if (!parsed.items.length) return {ok: false, reason: 'empty'};
   const nfceKey = extractAccessKey(qrUrl);
@@ -128,7 +129,7 @@ export async function archiveNfcePurchase(
         mapKnown: false,
       };
   const marketId = placed.marketId;
-  const finishedAt = parsed.issuedAt ?? new Date().toISOString();
+  const finishedAt = purchasedAt ?? parsed.issuedAt ?? new Date().toISOString();
   const alreadyLogged = nfceKey ? priceLogRepo.forNfceKey(nfceKey) : [];
   if (alreadyLogged.length) {
     const capturedAt = alreadyLogged[0].capturedAt;

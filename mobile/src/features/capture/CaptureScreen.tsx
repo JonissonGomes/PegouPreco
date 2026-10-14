@@ -530,11 +530,15 @@ export function CaptureScreen() {
       return false;
     }
   };
-  const confirmPast = async () => {
+  const confirmPast = async (purchasedAt: string) => {
     if (!pastDraft) return;
     setPastSaving(true);
     try {
-      const outcome = await archiveNfcePurchase(pastDraft.parsed, pastDraft.qrUrl);
+      const outcome = await archiveNfcePurchase(
+        pastDraft.parsed,
+        pastDraft.qrUrl,
+        purchasedAt,
+      );
       if (!outcome.ok) {
         appAlert('Cadastrar nota', 'Não foi possível salvar esta nota.');
         return;
@@ -876,7 +880,7 @@ export function CaptureScreen() {
           lastNfceRef.current = null;
           setPastDraft(null);
         }}
-        onSave={() => void confirmPast()}
+        onSave={purchasedAt => void confirmPast(purchasedAt)}
       />
     </View>
   );

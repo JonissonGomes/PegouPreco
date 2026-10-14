@@ -19,6 +19,7 @@ export type HomeDash = {
   purchaseCount: number;
   categories: CategorySlice[];
   recent: ShoppingList[];
+  purchases: ShoppingList[];
   markets: {id: number; name: string}[];
   categoryNames: string[];
   trend: {label: string; total: number}[];
@@ -124,6 +125,7 @@ export function buildHomeDash(
     purchaseCount: matched.length,
     categories,
     recent: recent.slice(0, 5),
+    purchases: recent,
     markets: [...markets.entries()].map(([id, name]) => ({id, name})),
     categoryNames: [...categoryNames].sort((a, b) => a.localeCompare(b, 'pt-BR')),
     trend: spendTrend(matched, periodDays, now),

@@ -295,6 +295,7 @@ export function HomeScreen() {
   const goCapture = useCallback(() => nav.navigate('Capture'), [nav]);
   const filterCount =
     (period !== 30 ? 1 : 0) + (dashMarket != null ? 1 : 0) + (dashCategory != null ? 1 : 0);
+  const firstName = auth?.displayName?.trim().split(/\s+/)[0] || '';
 
   const howItWorks = (
     <HomeHowItWorks
@@ -323,6 +324,9 @@ export function HomeScreen() {
         }>
         <ScreenScrollPad>
           <View style={styles.filterBar}>
+            <Text style={styles.hello} numberOfLines={1}>
+              Bem-vindo{firstName ? `, ${firstName}` : ''}
+            </Text>
             <Pressable
               style={styles.filterBtn}
               onPress={() => setFiltersOpen(true)}>
@@ -335,7 +339,17 @@ export function HomeScreen() {
               ) : null}
             </Pressable>
           </View>
-          <HomeSpendBoard dash={dash} period={period} />
+          <HomeSpendBoard
+            dash={dash}
+            period={period}
+            onPress={() =>
+              nav.navigate('HomeSpend', {
+                period,
+                marketId: dashMarket,
+                category: dashCategory,
+              })
+            }
+          />
           <HomeHub
             shortcuts={[
               {label: 'Mapa', Icon: homeShortcutIcons.map, onPress: goMap},
@@ -469,7 +483,16 @@ const styles = StyleSheet.create({
   filterBar: {
     paddingHorizontal: space.md,
     marginBottom: space.sm,
-    alignItems: 'flex-end',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  hello: {
+    flex: 1,
+    fontSize: 20,
+    fontWeight: '900',
+    color: colors.navy,
   },
   filterBtn: {
     flexDirection: 'row',

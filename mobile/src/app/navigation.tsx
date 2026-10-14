@@ -20,6 +20,7 @@ import {
 } from 'lucide-react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {HomeScreen} from '@/features/home/HomeScreen';
+import {HomeSpendScreen} from '@/features/home/HomeSpendScreen';
 import {CartScreen} from '@/features/cart/CartScreen';
 import {ShoppingListsScreen} from '@/features/cart/ShoppingListsScreen';
 import {ImportPurchaseScreen} from '@/features/cart/ImportPurchaseScreen';
@@ -191,6 +192,7 @@ export function RootNavigation() {
         ) : (
           <>
             <Stack.Screen name="Main" component={Tabs} />
+            <Stack.Screen name="HomeSpend" component={HomeSpendScreen} />
             <Stack.Screen name="ShoppingLists" component={ShoppingListsScreen} />
             <Stack.Screen name="ImportPurchase" component={ImportPurchaseScreen} />
             <Stack.Screen name="ProductDetail" component={ProductDetailScreen} />
