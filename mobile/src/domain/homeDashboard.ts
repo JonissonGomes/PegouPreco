@@ -21,6 +21,7 @@ export type HomeDash = {
   recent: ShoppingList[];
   markets: {id: number; name: string}[];
   categoryNames: string[];
+  trend: {label: string; total: number}[];
 };
 
 type ListRow = {
@@ -125,5 +126,28 @@ export function buildHomeDash(
     recent: recent.slice(0, 5),
     markets: [...markets.entries()].map(([id, name]) => ({id, name})),
     categoryNames: [...categoryNames].sort((a, b) => a.localeCompare(b, 'pt-BR')),
+    trend: spendTrend(matched, periodDays, now),
   };
+}
+
+function spendTrend(lists: ShoppingList[], periodDays: number, now: number) {
+  const buckets = periodDays <= 7 ? 7 : periodDays <= 30 ? 4 : 6;
+  const span = periodDays * 86400000;
+  const size = span / buckets;
+  const start = now - span;
+  const totals = Array.from({length: buckets}, () => 0);
+  for (const list of lists) {
+    const t = new Date(list.finishedAt).getTime();
+    if (!Number.isFinite(t)) continue;
+    const index = Math.min(buckets - 1, Math.max(0, Math.floor((t - start) / size)));
+    totals[index] += list.subtotal;
+  }
+  return totals.map((total, index) => {
+    const at = new Date(start + size * index + size / 2);
+    const label =
+      periodDays <= 7
+        ? at.toLocaleDateString('pt-BR', {weekday: 'narrow'})
+        : at.toLocaleDateString('pt-BR', {month: 'short'}).replace('.', '');
+    return {label, total: Number(total.toFixed(2))};
+  });
 }

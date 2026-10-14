@@ -8,6 +8,8 @@ import {
   View,
 } from 'react-native';
 import {useFocusEffect, useNavigation} from '@react-navigation/native';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import {SlidersHorizontal} from 'lucide-react-native';
 import Geolocation from 'react-native-geolocation-service';
 import {AppButton} from '@/ui/chrome';
 import {
@@ -16,8 +18,7 @@ import {
   Screen,
   SectionHeader,
 } from '@/ui/components';
-import {MiniMapPreview} from '@/ui/MiniMapPreview';
-import {SavePill, ScreenScrollPad, SoftHeader} from '@/ui/screenChrome';
+import {SavePill, ScreenScrollPad} from '@/ui/screenChrome';
 import {colors, radii, space} from '@/ui/theme';
 import {
   cartToBasket,
@@ -30,22 +31,19 @@ import {syncApi} from '@/data/remote/syncApi';
 import {reverseGeocode} from '@/data/remote/reverseGeocode';
 import {getState} from '@/data/db';
 import {MAPBOX_ACCESS_TOKEN} from '@/config/env';
-import {
-  collapseMarketPins,
-  filterMarketsInRadius,
-  isInBrazil,
-  NEARBY_RADIUS_KM,
-} from '@/data/remote/nearbyMarkets';
+import {isInBrazil} from '@/data/remote/nearbyMarkets';
 import {ensureNearbyMarketsDiscovered} from '@/data/remote/ensureNearbyMarkets';
+import {buildHomeDash, type HomePeriodDays} from '@/domain/homeDashboard';
 import {HomeHowItWorks} from '@/features/home/HomeHowItWorks';
 import {HomeHub, homeShortcutIcons} from '@/features/home/HomeHub';
-import {buildHomeDash, type HomePeriodDays} from '@/domain/homeDashboard';
+import {HomeSpendBoard} from '@/features/home/HomeSpendBoard';
+import {HomeFilterSheet} from '@/features/home/HomeFilterSheet';
+import {HomeCheaperChart} from '@/features/home/HomeCheaperChart';
 import {
   cheaperCategories,
   pointsFromLists,
   pointsFromLogs,
 } from '@/domain/purchaseInsights';
-import {HomeDashboard} from '@/features/home/HomeDashboard';
 
 export function HomeScreen() {
   const nav = useNavigation<any>();
@@ -59,7 +57,6 @@ export function HomeScreen() {
   const permissions = useAppStore(s => s.permissions);
   const [locSnapshot, setLocSnapshot] = useState(() => prefs.getLocationPrefs());
   const [geoAttempted, setGeoAttempted] = useState(false);
-  const [detecting, setDetecting] = useState(false);
   const geoOnce = useRef(false);
   const [refreshing, setRefreshing] = useState(false);
   const [remoteRanks, setRemoteRanks] = useState<MarketBasketRank[] | null>(
@@ -75,6 +72,8 @@ export function HomeScreen() {
   const [period, setPeriod] = useState<HomePeriodDays>(30);
   const [dashMarket, setDashMarket] = useState<number | null>(null);
   const [dashCategory, setDashCategory] = useState<string | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const insets = useSafeAreaInsets();
 
   const loc = locSnapshot;
   const logsKey = lists.length + cart.length + markets.length;
@@ -96,36 +95,9 @@ export function HomeScreen() {
   const saveEst =
     best && worst && worst.total > best.total ? worst.total - best.total : 0;
 
-  const regionLabel = [loc.neighborhood, loc.city]
-    .filter((part, i, all) => part && all.indexOf(part) === i)
-    .join(', ');
   const openListLabel = activeListName
     ? `Abrir ${activeListName}`
     : 'Iniciar compra';
-
-  const nearbyMarkets = useMemo(
-    () =>
-      mapOrigin
-        ? collapseMarketPins(
-            filterMarketsInRadius(markets, mapOrigin, NEARBY_RADIUS_KM, 20),
-          )
-        : [],
-    [markets, mapOrigin],
-  );
-  const mapMarkers = useMemo(
-    () =>
-      nearbyMarkets
-        .filter(m => m.lat != null && m.lng != null)
-        .map(m => ({
-          id: String(m.id),
-          name: m.name,
-          lat: m.lat!,
-          lng: m.lng!,
-        })),
-    [nearbyMarkets],
-  );
-
-  const hasGeoMarkets = mapMarkers.length > 0;
   const hasLists = lists.length > 0;
   const hasBasket = cart.length > 0 && ranks.length > 0;
   const priceLogs = useMemo(
@@ -137,9 +109,9 @@ export function HomeScreen() {
       buildHomeDash(lists, products, period, dashMarket, dashCategory, priceLogs),
     [lists, products, period, dashMarket, dashCategory, priceLogs],
   );
-  const hero = useMemo(
-    () => buildHomeDash(lists, products, 30, null, null, priceLogs),
-    [lists, products, priceLogs],
+  const filterOptions = useMemo(
+    () => buildHomeDash(lists, products, period, null, null, priceLogs),
+    [lists, products, period, priceLogs],
   );
   const cheaper = useMemo(() => {
     const purchases = pointsFromLists(lists, products);
@@ -193,7 +165,6 @@ export function HomeScreen() {
       void discoverNearHome(last);
       return;
     }
-    setDetecting(true);
     try {
       await new Promise<void>(resolve => {
         Geolocation.getCurrentPosition(
@@ -252,7 +223,6 @@ export function HomeScreen() {
         );
       });
     } finally {
-      setDetecting(false);
       setGeoAttempted(true);
     }
   }, [permissions.location, discoverNearHome]);
@@ -323,12 +293,8 @@ export function HomeScreen() {
   const goMap = useCallback(() => nav.navigate('Map'), [nav]);
   const goLists = useCallback(() => nav.navigate('Lists'), [nav]);
   const goCapture = useCallback(() => nav.navigate('Capture'), [nav]);
-
-  const headerTitle = hasLists
-    ? 'Suas compras'
-    : hasGeoMarkets
-      ? 'Mercados perto de você'
-      : 'PegouPreço';
+  const filterCount =
+    (period !== 30 ? 1 : 0) + (dashMarket != null ? 1 : 0) + (dashCategory != null ? 1 : 0);
 
   const howItWorks = (
     <HomeHowItWorks
@@ -340,16 +306,8 @@ export function HomeScreen() {
 
   return (
     <Screen>
-      <SoftHeader
-        location={
-          detecting
-            ? 'Detectando região…'
-            : regionLabel || 'Defina sua região no perfil'
-        }
-        title={headerTitle}
-      />
       <ScrollView
-        contentContainerStyle={styles.body}
+        contentContainerStyle={[styles.body, {paddingTop: insets.top + 8}]}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -364,25 +322,21 @@ export function HomeScreen() {
           />
         }>
         <ScreenScrollPad>
+          <View style={styles.filterBar}>
+            <Pressable
+              style={styles.filterBtn}
+              onPress={() => setFiltersOpen(true)}>
+              <SlidersHorizontal size={16} color={colors.navy} />
+              <Text style={styles.filterText}>Filtros</Text>
+              {filterCount > 0 ? (
+                <View style={styles.filterBadge}>
+                  <Text style={styles.filterBadgeText}>{filterCount}</Text>
+                </View>
+              ) : null}
+            </Pressable>
+          </View>
+          <HomeSpendBoard dash={dash} period={period} />
           <HomeHub
-            savedValue={formatBrl(hero.savings)}
-            savedLabel={
-              hero.savings > 0
-                ? 'abaixo da média dos outros preços deste produto'
-                : hero.purchaseCount > 0
-                  ? 'ainda sem outro preço do mesmo produto'
-                  : 'Cadastre uma nota para ver a economia'
-            }
-            spentLabel={formatBrl(hero.spent)}
-            purchaseCount={hero.purchaseCount}
-            onOpenInsights={() => nav.navigate('Insights')}
-            onOpenMarket={goMap}
-            cheaper={cheaper}
-            markets={mapMarkers.map(m => ({
-              id: m.id,
-              name: m.name,
-              detail: `${NEARBY_RADIUS_KM} km`,
-            }))}
             shortcuts={[
               {label: 'Mapa', Icon: homeShortcutIcons.map, onPress: goMap},
               {label: 'Compras', Icon: homeShortcutIcons.lists, onPress: goLists},
@@ -408,19 +362,7 @@ export function HomeScreen() {
               },
             ]}
           />
-          {hasLists ? (
-            <HomeDashboard
-              dash={dash}
-              period={period}
-              marketId={dashMarket}
-              category={dashCategory}
-              onPeriod={setPeriod}
-              onMarket={setDashMarket}
-              onCategory={setDashCategory}
-              onOpenHistory={() => nav.navigate('History')}
-              onOpenList={() => nav.navigate('History')}
-            />
-          ) : null}
+          <HomeCheaperChart items={cheaper} />
 
           {hasBasket && best ? (
             <>
@@ -442,26 +384,6 @@ export function HomeScreen() {
                 </View>
                 <Text style={styles.heroCta}>{openListLabel}</Text>
               </Pressable>
-
-              {mapOrigin ? (
-                <>
-                  <SectionHeader
-                    title="Perto de você"
-                    actionLabel="Mapa completo"
-                    onAction={goMap}
-                  />
-                  <MiniMapPreview
-                    center={mapOrigin}
-                    markers={mapMarkers}
-                    onPress={goMap}
-                    caption={
-                      mapMarkers.length
-                        ? `${mapMarkers.length} mercados · ${NEARBY_RADIUS_KM} km`
-                        : 'Abrir mapa'
-                    }
-                  />
-                </>
-              ) : null}
               <SectionHeader
                 title="Ranking"
                 actionLabel="Ver compras"
@@ -496,38 +418,6 @@ export function HomeScreen() {
                 </Pressable>
               </View>
             </>
-          ) : hasGeoMarkets && mapOrigin ? (
-            <>
-              <MiniMapPreview
-                center={mapOrigin}
-                markers={mapMarkers}
-                height={180}
-                onPress={goMap}
-                caption={
-                  mapMarkers.length
-                    ? `${mapMarkers.length} mercados por perto`
-                    : 'Explorar mapa'
-                }
-              />
-              <View style={styles.returnBlock}>
-                <Text style={styles.returnTitle}>
-                  Mercados descobertos na sua área
-                </Text>
-                <Text style={styles.returnMsg}>
-                  Toque no mapa para explorar ou inicie uma compra para comparar preços.
-                </Text>
-                <AppButton label="Abrir mapa" onPress={goMap} />
-                <AppButton
-                  outlined
-                  label={
-                    activeListName
-                      ? `Continuar ${activeListName}`
-                      : 'Iniciar compra'
-                  }
-                  onPress={goLists}
-                />
-              </View>
-            </>
           ) : !hasLists ? (
             howItWorks
           ) : null}
@@ -555,12 +445,52 @@ export function HomeScreen() {
           ) : null}
         </ScreenScrollPad>
       </ScrollView>
+      <HomeFilterSheet
+        visible={filtersOpen}
+        period={period}
+        marketId={dashMarket}
+        category={dashCategory}
+        markets={filterOptions.markets}
+        categories={filterOptions.categoryNames}
+        onClose={() => setFiltersOpen(false)}
+        onApply={next => {
+          setPeriod(next.period);
+          setDashMarket(next.marketId);
+          setDashCategory(next.category);
+          setFiltersOpen(false);
+        }}
+      />
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
   body: {paddingBottom: 8},
+  filterBar: {
+    paddingHorizontal: space.md,
+    marginBottom: space.sm,
+    alignItems: 'flex-end',
+  },
+  filterBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.white,
+    borderRadius: radii.pill,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  filterText: {fontWeight: '800', color: colors.navy},
+  filterBadge: {
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: colors.yellow,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  filterBadgeText: {fontSize: 11, fontWeight: '900', color: colors.navy},
   heroCard: {
     marginHorizontal: space.md,
     marginTop: space.xs,
@@ -622,24 +552,6 @@ const styles = StyleSheet.create({
   },
   ctaCardTitle: {fontWeight: '900', color: colors.navy, fontSize: 16},
   ctaCardSub: {fontWeight: '600', color: colors.muted, fontSize: 12},
-  returnBlock: {
-    marginHorizontal: space.md,
-    marginTop: space.md,
-    gap: 8,
-  },
-  returnTitle: {
-    fontSize: 18,
-    fontWeight: '900',
-    color: colors.navy,
-    letterSpacing: -0.3,
-  },
-  returnMsg: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.muted,
-    lineHeight: 19,
-    marginBottom: 4,
-  },
   ctaBox: {
     margin: space.md,
     padding: space.md,
