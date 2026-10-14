@@ -87,6 +87,39 @@ export class JevClient {
     }
   }
 
+  /**
+   * Dois títulos perto no mapa são o mesmo mercado?
+   * Sem chave, a regra local (nome parecido) decide.
+   */
+  async samePlace(args: {
+    nameA: string;
+    nameB: string;
+    distanceM: number;
+    localSame: boolean;
+  }): Promise<boolean> {
+    if (!this.enabled) return args.localSame;
+    const decided = await this.decide(
+      {
+        nameA: args.nameA,
+        nameB: args.nameB,
+        distanceM: Math.round(args.distanceM),
+      },
+      {
+        action: {
+          type: 'choice',
+          instructions:
+            'Are these two nearby Brazilian supermarket labels the same physical store? Merge duplicates and small title differences. Keep them apart when they are different chains or different branches.',
+          criteria: {
+            merge: 'Same store, keep a single pin',
+            distinct: 'Different stores, keep both pins',
+          },
+        },
+      },
+    );
+    if (decided.fallback) return args.localSame;
+    return decided.action === 'merge';
+  }
+
   async classifyPrice(args: {
     productName: string;
     marketName: string;

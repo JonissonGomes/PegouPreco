@@ -2,6 +2,7 @@ import {Db, Collection, MongoClient, ObjectId} from 'mongodb';
 import {v4 as uuidv4} from 'uuid';
 import {config} from './config.js';
 import {JevClient} from './jev.js';
+import {collapseMapPins, namesLikelySame} from './marketMatch.js';
 import {MarketStats, SUGGESTION_KEEP_MS} from './marketStats.js';
 import {haversineKm, nextTokenExpiry, resolveRole, sha256, tokenStillValid} from './util.js';
 
@@ -365,7 +366,58 @@ export class DataStore {
       });
     }
     await this._applyHighlights(out);
-    return out;
+    return collapseMapPins(out);
+  }
+
+  private async _canonicalMarket(
+    name: string,
+    lat: number,
+    lng: number,
+  ): Promise<{id: string; name: string} | null> {
+    if (!name.trim() || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return null;
+    }
+    const box = 0.01;
+    const markets =
+      this.mode === 'memory'
+        ? Object.values(this._memMarkets)
+        : ((await this.col('markets')
+            .find({
+              lat: {$gte: lat - box, $lte: lat + box},
+              lng: {$gte: lng - box, $lte: lng + box},
+            })
+            .toArray()) as Record<string, unknown>[]);
+    const near: {id: string; name: string; dist: number; localSame: boolean}[] =
+      [];
+    for (const doc of markets) {
+      const id = String(doc.id ?? '');
+      const other = String(doc.name ?? '');
+      const oLat = Number(doc.lat);
+      const oLng = Number(doc.lng);
+      if (!id || !other || !Number.isFinite(oLat) || !Number.isFinite(oLng)) {
+        continue;
+      }
+      const dist = haversineKm({lat, lng}, {lat: oLat, lng: oLng});
+      if (dist > 0.4) continue;
+      near.push({
+        id,
+        name: other,
+        dist,
+        localSame: namesLikelySame(name, other),
+      });
+    }
+    near.sort((a, b) => a.dist - b.dist);
+    const obvious = near.find(item => item.localSame);
+    if (obvious) return {id: obvious.id, name: obvious.name};
+    const closest = near[0];
+    if (!closest || !this._jev) return null;
+    const same = await this._jev.samePlace({
+      nameA: name,
+      nameB: closest.name,
+      distanceM: closest.dist * 1000,
+      localSame: false,
+    });
+    return same ? {id: closest.id, name: closest.name} : null;
   }
 
   private async _logsSinceWeek(): Promise<Record<string, unknown>[]> {
@@ -768,6 +820,15 @@ export class DataStore {
         )
       ) {
         continue;
+      }
+      const canonical = await this._canonicalMarket(
+        String(m.name ?? ''),
+        latN,
+        lngN,
+      );
+      if (canonical) {
+        m.remoteId = canonical.id;
+        m.name = canonical.name;
       }
       const remoteId = await this._upsertLww({
         collection: 'markets',
@@ -1347,18 +1408,45 @@ export class DataStore {
         const pname = String(p?.name ?? '').toLowerCase();
         if (!pname.includes(needle)) continue;
       }
+      let productName = '';
+      let marketName = '';
+      const pid = l.productId != null ? String(l.productId) : '';
+      const mid = l.marketId != null ? String(l.marketId) : '';
+      if (this.mode === 'memory') {
+        productName = String(this._memProducts[pid]?.name ?? '');
+        marketName = String(this._memMarkets[mid]?.name ?? '');
+      } else {
+        const product = pid
+          ? ((await this.col('products').findOne({id: pid})) as Record<
+              string,
+              unknown
+            > | null)
+          : null;
+        const market = mid
+          ? ((await this.col('markets').findOne({id: mid})) as Record<
+              string,
+              unknown
+            > | null)
+          : null;
+        productName = String(product?.name ?? '');
+        marketName = String(market?.name ?? '');
+      }
       out.push({
         priceLogId: l.id,
         productId: l.productId,
+        productName,
         marketId: l.marketId,
+        marketName,
         retailPrice: l.retailPrice,
         trustLevel: trust,
+        source: l.source ?? 'nfce',
+        nfceKey: l.nfceKey ?? null,
         capturedAt: l.capturedAt,
         city: args.city,
       });
     }
     out.sort((a, b) => Number(a.retailPrice) - Number(b.retailPrice));
-    return out.slice(0, 40);
+    return out.slice(0, 80);
   }
 
   async castVote(args: {
