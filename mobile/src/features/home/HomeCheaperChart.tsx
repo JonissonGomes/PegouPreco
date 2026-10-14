@@ -2,6 +2,7 @@ import React from 'react';
 import {StyleSheet, Text, View} from 'react-native';
 import {formatBrl} from '@/domain/money';
 import type {CheaperCategory} from '@/domain/purchaseInsights';
+import {GrowBar, Reveal} from '@/ui/reveal';
 import {colors, space} from '@/ui/theme';
 
 export function HomeCheaperChart({items}: {items: CheaperCategory[]}) {
@@ -9,29 +10,35 @@ export function HomeCheaperChart({items}: {items: CheaperCategory[]}) {
   const max = Math.max(...items.map(item => item.dropPct), 0.01);
   return (
     <View style={styles.wrap}>
-      <View style={styles.head}>
-        <Text style={styles.title}>Categorias mais baratas</Text>
-        <Text style={styles.caption}>últimos 7 dias</Text>
-      </View>
+      <Reveal>
+        <View style={styles.head}>
+          <Text style={styles.title}>Categorias mais baratas</Text>
+          <Text style={styles.caption}>últimos 7 dias</Text>
+        </View>
+      </Reveal>
       {items.map((item, index) => {
         const lead = index === 0;
-        const width = Math.max(18, Math.round((item.dropPct / max) * 100));
+        const width = Math.max(0.18, item.dropPct / max);
         return (
-          <View key={item.category} style={styles.row}>
-            <View
-              style={[
-                styles.fill,
-                {width: `${width}%`, backgroundColor: lead ? colors.yellow : '#E8EDF5'},
-              ]}
-            />
-            <View style={styles.label}>
-              <Text style={styles.name} numberOfLines={1}>
-                {item.category}
-              </Text>
-              <Text style={styles.pct}>-{Math.round(item.dropPct * 100)}%</Text>
+          <Reveal key={item.category} delay={80 + index * 70}>
+            <View style={styles.row}>
+              <View style={styles.fill}>
+                <GrowBar
+                  ratio={width}
+                  color={lead ? colors.yellow : '#E8EDF5'}
+                  delay={140 + index * 70}
+                  height={52}
+                />
+              </View>
+              <View style={styles.label}>
+                <Text style={styles.name} numberOfLines={1}>
+                  {item.category}
+                </Text>
+                <Text style={styles.pct}>-{Math.round(item.dropPct * 100)}%</Text>
+              </View>
+              <Text style={styles.saved}>{formatBrl(item.saved)}</Text>
             </View>
-            <Text style={styles.saved}>{formatBrl(item.saved)}</Text>
-          </View>
+          </Reveal>
         );
       })}
     </View>
@@ -55,7 +62,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     justifyContent: 'center',
   },
-  fill: {position: 'absolute', left: 0, top: 0, bottom: 0},
+  fill: {position: 'absolute', left: 0, top: 0, bottom: 0, right: 0},
   label: {
     flexDirection: 'row',
     alignItems: 'center',

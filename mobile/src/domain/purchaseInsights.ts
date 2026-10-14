@@ -86,9 +86,26 @@ export function pointsFromLogs(logs: PriceLog[], products: Product[]): PurchaseP
     });
 }
 
-function peersOf(point: PurchasePoint, all: PurchasePoint[]) {
-  if (!point.productId) return [];
-  return all.filter(p => p.productId === point.productId && p.key !== point.key && p.unit > 0);
+function peersAverage(
+  point: PurchasePoint,
+  totals: Map<number, {sum: number; count: number}>,
+): number | null {
+  if (!point.productId) return null;
+  const bucket = totals.get(point.productId);
+  if (!bucket || bucket.count < 2) return null;
+  return (bucket.sum - point.unit) / (bucket.count - 1);
+}
+
+function productTotals(points: PurchasePoint[]) {
+  const totals = new Map<number, {sum: number; count: number}>();
+  for (const point of points) {
+    if (!point.productId || !(point.unit > 0)) continue;
+    const bucket = totals.get(point.productId) ?? {sum: 0, count: 0};
+    bucket.sum += point.unit;
+    bucket.count += 1;
+    totals.set(point.productId, bucket);
+  }
+  return totals;
 }
 
 /** Quanto o preço pago ficou abaixo da média dos outros preços do mesmo produto. */
@@ -97,13 +114,13 @@ export function economyAgainstAverage(
   references: PurchasePoint[],
   sinceMs: number,
 ): {saved: number; compared: number} {
+  const totals = productTotals(references);
   let saved = 0;
   let compared = 0;
   for (const point of purchases) {
     if (point.at < sinceMs) continue;
-    const peers = peersOf(point, references);
-    if (!peers.length) continue;
-    const avg = peers.reduce((sum, p) => sum + p.unit, 0) / peers.length;
+    const avg = peersAverage(point, totals);
+    if (avg == null) continue;
     const diff = (avg - point.unit) * point.qty;
     compared += 1;
     if (diff > 0) saved += diff;
@@ -119,29 +136,34 @@ export function cheaperCategories(
   now = Date.now(),
 ): CheaperCategory[] {
   const since = now - days * 86400000;
-  const recent = purchases.filter(p => p.at >= since);
-  const byCat = new Map<string, PurchasePoint[]>();
-  for (const point of recent) {
-    const bucket = byCat.get(point.category) ?? [];
-    bucket.push(point);
-    byCat.set(point.category, bucket);
+  const recentByCat = new Map<string, {sum: number; qty: number}>();
+  for (const point of purchases) {
+    if (point.at < since || !(point.qty > 0)) continue;
+    const bucket = recentByCat.get(point.category) ?? {sum: 0, qty: 0};
+    bucket.sum += point.unit * point.qty;
+    bucket.qty += point.qty;
+    recentByCat.set(point.category, bucket);
+  }
+  const olderByCat = new Map<string, {sum: number; count: number}>();
+  for (const point of references) {
+    if (point.at >= since || !(point.unit > 0)) continue;
+    const bucket = olderByCat.get(point.category) ?? {sum: 0, count: 0};
+    bucket.sum += point.unit;
+    bucket.count += 1;
+    olderByCat.set(point.category, bucket);
   }
   const out: CheaperCategory[] = [];
-  for (const [category, rows] of byCat) {
-    const recentQty = rows.reduce((sum, p) => sum + p.qty, 0);
-    const recentAvg =
-      rows.reduce((sum, p) => sum + p.unit * p.qty, 0) / recentQty;
-    const older = references.filter(
-      p => p.category === category && p.at < since && p.unit > 0,
-    );
-    if (!older.length || !(recentAvg > 0)) continue;
-    const olderAvg = older.reduce((sum, p) => sum + p.unit, 0) / older.length;
-    if (recentAvg >= olderAvg) continue;
+  for (const [category, recent] of recentByCat) {
+    const older = olderByCat.get(category);
+    if (!older?.count || !(recent.qty > 0)) continue;
+    const recentAvg = recent.sum / recent.qty;
+    const olderAvg = older.sum / older.count;
+    if (!(recentAvg > 0) || recentAvg >= olderAvg) continue;
     const dropPct = (olderAvg - recentAvg) / olderAvg;
     out.push({
       category,
       dropPct,
-      saved: Number(((olderAvg - recentAvg) * recentQty).toFixed(2)),
+      saved: Number(((olderAvg - recentAvg) * recent.qty).toFixed(2)),
       recentAvg: Number(recentAvg.toFixed(2)),
     });
   }

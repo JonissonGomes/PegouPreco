@@ -11,6 +11,7 @@ import {
 import {colors, radii, space} from '@/ui/theme';
 import type {CheaperCategory} from '@/domain/purchaseInsights';
 import {HomeCheaperChart} from '@/features/home/HomeCheaperChart';
+import {Reveal} from '@/ui/reveal';
 
 type Shortcut = {
   label: string;
@@ -58,7 +59,8 @@ export function HomeHub({
         style={styles.search}
       />
 
-      <Pressable style={styles.hero} onPress={onOpenInsights}>
+      <Reveal>
+        <Pressable style={styles.hero} onPress={onOpenInsights}>
         <Text style={styles.heroKicker}>Economia em 30 dias</Text>
         <Text style={styles.heroValue}>{savedValue}</Text>
         <Text style={styles.heroText}>{savedLabel}</Text>
@@ -73,6 +75,7 @@ export function HomeHub({
           </View>
         </View>
       </Pressable>
+      </Reveal>
 
       <View style={styles.sectionHead}>
         <Text style={styles.sectionTitle}>Atalhos</Text>

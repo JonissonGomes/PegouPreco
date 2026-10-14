@@ -1,6 +1,6 @@
 import React from 'react';
 import {StyleSheet, Text, View} from 'react-native';
-import {formatBrl} from '@/domain/money';
+import {Reveal, GrowBar} from '@/ui/reveal';
 import {colors, radii, space} from '@/ui/theme';
 
 const BAR_COLORS = ['#EF4444', '#F5B400', '#7C3AED'];
@@ -19,7 +19,8 @@ export function InsightsBoard({
   bars: {label: string; value: string; ratio: number}[];
 }) {
   return (
-    <View style={styles.wrap}>
+    <Reveal>
+      <View style={styles.wrap}>
       <View style={styles.hero}>
         <View style={{flex: 1}}>
           <Text style={styles.kicker}>{spentLabel}</Text>
@@ -33,27 +34,24 @@ export function InsightsBoard({
       {bars.length > 0 ? (
         <View style={styles.barRow}>
           {bars.slice(0, 3).map((bar, i) => (
-            <View key={bar.label} style={styles.barCard}>
+            <Reveal key={bar.label} delay={120 + i * 80} style={styles.barCard}>
               <Text style={styles.barName} numberOfLines={1}>
                 {bar.label}
               </Text>
               <Text style={styles.barValue}>{bar.value}</Text>
               <View style={styles.track}>
-                <View
-                  style={[
-                    styles.fill,
-                    {
-                      width: `${Math.max(8, Math.min(100, bar.ratio * 100))}%`,
-                      backgroundColor: BAR_COLORS[i % BAR_COLORS.length],
-                    },
-                  ]}
+                <GrowBar
+                  ratio={Math.max(0.08, Math.min(1, bar.ratio))}
+                  color={BAR_COLORS[i % BAR_COLORS.length]}
+                  delay={180 + i * 80}
                 />
               </View>
-            </View>
+            </Reveal>
           ))}
         </View>
       ) : null}
-    </View>
+      </View>
+    </Reveal>
   );
 }
 
@@ -101,5 +99,4 @@ const styles = StyleSheet.create({
     backgroundColor: '#E5E7EB',
     overflow: 'hidden',
   },
-  fill: {height: 4, borderRadius: 4},
 });

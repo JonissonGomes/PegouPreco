@@ -20,6 +20,7 @@ import {FiscalBadge} from '@/ui/components';
 import {KeyboardSafeSheet} from '@/ui/keyboardSheet';
 import {MarketSuggestRow} from '@/ui/MarketSuggestRow';
 import {FeatureEmptyGuide} from '@/ui/FeatureEmptyGuide';
+import {Reveal} from '@/ui/reveal';
 import {InsightsBoard} from '@/features/insights/InsightsBoard';
 import {colors, radii, space, spacing} from '@/ui/theme';
 import {formatBrl} from '@/domain/money';
@@ -458,7 +459,8 @@ export function InsightsScreen() {
           padding: 16,
           paddingBottom: spacing.bottomNavClearance,
         }}
-        renderItem={({item}) => {
+        renderItem={({item, index}) => {
+          const node = (() => {
           if (item.type === 'board') {
             return (
               <InsightsBoard
@@ -685,6 +687,8 @@ export function InsightsScreen() {
               </View>
             </AppListCard>
           );
+          })();
+          return <Reveal delay={Math.min(index, 10) * 40}>{node}</Reveal>;
         }}
       />
 

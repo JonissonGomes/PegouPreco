@@ -4,6 +4,7 @@ import {formatBrl} from '@/domain/money';
 import type {HomeDash, HomePeriodDays} from '@/domain/homeDashboard';
 import type {ShoppingList} from '@/data/types';
 import {colors, radii, space} from '@/ui/theme';
+import {GrowBar, Reveal} from '@/ui/reveal';
 
 const PERIODS: {days: HomePeriodDays; label: string}[] = [
   {days: 7, label: '7 dias'},
@@ -110,6 +111,7 @@ export function HomeDashboard({
         </ScrollView>
       ) : null}
 
+      <Reveal delay={40}>
       <View style={styles.stats}>
         <View style={styles.stat}>
           <Text style={styles.statLabel}>Gasto</Text>
@@ -124,21 +126,37 @@ export function HomeDashboard({
           <Text style={styles.statValue}>{dash.purchaseCount}</Text>
         </View>
       </View>
+      </Reveal>
 
       {dash.categories.length > 0 ? (
+        <Reveal delay={120}>
         <View style={styles.block}>
           <Text style={styles.blockTitle}>Por categoria</Text>
-          {dash.categories.slice(0, 6).map(c => (
-            <View key={c.category} style={styles.catRow}>
-              <Text style={styles.catName} numberOfLines={1}>
-                {c.category}
-              </Text>
-              <Text style={styles.catTotal}>{formatBrl(c.total)}</Text>
-            </View>
-          ))}
+          {dash.categories.slice(0, 6).map((c, index) => {
+            const max = Math.max(...dash.categories.map(row => row.total), 1);
+            return (
+              <View key={c.category} style={styles.catRow}>
+                <View style={{flex: 1, gap: 4}}>
+                  <Text style={styles.catName} numberOfLines={1}>
+                    {c.category}
+                  </Text>
+                  <View style={styles.track}>
+                    <GrowBar
+                      ratio={c.total / max}
+                      color={index === 0 ? colors.yellow : colors.navy}
+                      delay={180 + index * 60}
+                    />
+                  </View>
+                </View>
+                <Text style={styles.catTotal}>{formatBrl(c.total)}</Text>
+              </View>
+            );
+          })}
         </View>
+        </Reveal>
       ) : null}
 
+      <Reveal delay={200}>
       <View style={styles.block}>
         <View style={styles.blockHead}>
           <Text style={styles.blockTitle}>Últimas compras</Text>
@@ -167,6 +185,7 @@ export function HomeDashboard({
           ))
         )}
       </View>
+      </Reveal>
     </View>
   );
 }
@@ -226,6 +245,12 @@ const styles = StyleSheet.create({
   },
   catName: {flex: 1, fontWeight: '700', color: colors.ink, fontSize: 14},
   catTotal: {fontWeight: '900', color: colors.navy, fontSize: 14},
+  track: {
+    height: 4,
+    borderRadius: 4,
+    backgroundColor: '#E5E7EB',
+    overflow: 'hidden',
+  },
   purchase: {
     flexDirection: 'row',
     alignItems: 'center',

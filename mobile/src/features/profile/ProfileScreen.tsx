@@ -35,6 +35,7 @@ import {reverseGeocode} from '@/data/remote/reverseGeocode';
 import {badgeById} from '@/domain/badges';
 import {TrustEngine} from '@/domain/trust';
 import {formatBrl} from '@/domain/money';
+import {Reveal} from '@/ui/reveal';
 import {
   economyAgainstAverage,
   pointsFromLists,
@@ -344,6 +345,7 @@ export function ProfileScreen() {
               ) : null}
             </View>
 
+            <Reveal>
             <Pressable
               style={styles.savingsCard}
               onPress={() => nav.navigate('Insights')}>
@@ -376,6 +378,7 @@ export function ProfileScreen() {
                 <ChevronRight size={16} color={colors.navy} />
               </View>
             </Pressable>
+            </Reveal>
 
             <View style={styles.actionsCard}>
               <ActionRow
