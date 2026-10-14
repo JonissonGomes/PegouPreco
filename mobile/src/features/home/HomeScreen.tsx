@@ -32,11 +32,12 @@ import {getState} from '@/data/db';
 import {MAPBOX_ACCESS_TOKEN} from '@/config/env';
 import {
   filterMarketsInRadius,
+  isInBrazil,
   NEARBY_RADIUS_KM,
 } from '@/data/remote/nearbyMarkets';
 import {ensureNearbyMarketsDiscovered} from '@/data/remote/ensureNearbyMarkets';
-import {HomeWelcome} from '@/features/home/HomeWelcome';
 import {HomeHowItWorks} from '@/features/home/HomeHowItWorks';
+import {HomeHub, homeShortcutIcons} from '@/features/home/HomeHub';
 import {buildHomeDash, type HomePeriodDays} from '@/domain/homeDashboard';
 import {HomeDashboard} from '@/features/home/HomeDashboard';
 
@@ -59,7 +60,11 @@ export function HomeScreen() {
     null,
   );
   const [mapOrigin, setMapOrigin] = useState<{lat: number; lng: number} | null>(
-    () => prefs.getLastLocation(),
+    () => {
+      const last = prefs.getLastLocation();
+      if (!last || !isInBrazil(last.lat, last.lng)) return null;
+      return last;
+    },
   );
   const [period, setPeriod] = useState<HomePeriodDays>(30);
   const [dashMarket, setDashMarket] = useState<number | null>(null);
@@ -85,7 +90,9 @@ export function HomeScreen() {
   const saveEst =
     best && worst && worst.total > best.total ? worst.total - best.total : 0;
 
-  const regionLabel = [loc.neighborhood, loc.city].filter(Boolean).join(', ');
+  const regionLabel = [loc.neighborhood, loc.city]
+    .filter((part, i, all) => part && all.indexOf(part) === i)
+    .join(', ');
   const openListLabel = activeListName
     ? `Abrir ${activeListName}`
     : 'Iniciar compra';
@@ -135,6 +142,17 @@ export function HomeScreen() {
   }, [refresh]);
 
   const tryAutoRegion = useCallback(async () => {
+    const stored = prefs.getLastLocation();
+    if (stored && !isInBrazil(stored.lat, stored.lng)) {
+      const currentPrefs = prefs.getLocationPrefs();
+      prefs.setLocationPrefs({
+        city: '',
+        neighborhood: '',
+        favoriteMarketIds: currentPrefs.favoriteMarketIds,
+      });
+      setLocSnapshot(prefs.getLocationPrefs());
+      setMapOrigin(null);
+    }
     const current = prefs.getLocationPrefs();
     if (current.city?.trim()) {
       setLocSnapshot(current);
@@ -143,7 +161,7 @@ export function HomeScreen() {
     if (!permissions.location) {
       setGeoAttempted(true);
       const last = prefs.getLastLocation();
-      if (!last) return;
+      if (!last || !isInBrazil(last.lat, last.lng)) return;
       setMapOrigin(prev =>
         prev && prev.lat === last.lat && prev.lng === last.lng ? prev : last,
       );
@@ -159,6 +177,10 @@ export function HomeScreen() {
               lat: pos.coords.latitude,
               lng: pos.coords.longitude,
             };
+            if (!isInBrazil(next.lat, next.lng)) {
+              resolve();
+              return;
+            }
             prefs.setLastLocation(next.lat, next.lng);
             setMapOrigin(prev =>
               prev &&
@@ -191,7 +213,7 @@ export function HomeScreen() {
           },
           () => {
             const last = prefs.getLastLocation();
-            if (last) {
+            if (last && isInBrazil(last.lat, last.lng)) {
               setMapOrigin(prev =>
                 prev && prev.lat === last.lat && prev.lng === last.lng
                   ? prev
@@ -317,6 +339,47 @@ export function HomeScreen() {
           />
         }>
         <ScreenScrollPad>
+          <HomeHub
+            savedValue={formatBrl(dash.savings)}
+            savedLabel={
+              dash.purchaseCount > 0
+                ? 'economizados nas compras salvas'
+                : 'Cadastre uma nota para ver a economia'
+            }
+            spentLabel={formatBrl(dash.spent)}
+            purchaseCount={dash.purchaseCount}
+            onOpenInsights={() => nav.navigate('Insights')}
+            onOpenMarket={goMap}
+            markets={mapMarkers.map(m => ({
+              id: m.id,
+              name: m.name,
+              detail: `${NEARBY_RADIUS_KM} km`,
+            }))}
+            shortcuts={[
+              {label: 'Mapa', Icon: homeShortcutIcons.map, onPress: goMap},
+              {label: 'Compras', Icon: homeShortcutIcons.lists, onPress: goLists},
+              {
+                label: 'Nota',
+                Icon: homeShortcutIcons.note,
+                onPress: () => nav.navigate('ImportPurchase'),
+              },
+              {
+                label: 'Insights',
+                Icon: homeShortcutIcons.insights,
+                onPress: () => nav.navigate('Insights'),
+              },
+              {
+                label: 'Histórico',
+                Icon: homeShortcutIcons.history,
+                onPress: () => nav.navigate('History'),
+              },
+              {
+                label: 'Comunidade',
+                Icon: homeShortcutIcons.community,
+                onPress: () => nav.navigate('Community'),
+              },
+            ]}
+          />
           {hasLists ? (
             <HomeDashboard
               dash={dash}
@@ -438,14 +501,7 @@ export function HomeScreen() {
               </View>
             </>
           ) : !hasLists ? (
-            <>
-              <HomeWelcome
-                regionLabel={regionLabel || undefined}
-                onExploreMap={goMap}
-                onStartList={goLists}
-              />
-              {howItWorks}
-            </>
+            howItWorks
           ) : null}
 
           {cart.length > 0 && !hasBasket ? (

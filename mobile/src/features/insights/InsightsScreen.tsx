@@ -20,6 +20,7 @@ import {FiscalBadge} from '@/ui/components';
 import {KeyboardSafeSheet} from '@/ui/keyboardSheet';
 import {MarketSuggestRow} from '@/ui/MarketSuggestRow';
 import {FeatureEmptyGuide} from '@/ui/FeatureEmptyGuide';
+import {InsightsBoard} from '@/features/insights/InsightsBoard';
 import {colors, radii, space, spacing} from '@/ui/theme';
 import {formatBrl} from '@/domain/money';
 import {rankNearestMarkets} from '@/domain/marketUi';
@@ -224,6 +225,22 @@ export function InsightsScreen() {
 
   const data: Array<{type: string; key: string; payload?: any}> = [];
   data.push({type: 'period', key: 'period'});
+  const barMax = Math.max(1, ...categoryWins.map(c => c.winCount));
+  data.push({
+    type: 'board',
+    key: 'board',
+    payload: {
+      spentLabel: saved3m > 0 ? 'Economia em 3 meses' : 'Itens comparados',
+      spent: saved3m > 0 ? formatBrl(saved3m) : String(cheap.length),
+      ringValue: String(alerts),
+      ringLabel: 'alertas',
+      bars: categoryWins.slice(0, 3).map(c => ({
+        label: c.category,
+        value: String(c.winCount),
+        ratio: c.winCount / barMax,
+      })),
+    },
+  });
   if (saved3m > 0) {
     data.push({
       type: 'savings',
@@ -399,6 +416,17 @@ export function InsightsScreen() {
           paddingBottom: spacing.bottomNavClearance,
         }}
         renderItem={({item}) => {
+          if (item.type === 'board') {
+            return (
+              <InsightsBoard
+                spentLabel={item.payload.spentLabel}
+                spent={item.payload.spent}
+                ringLabel={item.payload.ringLabel}
+                ringValue={item.payload.ringValue}
+                bars={item.payload.bars}
+              />
+            );
+          }
           if (item.type === 'period') {
             return (
               <View style={styles.periodRow}>

@@ -14,15 +14,14 @@ import {
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {
   ChevronLeft,
-  ChevronRight,
   MapPin,
   ScanLine,
   ShoppingCart,
   UsersRound,
   Zap,
 } from 'lucide-react-native';
-import {AppButton, AppField, BrandLogo} from '@/ui/chrome';
-import {colors, radii, space} from '@/ui/theme';
+import {AppField, BrandLogo} from '@/ui/chrome';
+import {colors, radii} from '@/ui/theme';
 import {prefs, useAppStore} from '@/store/appStore';
 
 const {width: PAGE_W} = Dimensions.get('window');
@@ -219,109 +218,122 @@ export function OnboardingScreen() {
   };
 
   const renderSlide = ({item}: {item: Slide}) => {
-    if (item.kind === 'story') {
-      return (
-        <View style={[styles.page, {width: PAGE_W, paddingTop: insets.top + 24}]}>
-          <SlideIcon name={item.icon} />
-          <Text style={styles.kicker}>{item.kicker}</Text>
-          <Text style={styles.title}>{item.title}</Text>
-          <Text style={styles.body}>{item.body}</Text>
-          <View style={styles.bullets}>
-            {item.bullets.map(b => (
-              <View key={b} style={styles.bulletRow}>
-                <View style={styles.bulletDot} />
-                <Text style={styles.bulletText}>{b}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
-      );
-    }
-
-    if (item.kind === 'city') {
-      return (
-        <View style={[styles.page, {width: PAGE_W, paddingTop: insets.top + 24}]}>
-          <View style={styles.iconBubble}>
-            <MapPin size={34} color={colors.navy} />
-          </View>
-          <Text style={styles.kicker}>Quase lá</Text>
-          <Text style={styles.title}>Sua região</Text>
-          <Text style={styles.body}>
-            Cidade e bairro alimentam o ranking comunitário e o mapa de mercados
-            próximos.
-          </Text>
-          <AppField
-            label="Cidade"
-            value={city}
-            onChangeText={setCity}
-            placeholder="Ex.: Recife"
-            compact
-          />
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.chipRow}>
-            {CITIES.map(c => (
-              <Pressable
-                key={c}
-                style={[styles.chip, city === c && styles.chipOn]}
-                onPress={() => setCity(c)}>
-                <Text style={[styles.chipText, city === c && styles.chipTextOn]}>
-                  {c}
-                </Text>
-              </Pressable>
-            ))}
-          </ScrollView>
-          <AppField
-            label="Bairro (opcional)"
-            value={neighborhood}
-            onChangeText={setNeighborhood}
-            placeholder="Ex.: Boa Viagem"
-            compact
-          />
-        </View>
-      );
-    }
+    const story = item.kind === 'story';
+    const title = story
+      ? item.title
+      : item.kind === 'city'
+        ? 'Sua região'
+        : 'Mercados favoritos';
+    const body = story
+      ? item.body
+      : item.kind === 'city'
+        ? 'Cidade e bairro alimentam o ranking e o mapa de mercados próximos.'
+        : 'Opcional. Esses mercados aparecem primeiro no comparador. Dá para mudar no Perfil.';
 
     return (
-      <View style={[styles.page, {width: PAGE_W, paddingTop: insets.top + 24}]}>
-        <View style={styles.iconBubble}>
-          <ShoppingCart size={34} color={colors.navy} />
-        </View>
-        <Text style={styles.kicker}>Personalize</Text>
-        <Text style={styles.title}>Mercados favoritos</Text>
-        <Text style={styles.body}>
-          Opcional — prioriza esses mercados no comparador. Pode mudar depois no
-          Perfil.
-        </Text>
-        <ScrollView style={styles.favList} nestedScrollEnabled>
-          {markets.length === 0 ? (
-            <Text style={styles.emptyFav}>
-              Nenhum mercado ainda. Abra o mapa depois para descobrir os da sua
-              região.
-            </Text>
+      <ScrollView
+        style={{width: PAGE_W}}
+        contentContainerStyle={styles.page}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}>
+        <View style={styles.hero}>
+          {story ? (
+            <SlideIcon name={item.icon} />
           ) : (
-            markets.slice(0, 20).map(m => {
-              const on = favorites.includes(m.id);
-              return (
-                <Pressable
-                  key={m.id}
-                  style={[styles.marketRow, on && styles.marketOn]}
-                  onPress={() => toggleFav(m.id)}>
-                  <Text style={[styles.marketName, on && {color: '#fff'}]}>
-                    {m.name}
-                  </Text>
-                </Pressable>
-              );
-            })
+            <View style={styles.iconBubble}>
+              {item.kind === 'city' ? (
+                <MapPin size={34} color={colors.navy} />
+              ) : (
+                <ShoppingCart size={34} color={colors.navy} />
+              )}
+            </View>
           )}
-        </ScrollView>
-      </View>
+        </View>
+        <View style={styles.copy}>
+          <Text style={styles.title}>{title}</Text>
+          <Text style={styles.body}>{body}</Text>
+          {item.kind === 'city' ? (
+            <View style={styles.form}>
+              <AppField
+                label="Cidade"
+                value={city}
+                onChangeText={setCity}
+                placeholder="Ex.: Recife"
+                compact
+              />
+              <View style={styles.chipWrap}>
+                {CITIES.map(c => (
+                  <Pressable
+                    key={c}
+                    style={[styles.chip, city === c && styles.chipOn]}
+                    onPress={() => setCity(c)}>
+                    <Text style={[styles.chipText, city === c && styles.chipTextOn]}>
+                      {c}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+              <AppField
+                label="Bairro (opcional)"
+                value={neighborhood}
+                onChangeText={setNeighborhood}
+                placeholder="Ex.: Boa Viagem"
+                compact
+              />
+            </View>
+          ) : null}
+          {item.kind === 'favorites' ? (
+            <ScrollView style={styles.favList} nestedScrollEnabled>
+              {markets.length === 0 ? (
+                <Text style={styles.emptyFav}>
+                  Nenhum mercado ainda. O mapa mostra os da sua região depois.
+                </Text>
+              ) : (
+                markets.slice(0, 20).map(m => {
+                  const on = favorites.includes(m.id);
+                  return (
+                    <Pressable
+                      key={m.id}
+                      style={[styles.marketRow, on && styles.marketOn]}
+                      onPress={() => toggleFav(m.id)}>
+                      <Text style={[styles.marketName, on && {color: '#fff'}]}>
+                        {m.name}
+                      </Text>
+                    </Pressable>
+                  );
+                })
+              )}
+            </ScrollView>
+          ) : null}
+        </View>
+      </ScrollView>
     );
   };
 
   return (
-    <View style={[styles.root, {paddingBottom: Math.max(insets.bottom, 12)}]}>
+    <View style={[styles.root, {paddingBottom: Math.max(insets.bottom, 16)}]}>
+      <View style={[styles.topBar, {paddingTop: insets.top + 10}]}>
+        {index > 0 ? (
+          <Pressable
+            onPress={() => goTo(index - 1)}
+            hitSlop={10}
+            style={styles.backBtn}
+            accessibilityLabel="Voltar">
+            <ChevronLeft size={22} color={colors.navy} />
+          </Pressable>
+        ) : (
+          <View style={styles.backBtn} />
+        )}
+        <View style={styles.bars}>
+          {slides.map((s, i) => (
+            <Pressable
+              key={s.key}
+              onPress={() => goTo(i)}
+              style={[styles.bar, i <= index && styles.barOn]}
+            />
+          ))}
+        </View>
+      </View>
       <FlatList
         ref={listRef}
         data={slides}
@@ -342,183 +354,126 @@ export function OnboardingScreen() {
       />
 
       <View style={styles.footer}>
-        <View style={styles.dots}>
-          {slides.map((s, i) => (
-            <Pressable
-              key={s.key}
-              onPress={() => goTo(i)}
-              hitSlop={8}
-              style={[styles.dot, i === index && styles.dotOn]}
-            />
-          ))}
-        </View>
-
-        <View style={styles.navRow}>
-          <Pressable
-            style={[styles.navBtn, index === 0 && styles.navBtnGhost]}
-            disabled={index === 0}
-            onPress={() => goTo(index - 1)}>
-            <ChevronLeft size={22} color={colors.navy} />
-            <Text style={styles.navBtnText}>Voltar</Text>
+        <Pressable
+          style={[styles.cta, isCity && !canContinueCity && styles.ctaOff]}
+          disabled={isCity && !canContinueCity}
+          onPress={onPrimary}>
+          <Text style={styles.ctaText}>
+            {isFavorites ? 'Começar' : primaryLabel} →
+          </Text>
+        </Pressable>
+        {isFavorites ? (
+          <Pressable onPress={finish} hitSlop={8}>
+            <Text style={styles.skip}>Pular favoritos</Text>
           </Pressable>
-
-          <View style={{flex: 1}}>
-            <AppButton
-              label={primaryLabel}
-              onPress={onPrimary}
-              disabled={isCity && !canContinueCity}
-            />
-          </View>
-
-          {!isFavorites ? (
-            <Pressable style={styles.navBtn} onPress={() => goTo(index + 1)}>
-              <Text style={styles.navBtnText}>Avançar</Text>
-              <ChevronRight size={22} color={colors.navy} />
-            </Pressable>
-          ) : (
-            <Pressable style={styles.navBtn} onPress={finish}>
-              <Text style={styles.navBtnText}>Pular</Text>
-            </Pressable>
-          )}
-        </View>
-
-        <Text style={styles.swipeHint}>Deslize ← → para navegar</Text>
+        ) : null}
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: colors.yellowBright,
-  },
-  page: {
-    flex: 1,
-    paddingHorizontal: space.xl,
+  root: {flex: 1, backgroundColor: '#fff'},
+  topBar: {
+    paddingHorizontal: 20,
     paddingBottom: 8,
+    gap: 10,
+  },
+  backBtn: {width: 36, height: 28, justifyContent: 'center'},
+  bars: {flexDirection: 'row', gap: 6},
+  bar: {
+    flex: 1,
+    height: 4,
+    borderRadius: 4,
+    backgroundColor: '#E7E5E4',
+  },
+  barOn: {backgroundColor: colors.navy},
+  page: {flexGrow: 1, backgroundColor: '#fff', paddingBottom: 12},
+  hero: {
+    height: 240,
+    marginHorizontal: 16,
+    borderRadius: 28,
+    backgroundColor: '#FFF6D8',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  copy: {
+    paddingHorizontal: 28,
+    paddingTop: 28,
+    paddingBottom: 8,
+    alignItems: 'center',
   },
   iconBubble: {
-    width: 72,
-    height: 72,
-    borderRadius: 24,
+    width: 88,
+    height: 88,
+    borderRadius: 28,
     backgroundColor: '#fff',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
     borderColor: colors.navy,
-    marginBottom: 8,
-  },
-  kicker: {
-    marginTop: 12,
-    fontSize: 12,
-    fontWeight: '800',
-    color: colors.navy,
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-    opacity: 0.75,
   },
   title: {
-    marginTop: 6,
-    fontSize: 32,
+    fontSize: 30,
     fontWeight: '900',
-    color: colors.navy,
+    color: colors.ink,
     letterSpacing: -0.6,
+    textAlign: 'center',
   },
   body: {
     marginTop: 12,
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
-    color: colors.navy,
+    color: colors.muted,
     lineHeight: 22,
-    opacity: 0.9,
+    textAlign: 'center',
   },
-  bullets: {marginTop: 20, gap: 10},
-  bulletRow: {flexDirection: 'row', alignItems: 'flex-start', gap: 10},
-  bulletDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: colors.navy,
-    marginTop: 5,
-  },
-  bulletText: {
-    flex: 1,
-    fontSize: 14,
-    fontWeight: '700',
-    color: colors.navy,
-    lineHeight: 20,
-  },
-  chipRow: {gap: 8, paddingVertical: 10},
+  form: {alignSelf: 'stretch', marginTop: 16, gap: 8},
+  chipWrap: {flexDirection: 'row', flexWrap: 'wrap', gap: 8},
   chip: {
-    backgroundColor: 'rgba(255,255,255,0.65)',
+    backgroundColor: '#F3F4F6',
     borderRadius: radii.pill,
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(11,42,107,0.15)',
   },
-  chipOn: {backgroundColor: colors.navy, borderColor: colors.navy},
+  chipOn: {backgroundColor: colors.navy},
   chipText: {fontWeight: '800', color: colors.navy, fontSize: 12},
   chipTextOn: {color: '#fff'},
-  favList: {flex: 1, marginTop: 8, marginBottom: 4},
+  favList: {alignSelf: 'stretch', maxHeight: 180, marginTop: 12},
   emptyFav: {
-    color: colors.navy,
+    color: colors.muted,
     fontWeight: '600',
-    opacity: 0.8,
     lineHeight: 20,
+    textAlign: 'center',
   },
   marketRow: {
-    backgroundColor: 'rgba(255,255,255,0.75)',
+    backgroundColor: '#F3F4F6',
     borderRadius: 12,
     padding: 12,
     marginBottom: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(11,42,107,0.12)',
   },
-  marketOn: {backgroundColor: colors.navy, borderColor: colors.navy},
+  marketOn: {backgroundColor: colors.navy},
   marketName: {fontWeight: '800', color: colors.navy},
   footer: {
-    paddingHorizontal: space.md,
+    paddingHorizontal: 24,
     paddingTop: 8,
+    alignItems: 'center',
     gap: 10,
   },
-  dots: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 6,
-  },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: 'rgba(11,42,107,0.25)',
-  },
-  dotOn: {
-    width: 22,
+  cta: {
+    alignSelf: 'center',
     backgroundColor: colors.navy,
+    borderRadius: radii.pill,
+    paddingHorizontal: 28,
+    paddingVertical: 14,
+    minWidth: 180,
   },
-  navRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  navBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-    paddingHorizontal: 6,
-    paddingVertical: 10,
-    minWidth: 72,
-  },
-  navBtnGhost: {opacity: 0.35},
-  navBtnText: {fontWeight: '800', color: colors.navy, fontSize: 13},
-  swipeHint: {
+  ctaOff: {opacity: 0.4},
+  ctaText: {
+    color: '#fff',
+    fontWeight: '800',
+    fontSize: 16,
     textAlign: 'center',
-    fontSize: 11,
-    fontWeight: '700',
-    color: colors.navy,
-    opacity: 0.55,
-    marginBottom: 4,
   },
+  skip: {fontWeight: '700', color: colors.muted, fontSize: 13},
 });

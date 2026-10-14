@@ -471,7 +471,12 @@ export function CartScreen() {
                       style: 'primary',
                       onPress: () => {
                         if (finalize()) {
-                          appAlert('Pronto', 'Lista salva no histórico');
+                          appAlert(
+                            'Compra salva',
+                            'A lista foi para o histórico.',
+                            [{label: 'Concluir', style: 'primary'}],
+                            'success',
+                          );
                         }
                       },
                     },

@@ -144,8 +144,14 @@ export function AppDialogHost() {
         <Pressable style={StyleSheet.absoluteFill} onPress={hide}>
           <Animated.View style={[styles.backdrop, backdropStyle]} />
         </Pressable>
-        <Animated.View style={[styles.card, sheetStyle]}>
-          <View style={[styles.bubble, toneBubble(tone)]}>
+        <Animated.View
+          style={[styles.card, tone === 'success' && styles.cardSuccess, sheetStyle]}>
+          <View
+            style={[
+              styles.bubble,
+              tone === 'success' && styles.bubbleSuccessLg,
+              toneBubble(tone),
+            ]}>
             <ToneIcon tone={tone} />
           </View>
           <Text style={styles.title}>{title}</Text>
@@ -204,6 +210,18 @@ const styles = StyleSheet.create({
   bubbleInfo: {backgroundColor: '#EEF2FF'},
   bubbleWarning: {backgroundColor: colors.yellowBright},
   bubbleSuccess: {backgroundColor: '#DCFCE7'},
+  bubbleSuccessLg: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    backgroundColor: '#DCFCE7',
+  },
+  cardSuccess: {
+    borderWidth: 0,
+    borderRadius: 28,
+    paddingVertical: 28,
+    alignItems: 'center',
+  },
   bubbleDanger: {backgroundColor: '#FEE2E2'},
   title: {
     textAlign: 'center',

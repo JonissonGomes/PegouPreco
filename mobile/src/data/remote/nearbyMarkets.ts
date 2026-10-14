@@ -15,6 +15,11 @@ export const NEARBY_MAX_RESULTS = 40;
 /** Distância máxima para perguntar “Você está neste mercado?”. */
 export const CONFIRM_AT_MARKET_KM = 0.2;
 
+/** Descarta o GPS de laboratório (ex.: emulador em Mountain View). */
+export function isInBrazil(lat: number, lng: number) {
+  return lat >= -34 && lat <= 6 && lng >= -74 && lng <= -32;
+}
+
 /** Marcas / tipos aceitos no mapa. */
 const BRAND_HINT =
   /atacad[aã]o|atacarejo|assa[ií]|carrefour|extra|bompre[cç]o|sam'?s|makro|fort\b|hiper|supermercado|mercado|atacadista|rede\s*compra|prezunic|guanabara|pao\s*de\s*acucar|p[aã]o\s*de\s*a[cç][uú]car|big\b|walmart|save\s*money|mix\s*mateus|mix\s*matheus|mateus\s*sup|comercial\s*esperan|arco\s*mix|arcomix/i;

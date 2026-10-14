@@ -1,4 +1,4 @@
-import React, {useEffect, useMemo, useRef, useState} from 'react';
+import React, {useEffect, useRef, useState} from 'react';
 import {
   Animated,
   Easing,
@@ -16,7 +16,7 @@ import {
   type TextInputProps,
 } from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
-import {Mail, MapPin, ShieldCheck} from 'lucide-react-native';
+import {Mail, ShieldCheck} from 'lucide-react-native';
 import {BrandLogo} from '@/ui/chrome';
 import {Screen} from '@/ui/components';
 import {colors, radii, space} from '@/ui/theme';
@@ -180,18 +180,18 @@ function PulseCta({
 function ModeTabs({
   mode,
   onLogin,
-  onOtp,
+  onRegister,
 }: {
   mode: Mode;
   onLogin: () => void;
-  onOtp: () => void;
+  onRegister: () => void;
 }) {
-  const slide = useRef(new Animated.Value(mode === 'otp' ? 1 : 0)).current;
+  const slide = useRef(new Animated.Value(mode === 'register' ? 1 : 0)).current;
   const [width, setWidth] = useState(0);
 
   useEffect(() => {
     Animated.spring(slide, {
-      toValue: mode === 'otp' ? 1 : 0,
+      toValue: mode === 'register' ? 1 : 0,
       friction: 8,
       tension: 90,
       useNativeDriver: true,
@@ -219,19 +219,19 @@ function ModeTabs({
       <Pressable style={styles.tabHit} onPress={onLogin}>
         <Text
           style={[styles.tabText, mode === 'login' && styles.tabTextOn]}>
-          Com senha
+          Entrar
         </Text>
       </Pressable>
-      <Pressable style={styles.tabHit} onPress={onOtp}>
-        <Text style={[styles.tabText, mode === 'otp' && styles.tabTextOn]}>
-          Código no e-mail
+      <Pressable style={styles.tabHit} onPress={onRegister}>
+        <Text style={[styles.tabText, mode === 'register' && styles.tabTextOn]}>
+          Criar conta
         </Text>
       </Pressable>
     </View>
   );
 }
 
-export function AuthPanel({location}: {location?: string}) {
+export function AuthPanel() {
   const insets = useSafeAreaInsets();
   const setAuth = useAppStore(s => s.setAuth);
   const [email, setEmail] = useState('');
@@ -251,7 +251,6 @@ export function AuthPanel({location}: {location?: string}) {
   const heroY = useRef(new Animated.Value(-18)).current;
   const sheetY = useRef(new Animated.Value(56)).current;
   const sheetOpacity = useRef(new Animated.Value(0)).current;
-  const logoScale = useRef(new Animated.Value(1)).current;
   const formOpacity = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
@@ -280,26 +279,7 @@ export function AuthPanel({location}: {location?: string}) {
         useNativeDriver: true,
       }),
     ]).start();
-
-    const pulse = Animated.loop(
-      Animated.sequence([
-        Animated.timing(logoScale, {
-          toValue: 1.06,
-          duration: 900,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-        Animated.timing(logoScale, {
-          toValue: 1,
-          duration: 900,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-      ]),
-    );
-    pulse.start();
-    return () => pulse.stop();
-  }, [heroOpacity, heroY, sheetY, sheetOpacity, logoScale]);
+  }, [heroOpacity, heroY, sheetY, sheetOpacity]);
 
   useEffect(() => {
     const show = Keyboard.addListener('keyboardDidShow', e => {
@@ -320,35 +300,6 @@ export function AuthPanel({location}: {location?: string}) {
       scrollRef.current?.scrollToEnd({animated: true});
     }, 280);
     return () => clearTimeout(t);
-  }, [mode, otpSent]);
-
-  const copy = useMemo(() => {
-    if (mode === 'register') {
-      return {
-        kicker: 'Novo fiscal',
-        title: 'Criar conta',
-        subtitle: 'Junte-se à comunidade e economize de verdade',
-      };
-    }
-    if (mode === 'verify' || (mode === 'otp' && otpSent)) {
-      return {
-        kicker: 'Quase lá',
-        title: 'Confirme o e-mail',
-        subtitle: 'Digite o código de 6 dígitos que enviamos',
-      };
-    }
-    if (mode === 'otp') {
-      return {
-        kicker: 'Acesso rápido',
-        title: 'Código no e-mail',
-        subtitle: 'Entre sem senha, só com o e-mail',
-      };
-    }
-    return {
-      kicker: 'Bem-vindo de volta',
-      title: 'Entrar',
-      subtitle: 'Acesse sua conta no PegouPreço',
-    };
   }, [mode, otpSent]);
 
   function switchMode(next: Mode) {
@@ -420,12 +371,12 @@ export function AuthPanel({location}: {location?: string}) {
   const primaryLabel = busy
     ? 'Aguarde…'
     : mode === 'login'
-      ? 'Entrar no app'
+      ? 'Entrar'
       : mode === 'register'
-        ? 'Criar minha conta'
+        ? 'Criar conta'
         : mode === 'otp' && !otpSent
           ? 'Enviar código no e-mail'
-          : 'Confirmar e entrar';
+          : 'Verificar';
 
   return (
     <Screen style={styles.root}>
@@ -443,30 +394,13 @@ export function AuthPanel({location}: {location?: string}) {
               transform: [{translateY: heroY}],
             },
           ]}>
-          <View style={styles.blobA} />
-          <View style={styles.blobB} />
           {keyboardPad === 0 ? (
-            <Animated.View style={{transform: [{scale: logoScale}]}}>
+            <>
               <View style={styles.logoRing}>
-                <BrandLogo size={56} />
+                <BrandLogo size={44} />
               </View>
-            </Animated.View>
-          ) : null}
-          {keyboardPad === 0 ? (
-            <Text style={styles.brand}>PegouPreço</Text>
-          ) : null}
-          <Text style={styles.kicker}>{copy.kicker}</Text>
-          <Text style={styles.heroTitle}>{copy.title}</Text>
-          {keyboardPad === 0 ? (
-            <Text style={styles.heroSub}>{copy.subtitle}</Text>
-          ) : null}
-          {location && keyboardPad === 0 ? (
-            <View style={styles.locChip}>
-              <MapPin size={12} color={colors.navy} />
-              <Text style={styles.locText} numberOfLines={1}>
-                {location}
-              </Text>
-            </View>
+              <Text style={styles.brand}>PegouPreço</Text>
+            </>
           ) : null}
         </Animated.View>
 
@@ -489,16 +423,16 @@ export function AuthPanel({location}: {location?: string}) {
               {paddingBottom: space.xl + (keyboardPad > 0 ? 24 : 88)},
             ]}>
             <Animated.View style={{opacity: formOpacity, gap: 14}}>
-              {mode === 'login' || mode === 'otp' ? (
+              {mode === 'login' || mode === 'register' ? (
                 <ModeTabs
                   mode={mode}
                   onLogin={() => {
                     resetTransient();
                     switchMode('login');
                   }}
-                  onOtp={() => {
+                  onRegister={() => {
                     resetTransient();
-                    switchMode('otp');
+                    switchMode('register');
                   }}
                 />
               ) : null}
@@ -574,25 +508,45 @@ export function AuthPanel({location}: {location?: string}) {
               ) : null}
 
               {mode === 'verify' || (mode === 'otp' && otpSent) ? (
-                <>
-                  <AuthInput
-                    label="Código de 6 dígitos"
-                    value={code}
-                    onChangeText={t => setCode(maskOtpTyping(t))}
-                    keyboardType="number-pad"
-                    textContentType="oneTimeCode"
-                    autoComplete="one-time-code"
-                    maxLength={6}
-                    placeholder="000000"
-                    style={styles.otpInput}
-                  />
+                <View style={styles.codeBlock}>
+                  <Text style={styles.codeTitle}>Digite o código</Text>
                   <Text style={styles.hint}>
                     {email
-                      ? `Código enviado para ${email}.`
-                      : 'Código enviado para o e-mail da conta.'}{' '}
+                      ? `Enviamos 6 dígitos para ${email}.`
+                      : 'Enviamos 6 dígitos para o e-mail da conta.'}{' '}
                     Confira também o spam.
                   </Text>
-                </>
+                  <View style={styles.codeRow}>
+                    {Array.from({length: 6}, (_, i) => {
+                      const digit = code[i] ?? '';
+                      const filled = digit.length > 0;
+                      return (
+                        <View
+                          key={i}
+                          style={[styles.codeDot, filled && styles.codeDotOn]}>
+                          <Text
+                            style={[
+                              styles.codeDigit,
+                              filled && styles.codeDigitOn,
+                            ]}>
+                            {digit || ' '}
+                          </Text>
+                        </View>
+                      );
+                    })}
+                    <TextInput
+                      value={code}
+                      onChangeText={t => setCode(maskOtpTyping(t))}
+                      keyboardType="number-pad"
+                      textContentType="oneTimeCode"
+                      autoComplete="one-time-code"
+                      maxLength={6}
+                      autoFocus
+                      caretHidden
+                      style={styles.codeHidden}
+                    />
+                  </View>
+                </View>
               ) : null}
 
               {notice ? <Text style={styles.notice}>{notice}</Text> : null}
@@ -704,28 +658,41 @@ export function AuthPanel({location}: {location?: string}) {
               />
 
               {mode === 'verify' || (mode === 'otp' && otpSent) ? (
-                <PulseCta
-                  label="Reenviar código no e-mail"
-                  disabled={busy}
-                  onPress={() =>
-                    withBusy(async () => {
-                      const emailNorm = normalizeEmail(email);
-                      if (!isValidEmail(emailNorm)) {
-                        appAlert('PegouPreço', 'Informe um e-mail válido.');
-                        return;
-                      }
-                      const data = await syncApi.resendCode({
-                        email: emailNorm,
-                        channel: 'email',
+                <Text style={styles.resendLine}>
+                  Não recebeu o código?{' '}
+                  <Text
+                    style={styles.resendLink}
+                    onPress={() => {
+                      if (busy) return;
+                      void withBusy(async () => {
+                        const emailNorm = normalizeEmail(email);
+                        if (!isValidEmail(emailNorm)) {
+                          appAlert('PegouPreço', 'Informe um e-mail válido.');
+                          return;
+                        }
+                        const data = await syncApi.resendCode({
+                          email: emailNorm,
+                          channel: 'email',
+                        });
+                        noteDevCode(data);
+                        setNotice('Código reenviado. Confira a caixa de entrada.');
                       });
-                      noteDevCode(data);
-                      appAlert(
-                        'Código reenviado',
-                        'Confira a caixa de entrada e o spam.',
-                      );
-                    })
-                  }
-                />
+                    }}>
+                    Reenviar
+                  </Text>
+                </Text>
+              ) : null}
+
+              {mode === 'login' ? (
+                <Pressable
+                  onPress={() => {
+                    resetTransient();
+                    switchMode('otp');
+                  }}>
+                  <Text style={styles.resendLine}>
+                    Prefere entrar com código no e-mail?
+                  </Text>
+                </Pressable>
               ) : null}
 
               {mode === 'login' ? (
@@ -775,11 +742,12 @@ export function AuthPanel({location}: {location?: string}) {
 }
 
 const styles = StyleSheet.create({
-  root: {backgroundColor: colors.navy},
+  root: {backgroundColor: '#fff'},
   flex: {flex: 1},
   hero: {
     paddingHorizontal: space.xl,
-    paddingBottom: space.xxl + 12,
+    paddingBottom: space.md,
+    alignItems: 'center',
     overflow: 'hidden',
   },
   blobA: {
@@ -788,7 +756,7 @@ const styles = StyleSheet.create({
     height: 180,
     borderRadius: 90,
     backgroundColor: colors.yellow,
-    opacity: 0.18,
+    opacity: 0,
     top: -40,
     right: -50,
   },
@@ -798,46 +766,40 @@ const styles = StyleSheet.create({
     height: 120,
     borderRadius: 60,
     backgroundColor: colors.cyan,
-    opacity: 0.14,
+    opacity: 0,
     bottom: 20,
     left: -30,
   },
   logoRing: {
-    alignSelf: 'flex-start',
     padding: 4,
     borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,212,0,0.45)',
-    marginBottom: space.sm,
+    marginBottom: 8,
   },
   brand: {
-    color: colors.yellow,
+    color: colors.navy,
     fontWeight: '900',
-    fontSize: 13,
-    letterSpacing: 1.2,
-    textTransform: 'uppercase',
-    marginBottom: 6,
+    fontSize: 18,
+    letterSpacing: -0.3,
   },
   kicker: {
-    color: 'rgba(255,255,255,0.72)',
+    color: colors.muted,
     fontWeight: '700',
     fontSize: 13,
     marginBottom: 4,
   },
   heroTitle: {
-    color: colors.white,
+    color: colors.ink,
     fontWeight: '900',
-    fontSize: 32,
+    fontSize: 28,
     letterSpacing: -0.6,
     marginBottom: 6,
   },
   heroSub: {
-    color: 'rgba(255,255,255,0.78)',
+    color: colors.muted,
     fontWeight: '600',
     fontSize: 14,
     lineHeight: 20,
-    maxWidth: 300,
+    maxWidth: 320,
   },
   locChip: {
     alignSelf: 'flex-start',
@@ -971,12 +933,43 @@ const styles = StyleSheet.create({
     borderColor: colors.navy,
   },
   ctaAccent: {
-    backgroundColor: colors.yellow,
-    borderWidth: 2,
-    borderColor: colors.navy,
+    backgroundColor: colors.navy,
+    borderWidth: 0,
+    borderRadius: radii.pill,
   },
   ctaText: {fontWeight: '900', fontSize: 15, color: colors.navy},
-  ctaTextAccent: {color: colors.navy},
+  ctaTextAccent: {color: colors.white},
+  codeBlock: {alignItems: 'center', gap: 8, marginTop: 8},
+  codeTitle: {fontSize: 22, fontWeight: '900', color: colors.ink},
+  codeRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 8,
+    position: 'relative',
+  },
+  codeDot: {
+    width: 42,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  codeDotOn: {backgroundColor: colors.navy},
+  codeDigit: {fontSize: 18, fontWeight: '800', color: colors.navy},
+  codeDigitOn: {color: colors.white},
+  codeHidden: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0,
+  },
+  resendLine: {
+    textAlign: 'center',
+    color: colors.muted,
+    fontWeight: '600',
+    fontSize: 13,
+  },
+  resendLink: {color: colors.navy, fontWeight: '900'},
   linkBtn: {alignItems: 'center', paddingVertical: 10},
   linkText: {
     fontWeight: '800',

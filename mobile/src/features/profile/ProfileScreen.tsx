@@ -217,7 +217,7 @@ export function ProfileScreen() {
   }, [auth?.token]);
 
   if (!auth) {
-    return <AuthPanel location={headerLocation} />;
+    return <AuthPanel />;
   }
 
   return (

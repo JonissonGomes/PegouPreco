@@ -5,6 +5,7 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   UIManager,
   View,
 } from 'react-native';
@@ -27,7 +28,7 @@ import {
   SoftCard,
   SoftHeader,
 } from '@/ui/screenChrome';
-import {colors, space, spacing} from '@/ui/theme';
+import {colors, radii, space, spacing} from '@/ui/theme';
 import {formatBrl, formatQty} from '@/domain/money';
 import {guessCategory} from '@/domain/productCategory';
 import {lineTotal} from '@/domain/pricing';
@@ -67,7 +68,21 @@ export function ShoppingListsScreen() {
   const refresh = useAppStore(s => s.refresh);
   const startList = useAppStore(s => s.startList);
   const [selected, setSelected] = useState<ShoppingList | null>(null);
+  const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState<'all' | 'nfce' | 'list'>('all');
   const totalSpent = lists.reduce((s, l) => s + l.subtotal, 0);
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return lists.filter(l => {
+      if (filter === 'nfce' && !l.nfceKey) return false;
+      if (filter === 'list' && l.nfceKey) return false;
+      if (!q) return true;
+      return (
+        l.name.toLowerCase().includes(q) ||
+        (l.marketName ?? '').toLowerCase().includes(q)
+      );
+    });
+  }, [lists, query, filter]);
   const detailItems = useMemo(
     () => (selected ? parseListItems(selected) : []),
     [selected],
@@ -120,12 +135,46 @@ export function ShoppingListsScreen() {
         }
       />
       <FlatList
-        data={lists}
+        data={visible}
         keyExtractor={l => String(l.id)}
         contentContainerStyle={[
           styles.listPad,
           lists.length === 0 && styles.listPadEmpty,
         ]}
+        ListHeaderComponent={
+          lists.length ? (
+            <View style={styles.filters}>
+              <TextInput
+                value={query}
+                onChangeText={setQuery}
+                placeholder="Buscar lista ou mercado"
+                placeholderTextColor={colors.muted}
+                style={styles.search}
+              />
+              <View style={styles.chips}>
+                {(
+                  [
+                    ['all', 'Todas'],
+                    ['nfce', 'Notas'],
+                    ['list', 'Listas'],
+                  ] as const
+                ).map(([id, label]) => {
+                  const on = filter === id;
+                  return (
+                    <Pressable
+                      key={id}
+                      onPress={() => setFilter(id)}
+                      style={[styles.chip, on && styles.chipOn]}>
+                      <Text style={[styles.chipText, on && styles.chipTextOn]}>
+                        {label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          ) : null
+        }
         ListEmptyComponent={
           <FeatureEmptyGuide
             HeroIcon={ClipboardList}
@@ -191,12 +240,30 @@ export function ShoppingListsScreen() {
             }}>
             <SoftCard onPress={() => setSelected(item)} style={styles.listCard}>
               <View style={styles.listRow}>
+                <View style={styles.itemIcon}>
+                  <ClipboardList size={18} color={colors.navy} />
+                </View>
                 <View style={{flex: 1, minWidth: 0}}>
-                  <Text style={styles.name}>{item.name}</Text>
-                  <Text style={styles.muted} numberOfLines={1}>
-                    {item.marketName} · {formatListDate(item.finishedAt)} ·{' '}
-                    {item.itemCount} itens
+                  <Text style={styles.name} numberOfLines={1}>
+                    {item.name}
                   </Text>
+                  <Text style={styles.muted} numberOfLines={1}>
+                    {item.marketName || 'Mercado'} · {item.itemCount} itens
+                  </Text>
+                  <View style={styles.metaLine}>
+                    <View
+                      style={[
+                        styles.pill,
+                        item.nfceKey ? styles.pillNote : styles.pillList,
+                      ]}>
+                      <Text style={styles.pillText}>
+                        {item.nfceKey ? 'Nota' : 'Lista'}
+                      </Text>
+                    </View>
+                    <Text style={styles.date}>
+                      {formatListDate(item.finishedAt)}
+                    </Text>
+                  </View>
                 </View>
                 <Text style={styles.price}>{formatBrl(item.subtotal)}</Text>
               </View>
@@ -287,14 +354,52 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingBottom: spacing.bottomNavClearance,
   },
-  listCard: {marginBottom: space.sm},
+  filters: {gap: 10, marginBottom: space.sm},
+  search: {
+    backgroundColor: colors.white,
+    borderRadius: radii.pill,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontWeight: '600',
+    color: colors.ink,
+  },
+  chips: {flexDirection: 'row', gap: 8},
+  chip: {
+    borderRadius: radii.pill,
+    backgroundColor: '#E8EAED',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  chipOn: {backgroundColor: colors.navy},
+  chipText: {fontWeight: '800', color: colors.ink, fontSize: 13},
+  chipTextOn: {color: colors.white},
+  listCard: {marginBottom: space.sm, borderRadius: 22},
   listRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
   },
+  itemIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    backgroundColor: '#EEF2FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   name: {fontWeight: '900', color: colors.navy, fontSize: 16},
-  muted: {color: colors.muted, marginTop: 4, fontWeight: '600', fontSize: 13},
+  muted: {color: colors.muted, marginTop: 2, fontWeight: '600', fontSize: 13},
+  metaLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 8,
+  },
+  pill: {borderRadius: radii.pill, paddingHorizontal: 8, paddingVertical: 3},
+  pillNote: {backgroundColor: '#DCFCE7'},
+  pillList: {backgroundColor: '#E0E7FF'},
+  pillText: {fontSize: 11, fontWeight: '800', color: colors.navy},
+  date: {fontSize: 12, fontWeight: '700', color: colors.muted},
   price: {fontWeight: '900', color: colors.navy, fontSize: 17},
   importBtn: {
     flexDirection: 'row',
