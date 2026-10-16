@@ -35,6 +35,7 @@ import {dateSearchText} from '@/domain/dateSearch';
 import {guessCategory} from '@/domain/productCategory';
 import {lineTotal} from '@/domain/pricing';
 import {CategoryIcon} from '@/features/history/categoryIcon';
+import {requestAutoSync} from '@/data/syncWorker';
 import {
   cartRepo,
   shoppingListRepo,
@@ -223,8 +224,8 @@ export function ShoppingListsScreen() {
           <SwipeableActions
             onDelete={() => {
               appAlert(
-                'Excluir lista?',
-                `"${item.name}" será removida do histórico.`,
+                'Excluir compra?',
+                'Ela sai do histórico, dos gastos, dos insights e da comunidade neste aparelho.',
                 [
                   {label: 'Cancelar', style: 'cancel'},
                   {
@@ -236,6 +237,7 @@ export function ShoppingListsScreen() {
                       );
                       shoppingListRepo.remove(item.id);
                       refresh();
+                      requestAutoSync('nfce');
                       if (selected?.id === item.id) setSelected(null);
                     },
                   },
@@ -322,8 +324,8 @@ export function ShoppingListsScreen() {
                   outlined
                   onPress={() => {
                     appAlert(
-                      'Excluir lista?',
-                      `"${selected.name}" será removida.`,
+                      'Excluir compra?',
+                      'Ela sai do histórico, dos gastos, dos insights e da comunidade neste aparelho.',
                       [
                         {label: 'Cancelar', style: 'cancel'},
                         {
@@ -332,6 +334,7 @@ export function ShoppingListsScreen() {
                           onPress: () => {
                             shoppingListRepo.remove(selected.id);
                             refresh();
+                            requestAutoSync('nfce');
                             setSelected(null);
                           },
                         },

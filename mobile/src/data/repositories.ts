@@ -20,6 +20,25 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+function readIdList(key: string): string[] {
+  try {
+    const raw = metaGet(key);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as string[];
+    return Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch {
+    return [];
+  }
+}
+
+function rememberId(key: string, id: string, limit: number) {
+  const trimmed = id.trim();
+  if (!trimmed) return;
+  const next = readIdList(key).filter(item => item !== trimmed);
+  next.push(trimmed);
+  metaSet(key, JSON.stringify(next.slice(-limit)));
+}
+
 export const prefs = {
   getOnboardingDone: () => metaGet('onboardingDone') === '1',
   setOnboardingDone: (v: boolean) => metaSet('onboardingDone', v ? '1' : '0'),
@@ -90,6 +109,13 @@ export const prefs = {
     const kept = [...current].slice(-400);
     metaSet('votedPriceIds', JSON.stringify(kept));
   },
+  getDeletedNfceKeys: (): string[] => readIdList('deletedNfceKeys'),
+  rememberDeletedNfce: (key: string) => rememberId('deletedNfceKeys', key, 200),
+  getDeletedPriceLogIds: (): string[] => readIdList('deletedPriceLogIds'),
+  rememberDeletedPriceLog: (id: string) =>
+    rememberId('deletedPriceLogIds', id, 400),
+  getDeletedListIds: (): string[] => readIdList('deletedListIds'),
+  rememberDeletedList: (id: string) => rememberId('deletedListIds', id, 200),
   getLocalUserId: () => {
     let id = metaGet('localUserId');
     if (!id) {
@@ -639,9 +665,8 @@ export const shoppingListRepo = {
     saveState();
   },
   remove(id: number) {
-    const st = getState();
-    st.shopping_lists = st.shopping_lists.filter(l => l.id !== id);
-    saveState();
+    const list = getState().shopping_lists.find(l => l.id === id);
+    if (list) forgetPurchase(list);
   },
   byNfceKey(key: string): ShoppingList | null {
     return getState().shopping_lists.find(l => l.nfceKey === key) ?? null;
@@ -655,6 +680,26 @@ export const shoppingListRepo = {
     saveState();
   },
 };
+
+export function forgetPurchase(list: ShoppingList) {
+  const st = getState();
+  const key =
+    typeof list.nfceKey === 'string' && list.nfceKey.length >= 40
+      ? list.nfceKey
+      : null;
+  if (key) prefs.rememberDeletedNfce(key);
+  if (list.remoteId) prefs.rememberDeletedList(list.remoteId);
+  for (const log of st.price_logs) {
+    if (key && log.nfceKey === key && log.remoteId) {
+      prefs.rememberDeletedPriceLog(log.remoteId);
+    }
+  }
+  if (key) {
+    st.price_logs = st.price_logs.filter(log => log.nfceKey !== key);
+  }
+  st.shopping_lists = st.shopping_lists.filter(item => item.id !== list.id);
+  saveState();
+}
 
 export function finalizeActiveList() {
   const items = cartRepo.all();

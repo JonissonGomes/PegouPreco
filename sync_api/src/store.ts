@@ -799,6 +799,58 @@ export class DataStore {
     await this.col('users').updateOne({id: userId}, {$set: {passkeys: []}});
   }
 
+  private async _forgetPushed(
+    userId: string,
+    body: Record<string, unknown>,
+  ): Promise<void> {
+    const keys = (Array.isArray(body.deletedNfceKeys) ? body.deletedNfceKeys : [])
+      .map(item => String(item))
+      .filter(key => key.length >= 40);
+    const logIds = new Set(
+      (Array.isArray(body.deletedPriceLogIds) ? body.deletedPriceLogIds : []).map(
+        item => String(item),
+      ),
+    );
+    const listIds = new Set(
+      (Array.isArray(body.deletedListIds) ? body.deletedListIds : []).map(item =>
+        String(item),
+      ),
+    );
+    if (!keys.length && !logIds.size && !listIds.size) return;
+
+    const dropLog = (log: Record<string, unknown>) => {
+      const id = String(log.id ?? '');
+      const key = String(log.nfceKey ?? '');
+      const owner = String(log.contributorId ?? '');
+      if (owner !== userId) return false;
+      return logIds.has(id) || (key.length >= 40 && keys.includes(key));
+    };
+    const dropList = (list: Record<string, unknown>) =>
+      listIds.has(String(list.id ?? '')) && String(list.ownerId ?? '') === userId;
+
+    if (this.mode === 'memory') {
+      for (const [id, log] of Object.entries(this._memLogs)) {
+        if (dropLog(log)) delete this._memLogs[id];
+      }
+      for (const [id, list] of Object.entries(this._memShoppingLists)) {
+        if (dropList(list)) delete this._memShoppingLists[id];
+      }
+      return;
+    }
+    const logQuery: Record<string, unknown>[] = [];
+    if (logIds.size) logQuery.push({id: {$in: [...logIds]}, contributorId: userId});
+    if (keys.length) logQuery.push({nfceKey: {$in: keys}, contributorId: userId});
+    if (logQuery.length) {
+      await this.col('price_logs').deleteMany({$or: logQuery});
+    }
+    if (listIds.size) {
+      await this.col('shopping_lists').deleteMany({
+        id: {$in: [...listIds]},
+        ownerId: userId,
+      });
+    }
+  }
+
   async push(
     userId: string,
     body: Record<string, unknown>,
@@ -807,6 +859,7 @@ export class DataStore {
     const marketIdMap: Record<string, string> = {};
     const priceLogIdMap: Record<string, string> = {};
     const shoppingListIdMap: Record<string, string> = {};
+    await this._forgetPushed(userId, body);
 
     for (const raw of (body.markets as unknown[] | undefined) ?? []) {
       const m = {...(raw as Record<string, unknown>)};

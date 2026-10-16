@@ -7,6 +7,7 @@ import {
   productRepo,
   shoppingListRepo,
   finalizeActiveList,
+  forgetPurchase,
   canContribute,
 } from '@/data/repositories';
 import type {CartItem, Market, Product, ShoppingList} from '@/data/types';
@@ -157,6 +158,7 @@ export {
   cartRepo,
   marketRepo,
   shoppingListRepo,
+  forgetPurchase,
   prefs,
   canContribute,
 };

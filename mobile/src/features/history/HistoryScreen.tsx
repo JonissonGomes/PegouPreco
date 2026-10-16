@@ -10,13 +10,15 @@ import {
 import {useNavigation} from '@react-navigation/native';
 import {History, QrCode, Receipt, ScanLine, SlidersHorizontal, Store, ClipboardList} from 'lucide-react-native';
 import {FeatureEmptyGuide} from '@/ui/FeatureEmptyGuide';
+import {appAlert} from '@/ui/appDialog';
 import {SoftCard, SoftHeader} from '@/ui/screenChrome';
 import {colors, radii, space, spacing} from '@/ui/theme';
 import {formatBrl} from '@/domain/money';
 import {dateSearchText} from '@/domain/dateSearch';
 import {isFiscalList} from '@/domain/fiscal';
 import {PRODUCT_CATEGORIES, resolveCategory} from '@/domain/productCategory';
-import {useAppStore} from '@/store/appStore';
+import {forgetPurchase, useAppStore} from '@/store/appStore';
+import {requestAutoSync} from '@/data/syncWorker';
 import type {CartItem, ShoppingList} from '@/data/types';
 import {CategoryIcon} from './categoryIcon';
 import {HistoryDetailSheet} from './HistoryDetailSheet';
@@ -50,6 +52,7 @@ export function HistoryScreen() {
   const nav = useNavigation<any>();
   const products = useAppStore(s => s.products);
   const lists = useAppStore(s => s.lists);
+  const refresh = useAppStore(s => s.refresh);
   const [query, setQuery] = useState('');
   const [market, setMarket] = useState<string | null>(null);
   const [category, setCategory] = useState<string[]>([]);
@@ -185,6 +188,25 @@ export function HistoryScreen() {
         list={openList}
         products={products}
         onClose={() => setOpenList(null)}
+        onDelete={list => {
+          appAlert(
+            'Remover esta compra?',
+            'A nota sai do histórico, dos gastos, dos insights e da comunidade neste aparelho.',
+            [
+              {label: 'Cancelar', style: 'cancel'},
+              {
+                label: 'Remover',
+                style: 'destructive',
+                onPress: () => {
+                  forgetPurchase(list);
+                  refresh();
+                  requestAutoSync('nfce');
+                  setOpenList(null);
+                },
+              },
+            ],
+          );
+        }}
       />
       <HistoryFilterSheet
         visible={filtersOpen}

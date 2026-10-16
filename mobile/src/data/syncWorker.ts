@@ -181,6 +181,9 @@ async function doFullSync(): Promise<{ok: boolean; message: string}> {
       markets,
       priceLogs,
       shoppingLists,
+      deletedNfceKeys: prefs.getDeletedNfceKeys(),
+      deletedPriceLogIds: prefs.getDeletedPriceLogIds(),
+      deletedListIds: prefs.getDeletedListIds(),
     })) as Record<string, Record<string, string>>;
 
     applyIdMaps(pushed);
@@ -277,6 +280,9 @@ function applyPull(pull: Record<string, unknown>) {
   for (const r of logs) {
     const remoteId = String(r.id ?? '');
     if (!remoteId) continue;
+    if (prefs.getDeletedPriceLogIds().includes(remoteId)) continue;
+    const nfceKey = r.nfceKey != null ? String(r.nfceKey) : '';
+    if (nfceKey && prefs.getDeletedNfceKeys().includes(nfceKey)) continue;
     if (r.source != null && r.source !== 'nfce') continue;
     const existing = st.price_logs.find(l => l.remoteId === remoteId);
     if (existing) {
@@ -350,7 +356,14 @@ async function ingestCommunityPrices(token: string) {
       const remoteId = String(row.priceLogId ?? '');
       const productName = String(row.productName ?? '').trim();
       const nfceKey = row.nfceKey != null ? String(row.nfceKey) : '';
-      if (!remoteId || known.has(remoteId) || !productName || nfceKey.length < 40) {
+      if (
+        !remoteId ||
+        known.has(remoteId) ||
+        !productName ||
+        nfceKey.length < 40 ||
+        prefs.getDeletedNfceKeys().includes(nfceKey) ||
+        prefs.getDeletedPriceLogIds().includes(remoteId)
+      ) {
         continue;
       }
       const market = getState().markets.find(

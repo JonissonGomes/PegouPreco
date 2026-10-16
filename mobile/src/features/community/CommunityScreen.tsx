@@ -107,6 +107,7 @@ export function CommunityScreen() {
   const auth = useAppStore(s => s.auth);
   const markets = useAppStore(s => s.markets);
   const products = useAppStore(s => s.products);
+  const lists = useAppStore(s => s.lists);
   const refresh = useAppStore(s => s.refresh);
   const loc = prefs.getLocationPrefs();
   const [busyId, setBusyId] = useState<number | null>(null);
@@ -147,6 +148,7 @@ export function CommunityScreen() {
   }, [auth?.token]);
 
   const feed = useMemo(() => {
+    void lists;
     const logs = getState().price_logs.filter(
       l =>
         l.source === 'nfce' &&
@@ -182,7 +184,7 @@ export function CommunityScreen() {
         return tb - ta;
       })
       .slice(0, 80);
-  }, [markets, products, refresh, skipped, origin]);
+  }, [markets, products, lists, refresh, skipped, origin]);
 
   const pending = feed.length;
   const points = rep?.points ?? 0;

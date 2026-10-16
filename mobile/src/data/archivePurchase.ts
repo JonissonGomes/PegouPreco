@@ -24,6 +24,7 @@ export type ArchiveOutcome =
       ok: true;
       itemCount: number;
       marketName: string;
+      marketId: number | null;
       finishedAt: string;
       placedOnMap: boolean;
       mapKnown: boolean;
@@ -240,6 +241,7 @@ export async function archiveNfcePurchase(
     ok: true,
     itemCount: items.length,
     marketName,
+    marketId,
     finishedAt,
     placedOnMap: placed.placedOnMap,
     mapKnown: placed.mapKnown,

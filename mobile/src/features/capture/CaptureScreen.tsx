@@ -45,6 +45,7 @@ import {
   type NfceDraft,
 } from '@/data/archivePurchase';
 import {NfceReviewSheet} from '@/features/cart/NfceReviewSheet';
+import {SavedMarketReview} from '@/features/cart/SavedMarketReview';
 import {extractAccessKey, looksLikeReceipt, nfceConsultUrl} from '@/domain/nfceScan';
 import {ensureMarketOnMap} from '@/data/archivePurchase';
 
@@ -211,6 +212,10 @@ export function CaptureScreen() {
   const [pastMode, setPastMode] = useState(false);
   const [pastDraft, setPastDraft] = useState<NfceDraft | null>(null);
   const [pastSaving, setPastSaving] = useState(false);
+  const [rateMarket, setRateMarket] = useState<{
+    id: number | null;
+    name: string;
+  } | null>(null);
   const pastModeRef = useRef(false);
   pastModeRef.current = pastMode;
   const [scanning, setScanning] = useState(false);
@@ -558,14 +563,10 @@ export function CaptureScreen() {
       refresh();
       setPastDraft(null);
       requestAutoSync('nfce');
-      appAlert(
-        'Compra salva',
-        outcome.placedOnMap
-          ? `${outcome.itemCount} itens de ${outcome.marketName} no histórico. Mercado cadastrado no mapa.`
-          : outcome.mapKnown
-            ? `${outcome.itemCount} itens de ${outcome.marketName} no histórico.`
-            : `${outcome.itemCount} itens de ${outcome.marketName} no histórico. Se o mercado não aparecer, segure o local no mapa.`,
-      );
+      setRateMarket({
+        id: outcome.marketId,
+        name: outcome.marketName,
+      });
     } catch (e) {
       appAlert('SEFAZ', e instanceof Error ? e.message : String(e));
     } finally {
@@ -898,6 +899,12 @@ export function CaptureScreen() {
           setPastDraft(null);
         }}
         onSave={purchasedAt => void confirmPast(purchasedAt)}
+      />
+      <SavedMarketReview
+        visible={rateMarket != null}
+        marketId={rateMarket?.id ?? null}
+        marketName={rateMarket?.name ?? 'Mercado'}
+        onClose={() => setRateMarket(null)}
       />
     </View>
   );

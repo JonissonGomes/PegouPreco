@@ -34,10 +34,12 @@ export function HistoryDetailSheet({
   list,
   products,
   onClose,
+  onDelete,
 }: {
   list: ShoppingList | null;
   products: Product[];
   onClose: () => void;
+  onDelete: (list: ShoppingList) => void;
 }) {
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('Todas');
@@ -132,6 +134,11 @@ export function HistoryDetailSheet({
           {visible.length === 0 ? (
             <Text style={styles.empty}>Nenhum item neste filtro.</Text>
           ) : null}
+          <Pressable
+            style={styles.remove}
+            onPress={() => onDelete(list)}>
+            <Text style={styles.removeText}>Remover do histórico</Text>
+          </Pressable>
         </>
       ) : null}
     </KeyboardSafeSheet>
@@ -187,4 +194,13 @@ const styles = StyleSheet.create({
   pill: {borderRadius: radii.pill, paddingHorizontal: 8, paddingVertical: 2},
   pillText: {fontWeight: '800', fontSize: 11},
   empty: {color: colors.muted, fontWeight: '700', textAlign: 'center', marginTop: 8},
+  remove: {
+    marginTop: 12,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.danger,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  removeText: {color: colors.danger, fontWeight: '800'},
 });
