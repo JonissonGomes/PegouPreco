@@ -34,6 +34,7 @@ import {MAPBOX_ACCESS_TOKEN} from '@/config/env';
 import {isInBrazil} from '@/data/remote/nearbyMarkets';
 import {ensureNearbyMarketsDiscovered} from '@/data/remote/ensureNearbyMarkets';
 import {buildHomeDash, type HomePeriodDays} from '@/domain/homeDashboard';
+import {isFiscalList, isFiscalLog} from '@/domain/fiscal';
 import {HomeHowItWorks} from '@/features/home/HomeHowItWorks';
 import {HomeHub, homeShortcutIcons} from '@/features/home/HomeHub';
 import {HomeSpendBoard} from '@/features/home/HomeSpendBoard';
@@ -71,7 +72,8 @@ export function HomeScreen() {
   );
   const [period, setPeriod] = useState<HomePeriodDays>(30);
   const [dashMarket, setDashMarket] = useState<number | null>(null);
-  const [dashCategory, setDashCategory] = useState<string | null>(null);
+  const [dashCategory, setDashCategory] = useState<string[]>([]);
+  const [play, setPlay] = useState(0);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const insets = useSafeAreaInsets();
 
@@ -110,14 +112,16 @@ export function HomeScreen() {
     [lists, products, period, dashMarket, dashCategory, priceLogs],
   );
   const filterOptions = useMemo(
-    () => buildHomeDash(lists, products, period, null, null, priceLogs),
+    () => buildHomeDash(lists, products, period, null, [], priceLogs),
     [lists, products, period, priceLogs],
   );
   const cheaper = useMemo(() => {
-    const purchases = pointsFromLists(lists, products);
+    const receipts = lists.filter(isFiscalList);
+    const fiscalLogs = priceLogs.filter(isFiscalLog);
+    const purchases = pointsFromLists(receipts, products);
     return cheaperCategories(
       purchases,
-      [...purchases, ...pointsFromLogs(priceLogs, products)],
+      [...purchases, ...pointsFromLogs(fiscalLogs, products)],
       7,
     );
   }, [lists, products, priceLogs]);
@@ -236,6 +240,7 @@ export function HomeScreen() {
         geoOnce.current = true;
         void tryAutoRegion();
       }
+      setPlay(n => n + 1);
       // tryAutoRegion propositalmente fora das deps do foco contínuo
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [refresh]),
@@ -294,7 +299,7 @@ export function HomeScreen() {
   const goLists = useCallback(() => nav.navigate('Lists'), [nav]);
   const goCapture = useCallback(() => nav.navigate('Capture'), [nav]);
   const filterCount =
-    (period !== 30 ? 1 : 0) + (dashMarket != null ? 1 : 0) + (dashCategory != null ? 1 : 0);
+    (period !== 30 ? 1 : 0) + (dashMarket != null ? 1 : 0) + (dashCategory.length > 0 ? 1 : 0);
   const firstName = auth?.displayName?.trim().split(/\s+/)[0] || '';
 
   const howItWorks = (
@@ -342,11 +347,19 @@ export function HomeScreen() {
           <HomeSpendBoard
             dash={dash}
             period={period}
+            play={play}
             onPress={() =>
               nav.navigate('HomeSpend', {
                 period,
                 marketId: dashMarket,
-                category: dashCategory,
+                categories: dashCategory,
+              })
+            }
+            onOpenCategory={category =>
+              nav.navigate('HomeSpend', {
+                period,
+                marketId: dashMarket,
+                categories: [category],
               })
             }
           />
@@ -376,7 +389,17 @@ export function HomeScreen() {
               },
             ]}
           />
-          <HomeCheaperChart items={cheaper} />
+          <HomeCheaperChart
+            play={play}
+            items={cheaper}
+            onOpen={category =>
+              nav.navigate('HomeSpend', {
+                period,
+                marketId: dashMarket,
+                categories: [category],
+              })
+            }
+          />
 
           {hasBasket && best ? (
             <>

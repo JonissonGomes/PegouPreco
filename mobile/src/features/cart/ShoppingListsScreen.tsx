@@ -33,6 +33,7 @@ import {colors, radii, space, spacing} from '@/ui/theme';
 import {formatBrl, formatQty} from '@/domain/money';
 import {guessCategory} from '@/domain/productCategory';
 import {lineTotal} from '@/domain/pricing';
+import {CategoryIcon} from '@/features/history/categoryIcon';
 import {
   cartRepo,
   shoppingListRepo,
@@ -291,13 +292,13 @@ export function ShoppingListsScreen() {
                     styles.detailRow,
                     idx < detailItems.length - 1 && styles.detailRowBorder,
                   ]}>
+                  <CategoryIcon name={guessCategory(it.productName)} size={14} />
                   <View style={{flex: 1, minWidth: 0}}>
-                    <Text style={styles.detailName} numberOfLines={2}>
+                    <Text style={styles.detailName} numberOfLines={1}>
                       {it.productName}
                     </Text>
                     <Text style={styles.detailQty}>
-                      {guessCategory(it.productName)} · {formatQty(it.quantity)} ×{' '}
-                      {formatBrl(it.retailPrice)}
+                      {formatQty(it.quantity)} × {formatBrl(it.retailPrice)}
                     </Text>
                   </View>
                   <Text style={styles.detailLine}>

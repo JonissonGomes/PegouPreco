@@ -54,6 +54,7 @@ import {
   useMarketName,
 } from '@/store/appStore';
 import {syncApi, type ReputationRemote} from '@/data/remote/syncApi';
+import {isFiscalList, isFiscalLog} from '@/domain/fiscal';
 import type {FiscalLevel, PriceLog, Product} from '@/data/types';
 
 const PERIODS: Array<{id: InsightPeriod; label: string}> = [
@@ -138,12 +139,12 @@ export function InsightsScreen() {
   );
 
   const logs = useMemo(() => {
-    const all = priceLogRepo.all();
+    const all = priceLogRepo.all().filter(isFiscalLog);
     return filterLogsByMarketScope(all, scope.marketIds);
   }, [lists, markets, products, scope]);
 
   const scopedLists = useMemo(
-    () => filterListsByMarketScope(lists, scope.marketIds),
+    () => filterListsByMarketScope(lists.filter(isFiscalList), scope.marketIds),
     [lists, scope],
   );
 

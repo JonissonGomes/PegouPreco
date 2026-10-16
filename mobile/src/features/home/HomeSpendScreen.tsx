@@ -8,15 +8,16 @@ import {guessCategory} from '@/domain/productCategory';
 import {lineTotal} from '@/domain/pricing';
 import {buildHomeDash, type HomePeriodDays} from '@/domain/homeDashboard';
 import {HomeSpendBoard} from '@/features/home/HomeSpendBoard';
-import {categoryTone} from '@/features/history/categoryTone';
+import {CategoryIcon} from '@/features/history/categoryIcon';
 import {priceLogRepo, useAppStore} from '@/store/appStore';
-import {colors, radii, space} from '@/ui/theme';
+import {colors, space} from '@/ui/theme';
 import type {CartItem, ShoppingList} from '@/data/types';
 
 type Params = {
   period: HomePeriodDays;
   marketId: number | null;
-  category: string | null;
+  categories?: string[];
+  category?: string | null;
 };
 
 function parseItems(list: ShoppingList): CartItem[] {
@@ -41,14 +42,31 @@ export function HomeSpendScreen() {
   const params = (route.params ?? {}) as Partial<Params>;
   const period = params.period ?? 30;
   const marketId = params.marketId ?? null;
-  const category = params.category ?? null;
+  const categories =
+    params.categories ??
+    (params.category ? [params.category] : []);
   const lists = useAppStore(s => s.lists);
   const products = useAppStore(s => s.products);
   const logs = useMemo(() => priceLogRepo.all(), [lists, products]);
   const dash = useMemo(
-    () => buildHomeDash(lists, products, period, marketId, category, logs),
-    [lists, products, period, marketId, category, logs],
+    () => buildHomeDash(lists, products, period, marketId, categories, logs),
+    [lists, products, period, marketId, categories, logs],
   );
+  const dearest = useMemo(() => {
+    let best: {market: string; total: number} | null = null;
+    for (const list of dash.purchases) {
+      for (const item of parseItems(list)) {
+        const stored = products.find(p => p.id === item.productId)?.category?.trim();
+        const cat = stored || guessCategory(item.productName);
+        if (categories.length > 0 && !categories.includes(cat)) continue;
+        const total = lineTotal(item);
+        if (!best || total > best.total) {
+          best = {market: list.marketName || list.name, total};
+        }
+      }
+    }
+    return best;
+  }, [dash.purchases, products, categories]);
 
   return (
     <View style={[styles.root, {paddingTop: insets.top + 8}]}>
@@ -60,7 +78,23 @@ export function HomeSpendScreen() {
       </View>
       <ScrollView contentContainerStyle={{paddingBottom: insets.bottom + 24}}>
         <HomeSpendBoard dash={dash} period={period} />
-        <Text style={styles.section}>Detalhes</Text>
+        <Text style={styles.section}>
+          {categories.length ? categories.join(' · ') : 'Todas as notas'}
+        </Text>
+        <View style={styles.summary}>
+          <View style={styles.summaryCard}>
+            <Text style={styles.summaryLabel}>Total</Text>
+            <Text style={styles.summaryValue}>{formatBrl(dash.spent)}</Text>
+          </View>
+          <View style={styles.summaryCard}>
+            <Text style={styles.summaryLabel}>Mais cara</Text>
+            <Text style={styles.summaryValue} numberOfLines={1}>
+              {dearest
+                ? `${dearest.market} · ${formatBrl(dearest.total)}`
+                : '—'}
+            </Text>
+          </View>
+        </View>
         {dash.purchases.length === 0 ? (
           <Text style={styles.empty}>Nenhuma compra neste filtro.</Text>
         ) : (
@@ -80,23 +114,19 @@ export function HomeSpendScreen() {
               {parseItems(list).map((item, index) => {
                 const stored = products.find(p => p.id === item.productId)?.category?.trim();
                 const cat = stored || guessCategory(item.productName);
-                const tone = categoryTone(cat);
+                if (categories.length > 0 && !categories.includes(cat)) return null;
                 return (
                   <View key={`${item.productId}-${index}`} style={styles.line}>
+                    <CategoryIcon name={cat} />
                     <View style={{flex: 1}}>
-                      <Text style={styles.item} numberOfLines={2}>
+                      <Text style={styles.item} numberOfLines={1}>
                         {item.productName}
                       </Text>
                       <Text style={styles.meta}>
                         {formatQty(item.quantity)} × {formatBrl(item.retailPrice)}
                       </Text>
                     </View>
-                    <View style={styles.lineRight}>
-                      <Text style={styles.linePrice}>{formatBrl(lineTotal(item))}</Text>
-                      <View style={[styles.pill, {backgroundColor: tone.bg}]}>
-                        <Text style={[styles.pillText, {color: tone.fg}]}>{cat}</Text>
-                      </View>
-                    </View>
+                    <Text style={styles.linePrice}>{formatBrl(lineTotal(item))}</Text>
                   </View>
                 );
               })}
@@ -133,6 +163,21 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: colors.navy,
   },
+  summary: {
+    flexDirection: 'row',
+    gap: 8,
+    marginHorizontal: space.md,
+    marginBottom: space.md,
+  },
+  summaryCard: {
+    flex: 1,
+    backgroundColor: colors.white,
+    borderRadius: 16,
+    padding: 12,
+    gap: 4,
+  },
+  summaryLabel: {fontSize: 12, fontWeight: '800', color: colors.muted},
+  summaryValue: {fontSize: 14, fontWeight: '900', color: colors.navy},
   empty: {marginHorizontal: space.md, color: colors.muted, fontWeight: '700'},
   purchase: {
     marginHorizontal: space.md,
@@ -148,6 +193,7 @@ const styles = StyleSheet.create({
   total: {fontWeight: '900', color: colors.navy, fontSize: 16},
   line: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: 10,
     paddingTop: 8,
     borderTopWidth: StyleSheet.hairlineWidth,
@@ -156,6 +202,4 @@ const styles = StyleSheet.create({
   item: {fontWeight: '800', color: colors.ink, fontSize: 14},
   lineRight: {alignItems: 'flex-end', gap: 4},
   linePrice: {fontWeight: '900', color: colors.navy},
-  pill: {borderRadius: radii.pill, paddingHorizontal: 8, paddingVertical: 3},
-  pillText: {fontSize: 11, fontWeight: '800'},
 });

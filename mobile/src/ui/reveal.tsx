@@ -1,13 +1,15 @@
 import React, {useEffect, useRef, useState} from 'react';
-import {Animated, Easing, View, type StyleProp, type ViewStyle} from 'react-native';
+import {Animated, Easing, View, type DimensionValue, type StyleProp, type ViewStyle} from 'react-native';
 
 /** Entrada: sobe, cresce e aparece. */
 export function Reveal({
   delay = 0,
+  play = 0,
   children,
   style,
 }: {
   delay?: number;
+  play?: number;
   children: React.ReactNode;
   style?: StyleProp<ViewStyle>;
 }) {
@@ -16,6 +18,9 @@ export function Reveal({
   const scale = useRef(new Animated.Value(0.92)).current;
 
   useEffect(() => {
+    opacity.setValue(0);
+    translateY.setValue(28);
+    scale.setValue(0.92);
     Animated.parallel([
       Animated.timing(opacity, {
         toValue: 1,
@@ -39,7 +44,7 @@ export function Reveal({
         useNativeDriver: true,
       }),
     ]).start();
-  }, [delay, opacity, scale, translateY]);
+  }, [delay, opacity, play, scale, translateY]);
 
   return (
     <Animated.View style={[style, {opacity, transform: [{translateY}, {scale}]}]}>
@@ -49,7 +54,7 @@ export function Reveal({
 }
 
 /** 0 → 1 para desenhar anel, barra e linha. */
-export function useDraw(delay = 0, duration = 900) {
+export function useDraw(delay = 0, duration = 900, play = 0) {
   const [progress, setProgress] = useState(0);
   const value = useRef(new Animated.Value(0)).current;
 
@@ -64,7 +69,7 @@ export function useDraw(delay = 0, duration = 900) {
       useNativeDriver: false,
     }).start();
     return () => value.removeListener(sub);
-  }, [delay, duration, value]);
+  }, [delay, duration, play, value]);
 
   return progress;
 }
@@ -75,20 +80,22 @@ export function GrowBar({
   color,
   delay = 0,
   height = 4,
+  play = 0,
 }: {
   ratio: number;
   color: string;
   delay?: number;
   height?: number;
+  play?: number;
 }) {
-  const progress = useDraw(delay, 880);
+  const progress = useDraw(delay, 880, play);
   const target = Math.max(0, Math.min(1, ratio));
   const width = `${Math.round(progress * target * 100)}%`;
 
   return (
     <View
       style={{
-        width,
+        width: width as DimensionValue,
         height,
         borderRadius: height,
         backgroundColor: color,

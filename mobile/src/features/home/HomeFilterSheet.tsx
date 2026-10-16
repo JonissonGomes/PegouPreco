@@ -23,14 +23,14 @@ export function HomeFilterSheet({
   visible: boolean;
   period: HomePeriodDays;
   marketId: number | null;
-  category: string | null;
+  category: string[];
   markets: {id: number; name: string}[];
   categories: string[];
   onClose: () => void;
   onApply: (next: {
     period: HomePeriodDays;
     marketId: number | null;
-    category: string | null;
+    category: string[];
   }) => void;
 }) {
   const [draftPeriod, setDraftPeriod] = useState(period);
@@ -82,15 +82,22 @@ export function HomeFilterSheet({
       <ScrollView style={styles.list} nestedScrollEnabled>
         <Option
           label="Todas as categorias"
-          on={draftCategory == null}
-          onPress={() => setDraftCategory(null)}
+          on={draftCategory.length === 0}
+          onPress={() => setDraftCategory([])}
         />
         {categories.map(name => (
           <Option
             key={name}
             label={name}
-            on={draftCategory === name}
-            onPress={() => setDraftCategory(name)}
+            check
+            on={draftCategory.includes(name)}
+            onPress={() =>
+              setDraftCategory(current =>
+                current.includes(name)
+                  ? current.filter(item => item !== name)
+                  : [...current, name],
+              )
+            }
           />
         ))}
       </ScrollView>
@@ -100,7 +107,7 @@ export function HomeFilterSheet({
           onPress={() => {
             setDraftPeriod(30);
             setDraftMarket(null);
-            setDraftCategory(null);
+            setDraftCategory([]);
           }}>
           <Text style={styles.clearText}>Limpar</Text>
         </Pressable>
@@ -123,17 +130,19 @@ export function HomeFilterSheet({
 function Option({
   label,
   on,
+  check,
   onPress,
 }: {
   label: string;
   on: boolean;
+  check?: boolean;
   onPress: () => void;
 }) {
   return (
     <Pressable onPress={onPress} style={styles.option}>
       <Text style={styles.optionText}>{label}</Text>
-      <View style={[styles.radio, on && styles.radioOn]}>
-        {on ? <View style={styles.radioDot} /> : null}
+      <View style={[check ? styles.box : styles.radio, on && styles.radioOn]}>
+        {on ? <View style={check ? styles.boxMark : styles.radioDot} /> : null}
       </View>
     </Pressable>
   );
@@ -181,6 +190,21 @@ const styles = StyleSheet.create({
     width: 10,
     height: 10,
     borderRadius: 5,
+    backgroundColor: colors.navy,
+  },
+  box: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  boxMark: {
+    width: 12,
+    height: 12,
+    borderRadius: 3,
     backgroundColor: colors.navy,
   },
   actions: {flexDirection: 'row', gap: 10, marginTop: 8},

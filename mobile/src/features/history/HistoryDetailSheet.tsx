@@ -8,6 +8,7 @@ import {guessCategory} from '@/domain/productCategory';
 import {lineTotal} from '@/domain/pricing';
 import type {CartItem, Product, ShoppingList} from '@/data/types';
 import {categoryTone} from './categoryTone';
+import {CategoryIcon} from './categoryIcon';
 
 function parseItems(list: ShoppingList): CartItem[] {
   try {
@@ -108,7 +109,6 @@ export function HistoryDetailSheet({
           </ScrollView>
           {visible.map((item, index) => {
             const cat = itemCategory(item, products);
-            const tone = categoryTone(cat);
             return (
               <View key={`${item.productId}-${index}`} style={styles.card}>
                 <View style={styles.icon}>
@@ -122,9 +122,7 @@ export function HistoryDetailSheet({
                     <Text style={styles.meta} numberOfLines={1}>
                       {formatQty(item.quantity)} × {formatBrl(item.retailPrice)}
                     </Text>
-                    <View style={[styles.pill, {backgroundColor: tone.bg}]}>
-                      <Text style={[styles.pillText, {color: tone.fg}]}>{cat}</Text>
-                    </View>
+                    <CategoryIcon name={cat} size={12} />
                   </View>
                 </View>
                 <Text style={styles.price}>{formatBrl(lineTotal(item))}</Text>

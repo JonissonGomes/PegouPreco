@@ -41,6 +41,7 @@ import {
   pointsFromLists,
   pointsFromLogs,
 } from '@/domain/purchaseInsights';
+import {isFiscalList, isFiscalLog} from '@/domain/fiscal';
 import type {FiscalLevel} from '@/data/types';
 import {MAPBOX_ACCESS_TOKEN} from '@/config/env';
 import {refreshPermissionFlags} from '@/app/permissions';
@@ -99,18 +100,22 @@ export function ProfileScreen() {
   const [rep, setRep] = useState<ReputationRemote | null>(null);
   const [passkeyOn, setPasskeyOn] = useState(false);
 
-  const priceLogs = useMemo(() => priceLogRepo.all(), [lists, products]);
+  const priceLogs = useMemo(
+    () => priceLogRepo.all().filter(isFiscalLog),
+    [lists, products],
+  );
+  const receiptLists = useMemo(() => lists.filter(isFiscalList), [lists]);
   const savings3m = useMemo(() => {
-    const purchases = pointsFromLists(lists, products);
+    const purchases = pointsFromLists(receiptLists, products);
     const refs = [...purchases, ...pointsFromLogs(priceLogs, products)];
     return economyAgainstAverage(
       purchases,
       refs,
       Date.now() - 90 * 86400000,
     ).saved;
-  }, [lists, products, priceLogs]);
+  }, [receiptLists, products, priceLogs]);
   const savingsRecent = useMemo(() => {
-    const recent = [...lists]
+    const recent = [...receiptLists]
       .sort(
         (a, b) =>
           new Date(b.finishedAt).getTime() - new Date(a.finishedAt).getTime(),
@@ -118,16 +123,16 @@ export function ProfileScreen() {
       .slice(0, 5);
     const purchases = pointsFromLists(recent, products);
     const refs = [
-      ...pointsFromLists(lists, products),
+      ...pointsFromLists(receiptLists, products),
       ...pointsFromLogs(priceLogs, products),
     ];
     return economyAgainstAverage(purchases, refs, 0).saved;
-  }, [lists, products, priceLogs]);
+  }, [receiptLists, products, priceLogs]);
   const savingsAll = useMemo(() => {
-    const purchases = pointsFromLists(lists, products);
+    const purchases = pointsFromLists(receiptLists, products);
     const refs = [...purchases, ...pointsFromLogs(priceLogs, products)];
     return economyAgainstAverage(purchases, refs, 0).saved;
-  }, [lists, products, priceLogs]);
+  }, [receiptLists, products, priceLogs]);
 
   const headerLocation = useMemo(() => {
     const parts = [neighborhood, city, uf].filter(Boolean);

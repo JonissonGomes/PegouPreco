@@ -3,8 +3,8 @@ import {Pressable, StyleSheet, Text, View} from 'react-native';
 import Svg, {Circle, Defs, LinearGradient, Polyline, Stop} from 'react-native-svg';
 import {formatBrl} from '@/domain/money';
 import type {HomeDash, HomePeriodDays} from '@/domain/homeDashboard';
-import {categoryTone} from '@/features/history/categoryTone';
 import {Reveal, useDraw} from '@/ui/reveal';
+import {primary, primaryAt} from '@/ui/primaryColors';
 import {colors, space} from '@/ui/theme';
 
 const PERIOD_LABEL: Record<HomePeriodDays, string> = {
@@ -16,22 +16,26 @@ const PERIOD_LABEL: Record<HomePeriodDays, string> = {
 export function HomeSpendBoard({
   dash,
   period,
+  play = 0,
   onPress,
+  onOpenCategory,
 }: {
   dash: HomeDash;
   period: HomePeriodDays;
+  play?: number;
   onPress?: () => void;
+  onOpenCategory?: (category: string) => void;
 }) {
   const slices = dash.categories.slice(0, 5);
   const total = slices.reduce((sum, item) => sum + item.total, 0) || dash.spent || 1;
   const lead = slices[0];
   const leadPct = lead ? Math.round((lead.total / total) * 100) : 0;
   const trendMax = Math.max(...dash.trend.map(point => point.total), 1);
-  const draw = useDraw(160, 900);
+  const draw = useDraw(160, 900, play);
 
   return (
     <View style={styles.wrap}>
-      <Reveal>
+      <Reveal play={play}>
         <Pressable
           style={styles.card}
           onPress={onPress}
@@ -50,6 +54,7 @@ export function HomeSpendBoard({
               </Text>
             </View>
             <MiniRing
+              play={play}
               ratio={
                 dash.spent + dash.savings > 0
                   ? dash.savings / (dash.spent + dash.savings)
@@ -58,25 +63,26 @@ export function HomeSpendBoard({
             />
           </View>
           <View style={styles.tiles}>
-            <View style={[styles.tile, {backgroundColor: '#E0F2FE'}]}>
-              <Text style={[styles.tileValue, {color: '#0369A1'}]}>{formatBrl(dash.spent)}</Text>
+            <View style={[styles.tile, {backgroundColor: '#FFE4E6'}]}>
+              <Text style={[styles.tileValue, {color: primary.red}]}>{formatBrl(dash.spent)}</Text>
               <Text style={styles.tileLabel}>Gasto</Text>
             </View>
-            <View style={[styles.tile, {backgroundColor: '#DCFCE7'}]}>
-              <Text style={[styles.tileValue, {color: '#15803D'}]}>{formatBrl(dash.savings)}</Text>
+            <View style={[styles.tile, {backgroundColor: '#FFF6D8'}]}>
+              <Text style={[styles.tileValue, {color: '#92400E'}]}>{formatBrl(dash.savings)}</Text>
               <Text style={styles.tileLabel}>Economia</Text>
             </View>
-            <View style={[styles.tile, {backgroundColor: '#FFF6D8'}]}>
-              <Text style={[styles.tileValue, {color: '#92400E'}]}>{dash.categories.length}</Text>
+            <View style={[styles.tile, {backgroundColor: '#DBEAFE'}]}>
+              <Text style={[styles.tileValue, {color: primary.blue}]}>{dash.categories.length}</Text>
               <Text style={styles.tileLabel}>Categorias</Text>
             </View>
           </View>
-          <View style={[styles.track, dash.savings > 0 && {backgroundColor: colors.yellow}]}>
+          <View style={[styles.track, {backgroundColor: primary.yellow}]}>
             <View
               style={[
                 styles.trackSpend,
                 {
                   flex: dash.spent + dash.savings > 0 ? dash.spent * draw : 1,
+                  backgroundColor: primary.red,
                 },
               ]}
             />
@@ -91,34 +97,40 @@ export function HomeSpendBoard({
         </Pressable>
       </Reveal>
 
-      <Reveal delay={80}>
+      <Reveal delay={80} play={play}>
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Gasto por categoria</Text>
           {slices.length === 0 ? (
             <Text style={styles.empty}>Cadastre uma nota para ver as categorias.</Text>
           ) : (
             <View style={styles.donutRow}>
-              <Donut
-                slices={slices.map(item => ({
-                  total: item.total,
-                  color: categoryTone(item.category).fg,
-                }))}
-                center={`${leadPct}%`}
-              />
+              <Pressable onPress={onPress} disabled={!onPress}>
+                <Donut
+                  play={play}
+                  slices={slices.map((item, index) => ({
+                    total: item.total,
+                    color: primaryAt(index),
+                  }))}
+                  center={`${leadPct}%`}
+                />
+              </Pressable>
               <View style={styles.legend}>
-                {slices.map(item => (
-                  <View key={item.category} style={styles.legendRow}>
+                {slices.map((item, index) => (
+                  <Pressable
+                    key={item.category}
+                    style={styles.legendRow}
+                    onPress={() => onOpenCategory?.(item.category)}>
                     <View
                       style={[
                         styles.dot,
-                        {backgroundColor: categoryTone(item.category).fg},
+                        {backgroundColor: primaryAt(index)},
                       ]}
                     />
                     <Text style={styles.legendName} numberOfLines={1}>
                       {item.category}
                     </Text>
                     <Text style={styles.legendValue}>{formatBrl(item.total)}</Text>
-                  </View>
+                  </Pressable>
                 ))}
               </View>
             </View>
@@ -127,23 +139,23 @@ export function HomeSpendBoard({
       </Reveal>
 
       {dash.trend.some(point => point.total > 0) ? (
-        <Reveal delay={140}>
-          <View style={styles.card}>
+        <Reveal delay={140} play={play}>
+          <Pressable style={styles.card} onPress={onPress} disabled={!onPress}>
             <Text style={styles.cardTitle}>Evolução do gasto</Text>
-            <Trend points={dash.trend} max={trendMax} />
-          </View>
+            <Trend play={play} points={dash.trend} max={trendMax} />
+          </Pressable>
         </Reveal>
       ) : null}
     </View>
   );
 }
 
-function MiniRing({ratio}: {ratio: number}) {
+function MiniRing({ratio, play}: {ratio: number; play: number}) {
   const size = 84;
   const stroke = 10;
   const radius = (size - stroke) / 2;
   const length = 2 * Math.PI * radius;
-  const progress = useDraw(80, 800);
+  const progress = useDraw(80, 800, play);
   const part = Math.max(0, Math.min(1, ratio)) * length * progress;
   const pct = Math.round(ratio * progress * 100);
   return (
@@ -153,7 +165,7 @@ function MiniRing({ratio}: {ratio: number}) {
           cx={size / 2}
           cy={size / 2}
           r={radius}
-          stroke="#BAE6FD"
+          stroke="#DBEAFE"
           strokeWidth={stroke}
           fill="none"
         />
@@ -161,7 +173,7 @@ function MiniRing({ratio}: {ratio: number}) {
           cx={size / 2}
           cy={size / 2}
           r={radius}
-          stroke="#16A34A"
+          stroke={primary.red}
           strokeWidth={stroke}
           fill="none"
           strokeDasharray={`${part} ${length - part}`}
@@ -172,7 +184,7 @@ function MiniRing({ratio}: {ratio: number}) {
         />
       </Svg>
       <View style={styles.donutCenter}>
-        <Text style={[styles.ringPct, {color: '#15803D'}]}>{pct}%</Text>
+        <Text style={[styles.ringPct, {color: primary.red}]}>{pct}%</Text>
       </View>
     </View>
   );
@@ -181,15 +193,17 @@ function MiniRing({ratio}: {ratio: number}) {
 function Donut({
   slices,
   center,
+  play,
 }: {
   slices: {total: number; color: string}[];
   center: string;
+  play: number;
 }) {
   const size = 132;
   const stroke = 16;
   const radius = (size - stroke) / 2;
   const length = 2 * Math.PI * radius;
-  const progress = useDraw(200, 1100);
+  const progress = useDraw(200, 1100, play);
   const sum = slices.reduce((acc, item) => acc + item.total, 0) || 1;
   const arcs: {color: string; start: number; part: number}[] = [];
   let cursor = 0;
@@ -240,14 +254,16 @@ function Donut({
 function Trend({
   points,
   max,
+  play,
 }: {
   points: {label: string; total: number}[];
   max: number;
+  play: number;
 }) {
   const width = 280;
   const height = 72;
   const step = points.length > 1 ? width / (points.length - 1) : width;
-  const progress = useDraw(280, 1000);
+  const progress = useDraw(280, 1000, play);
   const coords = points.map((point, index) => {
     const x = index * step;
     const y = height - 8 - (point.total / max) * (height - 16);
@@ -266,8 +282,9 @@ function Trend({
       <Svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`}>
         <Defs>
           <LinearGradient id="spendLine" x1="0" y1="0" x2="1" y2="0">
-            <Stop offset="0" stopColor="#00C2FF" />
-            <Stop offset="1" stopColor="#FFD400" />
+            <Stop offset="0" stopColor={primary.red} />
+            <Stop offset="0.5" stopColor={primary.yellow} />
+            <Stop offset="1" stopColor={primary.blue} />
           </LinearGradient>
         </Defs>
         <Polyline
@@ -334,8 +351,8 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     flexDirection: 'row',
   },
-  trackSpend: {backgroundColor: colors.navy},
-  trackSave: {backgroundColor: colors.yellow},
+  trackSpend: {backgroundColor: primary.red},
+  trackSave: {backgroundColor: primary.blue},
   ringPct: {fontSize: 14, fontWeight: '900', color: colors.navy},
   cardTitle: {fontSize: 16, fontWeight: '900', color: colors.navy},
   empty: {color: colors.muted, fontWeight: '600'},

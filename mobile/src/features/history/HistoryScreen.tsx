@@ -16,7 +16,7 @@ import {formatBrl} from '@/domain/money';
 import {guessCategory} from '@/domain/productCategory';
 import {useAppStore} from '@/store/appStore';
 import type {CartItem, ShoppingList} from '@/data/types';
-import {categoryTone} from './categoryTone';
+import {CategoryIcon} from './categoryIcon';
 import {HistoryDetailSheet} from './HistoryDetailSheet';
 import {HistoryFilterSheet} from './HistoryFilterSheet';
 
@@ -50,7 +50,7 @@ export function HistoryScreen() {
   const lists = useAppStore(s => s.lists);
   const [query, setQuery] = useState('');
   const [market, setMarket] = useState<string | null>(null);
-  const [category, setCategory] = useState<string | null>(null);
+  const [category, setCategory] = useState<string[]>([]);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [openList, setOpenList] = useState<ShoppingList | null>(null);
 
@@ -85,7 +85,9 @@ export function HistoryScreen() {
     const q = query.trim().toLowerCase();
     return withCats.filter(row => {
       if (market && marketLabel(row.list) !== market) return false;
-      if (category && !row.categories.includes(category)) return false;
+      if (category.length > 0 && !category.some(name => row.categories.includes(name))) {
+        return false;
+      }
       if (!q) return true;
       if (row.list.name.toLowerCase().includes(q)) return true;
       if (marketLabel(row.list).toLowerCase().includes(q)) return true;
@@ -93,7 +95,7 @@ export function HistoryScreen() {
     });
   }, [withCats, query, market, category]);
 
-  const filterCount = (market ? 1 : 0) + (category ? 1 : 0);
+  const filterCount = (market ? 1 : 0) + (category.length > 0 ? 1 : 0);
 
   return (
     <View style={styles.root}>
@@ -209,14 +211,9 @@ function PurchaseCard({
             <Text style={styles.meta} numberOfLines={1}>
               {row.list.name} · {formatWhen(row.list.finishedAt)}
             </Text>
-            {shown.map(cat => {
-              const tone = categoryTone(cat);
-              return (
-                <View key={cat} style={[styles.pill, {backgroundColor: tone.bg}]}>
-                  <Text style={[styles.pillText, {color: tone.fg}]}>{cat}</Text>
-                </View>
-              );
-            })}
+            {shown.map(cat => (
+              <CategoryIcon key={cat} name={cat} size={12} />
+            ))}
             {extra > 0 ? <Text style={styles.extra}>+{extra}</Text> : null}
           </View>
         </View>
@@ -291,7 +288,5 @@ const styles = StyleSheet.create({
   metaRow: {flexDirection: 'row', alignItems: 'center', gap: 6},
   meta: {flexShrink: 1, color: colors.muted, fontWeight: '600', fontSize: 12},
   price: {fontWeight: '900', color: colors.navy, fontSize: 14},
-  pill: {borderRadius: radii.pill, paddingHorizontal: 8, paddingVertical: 2},
-  pillText: {fontWeight: '800', fontSize: 11},
   extra: {color: colors.muted, fontWeight: '800', fontSize: 11},
 });

@@ -1,4 +1,5 @@
 import {guessCategory} from '@/domain/productCategory';
+import {isFiscalList, isFiscalLog} from '@/domain/fiscal';
 import {
   economyAgainstAverage,
   pointsFromLists,
@@ -57,12 +58,13 @@ export function buildHomeDash(
   products: Product[],
   periodDays: HomePeriodDays,
   marketId: number | null,
-  category: string | null,
+  selected: string[],
   logs: PriceLog[] = [],
   now = Date.now(),
 ): HomeDash {
   const sinceMs = now - periodDays * 24 * 60 * 60 * 1000;
-  const inWindow = lists.filter(l => inPeriod(l, sinceMs));
+  const receipts = lists.filter(isFiscalList);
+  const inWindow = receipts.filter(l => inPeriod(l, sinceMs));
 
   const markets = new Map<number, string>();
   for (const list of inWindow) {
@@ -82,11 +84,12 @@ export function buildHomeDash(
     }
   }
 
+  const picked = selected.filter(Boolean);
   const matched =
-    category == null
+    picked.length === 0
       ? byMarket
       : byMarket.filter(list =>
-          rowsOf(list).some(row => rowCategory(row, products) === category),
+          rowsOf(list).some(row => picked.includes(rowCategory(row, products))),
         );
 
   const byCat = new Map<string, number>();
@@ -99,14 +102,14 @@ export function buildHomeDash(
     }
     for (const row of rows) {
       const cat = rowCategory(row, products);
-      if (category && cat !== category) continue;
+      if (picked.length > 0 && !picked.includes(cat)) continue;
       const line = (row.quantity ?? 1) * (row.retailPrice ?? 0);
       spent += line;
       byCat.set(cat, (byCat.get(cat) ?? 0) + line);
     }
   }
 
-  const categories = [...byCat.entries()]
+  const slices = [...byCat.entries()]
     .map(([name, total]) => ({category: name, total: Number(total.toFixed(2))}))
     .sort((a, b) => b.total - a.total);
 
@@ -116,14 +119,17 @@ export function buildHomeDash(
   );
 
   const purchases = pointsFromLists(matched, products);
-  const references = [...purchases, ...pointsFromLogs(logs, products)];
+  const references = [
+    ...purchases,
+    ...pointsFromLogs(logs.filter(isFiscalLog), products),
+  ];
   const economy = economyAgainstAverage(purchases, references, sinceMs);
 
   return {
     spent: Number(spent.toFixed(2)),
     savings: economy.saved,
     purchaseCount: matched.length,
-    categories,
+    categories: slices,
     recent: recent.slice(0, 5),
     purchases: recent,
     markets: [...markets.entries()].map(([id, name]) => ({id, name})),

@@ -1,34 +1,42 @@
 import React from 'react';
-import {StyleSheet, Text, View} from 'react-native';
+import {Pressable, StyleSheet, Text, View} from 'react-native';
 import {formatBrl} from '@/domain/money';
 import type {CheaperCategory} from '@/domain/purchaseInsights';
 import {GrowBar, Reveal} from '@/ui/reveal';
-import {categoryTone} from '@/features/history/categoryTone';
+import {primaryAt} from '@/ui/primaryColors';
 import {colors, space} from '@/ui/theme';
 
-export function HomeCheaperChart({items}: {items: CheaperCategory[]}) {
+export function HomeCheaperChart({
+  items,
+  play = 0,
+  onOpen,
+}: {
+  items: CheaperCategory[];
+  play?: number;
+  onOpen?: (category: string) => void;
+}) {
   if (!items.length) return null;
   const max = Math.max(...items.map(item => item.dropPct), 0.01);
   return (
     <View style={styles.wrap}>
-      <Reveal>
+      <Reveal play={play}>
         <View style={styles.head}>
           <Text style={styles.title}>Categorias mais baratas</Text>
           <Text style={styles.caption}>últimos 7 dias</Text>
         </View>
       </Reveal>
       {items.map((item, index) => {
-        const tone = categoryTone(item.category);
         const width = Math.max(0.22, item.dropPct / max);
         return (
-          <Reveal key={item.category} delay={80 + index * 90}>
-            <View style={styles.row}>
+          <Reveal key={item.category} delay={80 + index * 90} play={play}>
+            <Pressable style={styles.row} onPress={() => onOpen?.(item.category)}>
               <View style={styles.fill}>
                 <GrowBar
                   ratio={width}
-                  color={tone.fg}
+                  color={primaryAt(index)}
                   delay={160 + index * 90}
                   height={52}
+                  play={play}
                 />
               </View>
               <View style={styles.label}>
@@ -38,7 +46,7 @@ export function HomeCheaperChart({items}: {items: CheaperCategory[]}) {
                 <Text style={styles.pct}>-{Math.round(item.dropPct * 100)}%</Text>
               </View>
               <Text style={styles.saved}>{formatBrl(item.saved)}</Text>
-            </View>
+            </Pressable>
           </Reveal>
         );
       })}
