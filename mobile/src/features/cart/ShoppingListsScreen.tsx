@@ -31,6 +31,7 @@ import {
 } from '@/ui/screenChrome';
 import {colors, radii, space, spacing} from '@/ui/theme';
 import {formatBrl, formatQty} from '@/domain/money';
+import {dateSearchText} from '@/domain/dateSearch';
 import {guessCategory} from '@/domain/productCategory';
 import {lineTotal} from '@/domain/pricing';
 import {CategoryIcon} from '@/features/history/categoryIcon';
@@ -81,7 +82,8 @@ export function ShoppingListsScreen() {
       if (!q) return true;
       return (
         l.name.toLowerCase().includes(q) ||
-        (l.marketName ?? '').toLowerCase().includes(q)
+        (l.marketName ?? '').toLowerCase().includes(q) ||
+        dateSearchText(l.finishedAt).includes(q)
       );
     });
   }, [lists, query, filter]);

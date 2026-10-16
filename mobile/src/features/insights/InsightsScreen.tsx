@@ -24,6 +24,7 @@ import {Reveal} from '@/ui/reveal';
 import {InsightsBoard} from '@/features/insights/InsightsBoard';
 import {colors, radii, space, spacing} from '@/ui/theme';
 import {formatBrl} from '@/domain/money';
+import {dateSearchText} from '@/domain/dateSearch';
 import {guessCategory} from '@/domain/productCategory';
 import {
   cheaperCategories,
@@ -35,17 +36,10 @@ import {rankNearestMarkets} from '@/domain/marketUi';
 import {TrustEngine} from '@/domain/trust';
 import {
   type InsightPeriod,
-  filterListsByMarketScope,
-  filterLogsByMarketScope,
   periodStart,
   rankCategoryMarketWins,
   rankCheapestMarkets,
-  resolveInsightMarketScope,
 } from '@/domain/homeInsights';
-import {
-  filterMarketsInRadius,
-  NEARBY_RADIUS_KM,
-} from '@/data/remote/nearbyMarkets';
 import {
   marketRepo,
   prefs,
@@ -78,7 +72,7 @@ function miniDate(iso: string) {
 
 function periodCaption(period: InsightPeriod): string {
   if (period === 'week') return 'últimos 7 dias';
-  if (period === 'month') return 'último mês';
+  if (period === 'month') return 'últimos 30 dias';
   return 'todo o histórico';
 }
 
@@ -116,49 +110,25 @@ export function InsightsScreen() {
     }, []),
   );
 
-  const origin = prefs.getLastLocation();
-  const locPrefs = prefs.getLocationPrefs();
+  const origin = useMemo(() => prefs.getLastLocation(), [locTick]);
 
-  const scope = useMemo(() => {
-    const nearby = origin
-      ? filterMarketsInRadius(markets, origin, NEARBY_RADIUS_KM)
-      : [];
-    return resolveInsightMarketScope({
-      markets,
-      favoriteMarketIds: locPrefs.favoriteMarketIds,
-      nearbyMarketIds: nearby.map(m => m.id),
-      radiusKm: NEARBY_RADIUS_KM,
-    });
-    // locTick força releitura de prefs/GPS
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [markets, locTick, locPrefs.favoriteMarketIds.join(',')]);
-
-  const scopeMarkets = useMemo(
-    () => markets.filter(m => scope.marketIds.has(m.id)),
-    [markets, scope],
-  );
-
-  const logs = useMemo(() => {
-    const all = priceLogRepo.all().filter(isFiscalLog);
-    return filterLogsByMarketScope(all, scope.marketIds);
-  }, [lists, markets, products, scope]);
-
-  const scopedLists = useMemo(
-    () => filterListsByMarketScope(lists.filter(isFiscalList), scope.marketIds),
-    [lists, scope],
+  const receiptLists = useMemo(() => lists.filter(isFiscalList), [lists]);
+  const logs = useMemo(
+    () => priceLogRepo.all().filter(isFiscalLog),
+    [lists, products],
   );
 
   const marketRanks = useMemo(
-    () => rankCheapestMarkets(logs, scopeMarkets, products, period),
-    [logs, scopeMarkets, products, period],
+    () => rankCheapestMarkets(logs, markets, products, period),
+    [logs, markets, products, period],
   );
   const categoryWins = useMemo(
-    () => rankCategoryMarketWins(logs, scopeMarkets, products, period),
-    [logs, scopeMarkets, products, period],
+    () => rankCategoryMarketWins(logs, markets, products, period),
+    [logs, markets, products, period],
   );
   const purchasePoints = useMemo(
-    () => pointsFromLists(scopedLists, products),
-    [scopedLists, products],
+    () => pointsFromLists(receiptLists, products),
+    [receiptLists, products],
   );
   const referencePoints = useMemo(
     () => [...purchasePoints, ...pointsFromLogs(logs, products)],
@@ -189,30 +159,29 @@ export function InsightsScreen() {
       out.push({
         product: p,
         log: best,
-        marketName:
-          scopeMarkets.find(m => m.id === best.marketId)?.name ?? null,
+        marketName: markets.find(m => m.id === best.marketId)?.name ?? null,
       });
     }
     return out
       .sort((a, b) => a.log.retailPrice - b.log.retailPrice)
       .slice(0, 40);
-  }, [logs, products, scopeMarkets]);
+  }, [logs, products, markets]);
 
   const opps = useMemo(() => priceLogRepo.opportunities(), [lists, markets]);
   const today = useMemo(() => {
     // Mercado atual do picker, se estiver no escopo; senão o 1º do escopo.
-    const focusId =
-      currentMarketId != null && scope.marketIds.has(currentMarketId)
-        ? currentMarketId
-        : [...scope.marketIds][0];
+    const focusId = currentMarketId;
     return focusId != null ? priceLogRepo.forMarketToday(focusId) : [];
-  }, [currentMarketId, lists, scope]);
+  }, [currentMarketId, lists]);
 
   const q = query.trim().toLowerCase();
   const match = (t: string) => !q || t.toLowerCase().includes(q);
 
   const cheapF = cheap.filter(
-    r => match(r.product.name) || match(r.marketName ?? ''),
+    r =>
+      match(r.product.name) ||
+      match(r.marketName ?? '') ||
+      dateSearchText(r.log.capturedAt).includes(q),
   );
   const cheapByCat = useMemo(() => {
     const map = new Map<string, typeof cheapF>();
@@ -225,8 +194,11 @@ export function InsightsScreen() {
     return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0], 'pt-BR'));
   }, [cheapF]);
   const oppsF = opps.filter(o => match(o.product.name));
-  const listsF = scopedLists.filter(
-    l => match(l.name) || match(l.marketName ?? ''),
+  const listsF = receiptLists.filter(
+    l =>
+      match(l.name) ||
+      match(l.marketName ?? '') ||
+      dateSearchText(l.finishedAt).includes(q),
   );
   const todayF = today.filter(i => match(i.productName));
   const alerts = cheapF.length + oppsF.length;
@@ -396,10 +368,7 @@ export function InsightsScreen() {
       type: 'section',
       key: 'list-h',
       payload: {
-        title:
-          scope.mode === 'favorites'
-            ? 'Compras nos mercados marcados'
-            : 'Compras no raio',
+        title: 'Compras das notas',
         trailing: String(listsF.length),
       },
     });
@@ -413,7 +382,7 @@ export function InsightsScreen() {
       <AppScreenHeader
         showLogo={false}
         title="Insights"
-        subtitle={marketName || scope.label}
+        subtitle="Todas as notas cadastradas"
         actions={
           <View style={{flexDirection: 'row'}}>
             <Pressable
@@ -441,9 +410,7 @@ export function InsightsScreen() {
       />
       <View style={styles.heroHint}>
         <Text style={styles.heroHintText}>
-          {scope.mode === 'favorites'
-            ? `Mostrando só mercados marcados na localização · ${scope.label}`
-            : `Mercados a até ${NEARBY_RADIUS_KM} km · ${scope.label}`}
+          Todas as compras das notas fiscais, sem limite de distância.
         </Text>
       </View>
       <TextInput
@@ -500,8 +467,8 @@ export function InsightsScreen() {
             return (
               <FeatureEmptyGuide
                 HeroIcon={Store}
-                title="Nada para comparar por perto"
-                subtitle={`Ainda não há preços validados neste período, num raio de ${NEARBY_RADIUS_KM} km. Quando a comunidade confirmar valores, os rankings aparecem aqui.`}
+                title="Nada para comparar neste período"
+                subtitle="Ainda não há notas fiscais neste intervalo. Semana e mês usam os últimos 7 e 30 dias. Tudo mostra o histórico inteiro."
                 stepsLabel="Como encher esta tela"
                 steps={[
                   {

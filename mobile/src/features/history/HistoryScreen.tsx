@@ -12,7 +12,7 @@ import {History, Receipt, ScanLine, SlidersHorizontal, Store} from 'lucide-react
 import {FeatureEmptyGuide} from '@/ui/FeatureEmptyGuide';
 import {SoftCard, SoftHeader} from '@/ui/screenChrome';
 import {colors, radii, space, spacing} from '@/ui/theme';
-import {formatBrl} from '@/domain/money';
+import {dateSearchText} from '@/domain/dateSearch';
 import {guessCategory} from '@/domain/productCategory';
 import {useAppStore} from '@/store/appStore';
 import type {CartItem, ShoppingList} from '@/data/types';
@@ -91,6 +91,7 @@ export function HistoryScreen() {
       if (!q) return true;
       if (row.list.name.toLowerCase().includes(q)) return true;
       if (marketLabel(row.list).toLowerCase().includes(q)) return true;
+      if (dateSearchText(row.list.finishedAt).includes(q)) return true;
       return row.items.some(it => it.productName.toLowerCase().includes(q));
     });
   }, [withCats, query, market, category]);

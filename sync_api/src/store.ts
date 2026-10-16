@@ -1383,16 +1383,13 @@ export class DataStore {
             string,
             unknown
           >[]);
-    const now = Date.now();
     const out: Record<string, unknown>[] = [];
     for (const l of logs) {
       const trust = String(l.trustLevel ?? 'suspect');
-      let ok = trust === 'verified';
-      if (!ok && l.source === 'nfce') {
-        const t = Date.parse(String(l.capturedAt ?? ''));
-        ok = !Number.isNaN(t) && now - t <= 7 * 24 * 60 * 60 * 1000;
-      }
-      if (!ok || trust === 'hidden') continue;
+      if (trust === 'hidden') continue;
+      const nfce = String(l.source ?? '') === 'nfce' && /^\d{44}$/.test(String(l.nfceKey ?? ''));
+      const verified = trust === 'verified';
+      if (!nfce && !verified) continue;
       if (args.productName) {
         const needle = args.productName.toLowerCase();
         const pid = l.productId as string | undefined;

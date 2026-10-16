@@ -26,10 +26,7 @@ import {formatBrl} from '@/domain/money';
 import {TrustEngine} from '@/domain/trust';
 import {canContribute, prefs, useAppStore} from '@/store/appStore';
 import {getState} from '@/data/db';
-import {
-  haversineKm,
-  NEARBY_RADIUS_KM,
-} from '@/data/remote/nearbyMarkets';
+import {haversineKm} from '@/data/remote/nearbyMarkets';
 import type {FiscalLevel, PriceLog, TrustLevel} from '@/data/types';
 import {syncApi, type ReputationRemote} from '@/data/remote/syncApi';
 import {apiErrorMessage} from '@/data/remote/apiError';
@@ -147,27 +144,16 @@ export function CommunityScreen() {
       .catch(() => setRep(null));
   }, [auth?.token]);
 
-  const nearbyMarketIds = useMemo(() => {
-    if (!origin) return new Set<number>();
-    const ids = new Set<number>();
-    for (const m of markets) {
-      if (m.lat == null || m.lng == null) continue;
-      const km = haversineKm(origin, {lat: m.lat, lng: m.lng});
-      if (km <= NEARBY_RADIUS_KM) ids.add(m.id);
-    }
-    return ids;
-  }, [markets, origin]);
-
   const feed = useMemo(() => {
     const logs = getState().price_logs.filter(
-      l => l.source === 'nfce' && l.trustLevel !== 'hidden' && l.nfceKey,
+      l =>
+        l.source === 'nfce' &&
+        l.trustLevel !== 'hidden' &&
+        typeof l.nfceKey === 'string' &&
+        l.nfceKey.length >= 40,
     );
     return logs
-      .filter(log => {
-        if (skipped.has(log.id)) return false;
-        if (log.marketId == null) return false;
-        return nearbyMarketIds.has(log.marketId);
-      })
+      .filter(log => !skipped.has(log.id))
       .map(log => {
         const market = markets.find(m => m.id === log.marketId);
         const avg = avgPriceForProduct(log.productId, log.id);
@@ -189,16 +175,12 @@ export function CommunityScreen() {
         };
       })
       .sort((a, b) => {
-        const da = a.distanceKm ?? Infinity;
-        const db = b.distanceKm ?? Infinity;
-        if (da !== db) return da - db;
-        return (
-          new Date(b.log.capturedAt).getTime() -
-          new Date(a.log.capturedAt).getTime()
-        );
+        const ta = new Date(a.log.capturedAt).getTime();
+        const tb = new Date(b.log.capturedAt).getTime();
+        return tb - ta;
       })
-      .slice(0, 40);
-  }, [markets, products, refresh, nearbyMarketIds, skipped, origin]);
+      .slice(0, 80);
+  }, [markets, products, refresh, skipped, origin]);
 
   const pending = feed.length;
   const points = rep?.points ?? 0;
@@ -327,7 +309,7 @@ export function CommunityScreen() {
         ]}
         ListHeaderComponent={
           <View style={styles.sectionHead}>
-            <Text style={styles.listHeading}>Perto de você</Text>
+            <Text style={styles.listHeading}>Notas da comunidade</Text>
             {pending > 0 ? (
               <SavePill
                 label={`${pending} pendentes`}
@@ -340,22 +322,14 @@ export function CommunityScreen() {
           <FeatureEmptyGuide
             style={styles.emptyGuide}
             HeroIcon={UsersRound}
-            title={
-              origin
-                ? 'Nada para validar por perto'
-                : 'Ative a localização'
-            }
-            subtitle={
-              origin
-                ? `Só listamos preços de mercados a até ${NEARBY_RADIUS_KM} km. Quando houver pendências na região, elas aparecem aqui.`
-                : 'Precisamos da sua localização para mostrar preços de mercados próximos.'
-            }
+            title="Nenhuma nota para validar"
+            subtitle="As notas fiscais sincronizadas aparecem aqui, mesmo sem GPS no mercado. Confirme a conta para enviar e receber as notas dos outros."
             stepsLabel="O que você faz nesta tela"
             steps={[
               {
                 n: '1',
                 title: 'Fila local',
-                text: 'Só entram preços suspeitos de mercados perto de você.',
+                text: 'Entram preços de notas fiscais, de qualquer distância.',
                 Icon: MapPin,
               },
               {

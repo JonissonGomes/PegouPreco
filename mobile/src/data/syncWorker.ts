@@ -354,13 +354,26 @@ async function ingestCommunityPrices(token: string) {
         continue;
       }
       const market = getState().markets.find(
-        m => m.remoteId === String(row.marketId ?? ''),
+        m => row.marketId != null && m.remoteId === String(row.marketId),
       );
-      if (!market) continue;
+      let marketId = market?.id ?? null;
+      if (marketId == null) {
+        const name = String(row.marketName ?? '').trim();
+        if (name) {
+          const created = marketRepo.resolveOrCreate(name);
+          if (row.marketId != null && !created.remoteId) {
+            created.remoteId = String(row.marketId);
+            created.synced = 1;
+            saveState();
+          }
+          marketId = created.id;
+        }
+      }
+      if (marketId == null) continue;
       const product = productRepo.resolveOrCreate(productName);
       priceLogRepo.insert({
         productId: product.id,
-        marketId: market.id,
+        marketId,
         retailPrice: Number(row.retailPrice ?? 0),
         wholesalePrice: null,
         minWholesaleQty: null,

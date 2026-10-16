@@ -58,11 +58,7 @@ export function monthsAgo(n: number, now = new Date()): Date {
 export function periodStart(period: InsightPeriod, now = new Date()): Date | null {
   if (period === 'all') return null;
   const d = new Date(now);
-  if (period === 'week') {
-    d.setDate(d.getDate() - 7);
-    return d;
-  }
-  d.setMonth(d.getMonth() - 1);
+  d.setDate(d.getDate() - (period === 'week' ? 7 : 30));
   return d;
 }
 
