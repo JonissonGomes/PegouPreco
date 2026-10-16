@@ -1,4 +1,4 @@
-import {guessCategory} from '@/domain/productCategory';
+import {resolveCategory} from '@/domain/productCategory';
 import {isFiscalList, isFiscalLog} from '@/domain/fiscal';
 import {
   economyAgainstAverage,
@@ -44,8 +44,8 @@ function rowsOf(list: ShoppingList): ListRow[] {
 
 function rowCategory(row: ListRow, products: Product[]) {
   const named = products.find(p => p.id === row.productId)?.category?.trim();
-  if (named) return named;
-  return guessCategory(row.productName || '');
+  if (named && named !== 'Outros') return named;
+  return resolveCategory(named, row.productName || '');
 }
 
 function inPeriod(list: ShoppingList, sinceMs: number) {

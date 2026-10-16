@@ -3,7 +3,7 @@ import {Pressable, StyleSheet, Text, View} from 'react-native';
 import {formatBrl} from '@/domain/money';
 import type {CheaperCategory} from '@/domain/purchaseInsights';
 import {GrowBar, Reveal} from '@/ui/reveal';
-import {pastelAt} from '@/ui/primaryColors';
+import {paletteAt} from '@/ui/primaryColors';
 import {colors, space} from '@/ui/theme';
 
 export function HomeCheaperChart({
@@ -33,7 +33,7 @@ export function HomeCheaperChart({
               <View style={styles.fill}>
                 <GrowBar
                   ratio={width}
-                  color={pastelAt(index)}
+                  color={paletteAt(index)}
                   delay={160 + index * 90}
                   height={52}
                   play={play}

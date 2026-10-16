@@ -14,7 +14,7 @@ import {SoftCard, SoftHeader} from '@/ui/screenChrome';
 import {colors, radii, space, spacing} from '@/ui/theme';
 import {formatBrl} from '@/domain/money';
 import {dateSearchText} from '@/domain/dateSearch';
-import {guessCategory} from '@/domain/productCategory';
+import {PRODUCT_CATEGORIES, resolveCategory} from '@/domain/productCategory';
 import {useAppStore} from '@/store/appStore';
 import type {CartItem, ShoppingList} from '@/data/types';
 import {CategoryIcon} from './categoryIcon';
@@ -32,7 +32,7 @@ function parseItems(list: ShoppingList): CartItem[] {
 
 function itemCategory(item: CartItem, products: {id: number; category: string | null}[]) {
   const stored = products.find(p => p.id === item.productId)?.category?.trim();
-  return stored || guessCategory(item.productName);
+  return resolveCategory(stored, item.productName);
 }
 
 function formatWhen(iso: string) {
@@ -79,7 +79,10 @@ export function HistoryScreen() {
     return Array.from(names).sort((a, b) => a.localeCompare(b, 'pt-BR'));
   }, [withCats]);
   const categories = useMemo(() => {
-    const names = new Set(withCats.flatMap(row => row.categories));
+    const names = new Set<string>([
+      ...PRODUCT_CATEGORIES,
+      ...withCats.flatMap(row => row.categories),
+    ]);
     return Array.from(names).sort((a, b) => a.localeCompare(b, 'pt-BR'));
   }, [withCats]);
   const visible = useMemo(() => {

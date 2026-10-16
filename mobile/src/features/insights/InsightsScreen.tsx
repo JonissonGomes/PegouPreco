@@ -26,7 +26,7 @@ import {colors, radii, space, spacing} from '@/ui/theme';
 import {formatBrl} from '@/domain/money';
 import {lineTotal} from '@/domain/pricing';
 import {dateSearchText} from '@/domain/dateSearch';
-import {guessCategory} from '@/domain/productCategory';
+import {resolveCategory} from '@/domain/productCategory';
 import {
   cheaperCategories,
   economyAgainstAverage,
@@ -196,7 +196,7 @@ export function InsightsScreen() {
   const cheapByCat = useMemo(() => {
     const map = new Map<string, typeof cheapF>();
     for (const r of cheapF) {
-      const cat = r.product.category?.trim() || guessCategory(r.product.name);
+      const cat = resolveCategory(r.product.category, r.product.name);
       const arr = map.get(cat) ?? [];
       arr.push(r);
       map.set(cat, arr);

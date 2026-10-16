@@ -1,13 +1,21 @@
-import React, {useMemo} from 'react';
+import React, {useCallback, useMemo, useState} from 'react';
 import {Pressable, ScrollView, StyleSheet, Text, View} from 'react-native';
-import {useNavigation, useRoute} from '@react-navigation/native';
+import {useFocusEffect, useNavigation, useRoute} from '@react-navigation/native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {ArrowLeft} from 'lucide-react-native';
 import {formatBrl, formatQty} from '@/domain/money';
-import {guessCategory} from '@/domain/productCategory';
+import {resolveCategory} from '@/domain/productCategory';
 import {lineTotal} from '@/domain/pricing';
+import {isFiscalList, isFiscalLog} from '@/domain/fiscal';
 import {buildHomeDash, type HomePeriodDays} from '@/domain/homeDashboard';
+import {
+  cheaperCategories,
+  pointsFromLists,
+  pointsFromLogs,
+} from '@/domain/purchaseInsights';
 import {CategoryIcon} from '@/features/history/categoryIcon';
+import {HomeCheaperChart} from '@/features/home/HomeCheaperChart';
+import {HomeSpendBoard} from '@/features/home/HomeSpendBoard';
 import {priceLogRepo, useAppStore} from '@/store/appStore';
 import {colors, space} from '@/ui/theme';
 import type {CartItem, ShoppingList} from '@/data/types';
@@ -47,6 +55,12 @@ export function HomeSpendScreen() {
   const lists = useAppStore(s => s.lists);
   const products = useAppStore(s => s.products);
   const logs = useMemo(() => priceLogRepo.all(), [lists, products]);
+  const [play, setPlay] = useState(0);
+  useFocusEffect(
+    useCallback(() => {
+      setPlay(n => n + 1);
+    }, []),
+  );
   const dash = useMemo(
     () => buildHomeDash(lists, products, period, marketId, categories, logs),
     [lists, products, period, marketId, categories, logs],
@@ -56,7 +70,7 @@ export function HomeSpendScreen() {
     for (const list of dash.purchases) {
       for (const item of parseItems(list)) {
         const stored = products.find(p => p.id === item.productId)?.category?.trim();
-        const cat = stored || guessCategory(item.productName);
+        const cat = resolveCategory(stored, item.productName);
         if (categories.length > 0 && !categories.includes(cat)) continue;
         const total = lineTotal(item);
         if (!best || total > best.total) {
@@ -66,6 +80,16 @@ export function HomeSpendScreen() {
     }
     return best;
   }, [dash.purchases, products, categories]);
+  const cheaper = useMemo(() => {
+    const receipts = lists.filter(isFiscalList);
+    const fiscalLogs = logs.filter(isFiscalLog);
+    const purchases = pointsFromLists(receipts, products);
+    return cheaperCategories(
+      purchases,
+      [...purchases, ...pointsFromLogs(fiscalLogs, products)],
+      7,
+    ).filter(item => categories.length === 0 || categories.includes(item.category));
+  }, [lists, products, logs, categories]);
 
   return (
     <View style={[styles.root, {paddingTop: insets.top + 8}]}>
@@ -76,6 +100,8 @@ export function HomeSpendScreen() {
         <Text style={styles.title}>Gastos</Text>
       </View>
       <ScrollView contentContainerStyle={{paddingBottom: insets.bottom + 24}}>
+        <HomeSpendBoard dash={dash} period={period} play={play} />
+        <HomeCheaperChart items={cheaper} play={play} />
         <Text style={styles.section}>
           {categories.length ? categories.join(' · ') : 'Todas as notas'}
         </Text>
@@ -111,7 +137,7 @@ export function HomeSpendScreen() {
               </View>
               {parseItems(list).map((item, index) => {
                 const stored = products.find(p => p.id === item.productId)?.category?.trim();
-                const cat = stored || guessCategory(item.productName);
+                const cat = resolveCategory(stored, item.productName);
                 if (categories.length > 0 && !categories.includes(cat)) return null;
                 return (
                   <View key={`${item.productId}-${index}`} style={styles.line}>

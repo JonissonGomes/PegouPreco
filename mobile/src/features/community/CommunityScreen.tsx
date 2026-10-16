@@ -1,4 +1,4 @@
-import React, {useCallback, useEffect, useMemo, useState} from 'react';
+import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {FlatList, StyleSheet, Text, View} from 'react-native';
 import {useFocusEffect, useNavigation} from '@react-navigation/native';
 import {
@@ -21,6 +21,7 @@ import {
   SoftHeader,
 } from '@/ui/screenChrome';
 import {colors, space, spacing} from '@/ui/theme';
+import axios from 'axios';
 import {requestAutoSync, runFullSync} from '@/data/syncWorker';
 import {formatBrl} from '@/domain/money';
 import {TrustEngine} from '@/domain/trust';
@@ -111,7 +112,8 @@ export function CommunityScreen() {
   const [busyId, setBusyId] = useState<number | null>(null);
   const [rep, setRep] = useState<ReputationRemote | null>(null);
   const [burst, setBurst] = useState<Burst>(null);
-  const [skipped, setSkipped] = useState<Set<number>>(() => new Set());
+  const votedRef = useRef<Set<number>>(new Set(prefs.getVotedPriceIds()));
+  const [skipped, setSkipped] = useState<Set<number>>(() => votedRef.current);
   const [origin, setOrigin] = useState(() => prefs.getLastLocation());
 
   const needAccount = (message: string) => {
@@ -217,6 +219,14 @@ export function CommunityScreen() {
     log.synced = 0;
   };
 
+  const dismiss = (logId: number) => {
+    if (votedRef.current.has(logId)) return false;
+    votedRef.current.add(logId);
+    prefs.rememberVotedPrice(logId);
+    setSkipped(new Set(votedRef.current));
+    return true;
+  };
+
   const vote = useCallback(
     async (item: FeedItem, voteType: 'confirm' | 'reject') => {
       if (!canContribute(auth)) {
@@ -225,12 +235,12 @@ export function CommunityScreen() {
         );
         return;
       }
+      if (!dismiss(item.log.id)) return;
       setBusyId(item.log.id);
       const pts = TrustEngine.pointsForVote(voteType, false);
       try {
         let remoteId = item.log.remoteId;
 
-        // Seed / log local: tenta push uma vez; se não houver remoteId, vota só offline.
         if (!remoteId && auth?.token) {
           await runFullSync();
           refresh();
@@ -239,6 +249,7 @@ export function CommunityScreen() {
             null;
         }
 
+        let already = false;
         if (remoteId && auth?.token) {
           try {
             await syncApi.castVote(auth.token, {
@@ -248,12 +259,18 @@ export function CommunityScreen() {
               weight: TrustEngine.weightFor(level),
             });
           } catch (e) {
-            // Offline / API: ainda aplica localmente
-            console.warn('[community] voto remoto falhou', apiErrorMessage(e));
+            const status = axios.isAxiosError(e) ? e.response?.status : 0;
+            if (status === 409 || status === 429) {
+              already = true;
+            } else {
+              console.warn('[community] voto remoto falhou', apiErrorMessage(e));
+            }
           }
         } else {
           requestAutoSync('vote');
         }
+
+        if (already) return;
 
         applyLocalVote(item.log.id, voteType);
         refresh();
@@ -382,9 +399,7 @@ export function CommunityScreen() {
                 busy={busyId === item.log.id}
                 onConfirm={() => vote(item, 'confirm')}
                 onReject={() => vote(item, 'reject')}
-                onSkip={() =>
-                  setSkipped(prev => new Set(prev).add(item.log.id))
-                }
+                onSkip={() => dismiss(item.log.id)}
               />
             </SoftCard>
           );

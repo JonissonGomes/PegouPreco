@@ -1,4 +1,4 @@
-import {guessCategory} from '@/domain/productCategory';
+import {resolveCategory} from '@/domain/productCategory';
 import {effectiveUnitPrice} from '@/domain/pricing';
 import type {PriceLog, Product, ShoppingList} from '@/data/types';
 
@@ -30,7 +30,7 @@ type LineJson = {
 
 function categoryOf(productId: number, name: string, products: Product[]) {
   const stored = products.find(p => p.id === productId)?.category?.trim();
-  return stored || guessCategory(name);
+  return resolveCategory(stored, name);
 }
 
 export function pointsFromLists(

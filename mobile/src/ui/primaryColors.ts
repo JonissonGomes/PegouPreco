@@ -1,25 +1,26 @@
-/** Tons pastéis do dashboard, com tinta um pouco mais escura para o texto. */
-export const pastel = {
-  rose: '#F8C9CE',
-  roseInk: '#9F1239',
-  butter: '#FDE7A0',
-  butterInk: '#92400E',
-  sky: '#C7D9FB',
-  skyInk: '#1E3A8A',
-  mint: '#C7EBD4',
-  mintInk: '#166534',
-  lilac: '#DDD6FE',
-  lilacInk: '#5B21B6',
+import {colors} from '@/ui/theme';
+
+/** Tons do dashboard, derivados do amarelo, azul-marinho e ciano do app. */
+export const palette = {
+  yellow: colors.yellow,
+  yellowSoft: '#FFF4C2',
+  navy: colors.navy,
+  navySoft: '#E4ECFA',
+  cyan: colors.cyan,
+  cyanSoft: '#D4F6FF',
+  green: colors.trustGreen,
+  greenSoft: '#DCFCE7',
+  ink: colors.navy,
 };
 
-export const pastelCycle = [
-  pastel.rose,
-  pastel.sky,
-  pastel.butter,
-  pastel.mint,
-  pastel.lilac,
+export const paletteCycle = [
+  colors.navy,
+  colors.yellow,
+  colors.cyan,
+  colors.trustGreen,
+  '#3D6BB3',
 ];
 
-export function pastelAt(index: number): string {
-  return pastelCycle[index % pastelCycle.length];
+export function paletteAt(index: number): string {
+  return paletteCycle[index % paletteCycle.length];
 }

@@ -1,5 +1,5 @@
 import {isCommunityPrice} from '@/domain/compare';
-import {guessCategory} from '@/domain/productCategory';
+import {resolveCategory} from '@/domain/productCategory';
 import {effectiveUnitPrice, lineTotal} from '@/domain/pricing';
 import type {
   CartItem,
@@ -164,7 +164,7 @@ export function rankCheapestMarkets(
     const mid = best.marketId!;
     wins.set(mid, (wins.get(mid) ?? 0) + 1);
     const named = products.find(p => p.id === productId);
-    const cat = named?.category?.trim() || guessCategory(named?.name || '');
+    const cat = resolveCategory(named?.category, named?.name || '');
     const mCats = catWins.get(mid) ?? new Map<string, number>();
     mCats.set(cat, (mCats.get(cat) ?? 0) + 1);
     catWins.set(mid, mCats);
@@ -219,7 +219,7 @@ export function rankCategoryMarketWins(
       a.retailPrice <= b.retailPrice ? a : b,
     );
     const named = products.find(p => p.id === productId);
-    const cat = named?.category?.trim() || guessCategory(named?.name || '');
+    const cat = resolveCategory(named?.category, named?.name || '');
     const mid = best.marketId!;
     const m = catBest.get(cat) ?? new Map<number, number>();
     m.set(mid, (m.get(mid) ?? 0) + 1);
@@ -254,7 +254,7 @@ export function categorySpendFromCart(
   const byCat = new Map<string, {total: number; itemCount: number}>();
   const catOf = (productId: number) => {
     const named = products.find(p => p.id === productId);
-    return named?.category?.trim() || guessCategory(named?.name || '');
+    return resolveCategory(named?.category, named?.name || '');
   };
 
   for (const item of cart) {
@@ -284,7 +284,7 @@ export function categorySavingsPotential(
   const community = logs.filter(l => isCommunityPrice(l, now));
   const catOf = (productId: number) => {
     const named = products.find(p => p.id === productId);
-    return named?.category?.trim() || guessCategory(named?.name || '');
+    return resolveCategory(named?.category, named?.name || '');
   };
   const byCat = new Map<string, number>();
 

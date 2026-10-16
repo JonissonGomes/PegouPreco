@@ -74,6 +74,22 @@ export const prefs = {
     return v && v.length ? v : null;
   },
   setAuthJson: (json: string | null) => metaSet('authSession', json ?? ''),
+  getVotedPriceIds: (): number[] => {
+    try {
+      const raw = metaGet('votedPriceIds');
+      if (!raw) return [];
+      const parsed = JSON.parse(raw) as number[];
+      return Array.isArray(parsed) ? parsed.map(Number).filter(Number.isFinite) : [];
+    } catch {
+      return [];
+    }
+  },
+  rememberVotedPrice: (id: number) => {
+    const current = new Set(prefs.getVotedPriceIds());
+    current.add(id);
+    const kept = [...current].slice(-400);
+    metaSet('votedPriceIds', JSON.stringify(kept));
+  },
   getLocalUserId: () => {
     let id = metaGet('localUserId');
     if (!id) {

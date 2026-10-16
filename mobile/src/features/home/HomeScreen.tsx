@@ -33,6 +33,7 @@ import {getState} from '@/data/db';
 import {MAPBOX_ACCESS_TOKEN} from '@/config/env';
 import {isInBrazil} from '@/data/remote/nearbyMarkets';
 import {ensureNearbyMarketsDiscovered} from '@/data/remote/ensureNearbyMarkets';
+import {PRODUCT_CATEGORIES} from '@/domain/productCategory';
 import {buildHomeDash, type HomePeriodDays} from '@/domain/homeDashboard';
 import {isFiscalList, isFiscalLog} from '@/domain/fiscal';
 import {HomeHowItWorks} from '@/features/home/HomeHowItWorks';
@@ -488,7 +489,9 @@ export function HomeScreen() {
         marketId={dashMarket}
         category={dashCategory}
         markets={filterOptions.markets}
-        categories={filterOptions.categoryNames}
+        categories={[...new Set([...PRODUCT_CATEGORIES, ...filterOptions.categoryNames])].sort(
+          (a, b) => a.localeCompare(b, 'pt-BR'),
+        )}
         onClose={() => setFiltersOpen(false)}
         onApply={next => {
           setPeriod(next.period);

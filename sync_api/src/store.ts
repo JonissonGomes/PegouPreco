@@ -1456,27 +1456,17 @@ export class DataStore {
     const log = await this._findLog(args.priceLogId);
     if (!log) return {error: 'price log não encontrado', status: 404};
 
-    const sinceMs = Date.now() - 24 * 60 * 60 * 1000;
     const voteKey = `${args.userId}|${args.priceLogId}`;
-    if (this.mode === 'memory') {
-      const existing = this._memVotes[voteKey];
-      if (existing) {
-        const created = Date.parse(String(existing.createdAt ?? ''));
-        if (!Number.isNaN(created) && created > sinceMs) {
-          return {error: 'já votou nas últimas 24h', status: 429};
-        }
-      }
-    } else {
+    const alreadyVoted = async () => {
+      if (this.mode === 'memory') return Boolean(this._memVotes[voteKey]);
       const existing = await this.col('price_votes').findOne({
         voterId: args.userId,
         priceLogId: args.priceLogId,
       });
-      if (existing) {
-        const created = Date.parse(String(existing.createdAt ?? ''));
-        if (!Number.isNaN(created) && created > sinceMs) {
-          return {error: 'já votou nas últimas 24h', status: 429};
-        }
-      }
+      return Boolean(existing);
+    };
+    if (await alreadyVoted()) {
+      return {error: 'você já avaliou este preço', status: 409};
     }
 
     const now = new Date();

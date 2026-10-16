@@ -4,7 +4,7 @@ import {Receipt} from 'lucide-react-native';
 import {KeyboardSafeSheet} from '@/ui/keyboardSheet';
 import {colors, radii, space} from '@/ui/theme';
 import {formatBrl, formatQty} from '@/domain/money';
-import {guessCategory} from '@/domain/productCategory';
+import {resolveCategory} from '@/domain/productCategory';
 import {lineTotal} from '@/domain/pricing';
 import type {CartItem, Product, ShoppingList} from '@/data/types';
 import {categoryTone} from './categoryTone';
@@ -21,7 +21,7 @@ function parseItems(list: ShoppingList): CartItem[] {
 
 function itemCategory(item: CartItem, products: Product[]): string {
   const stored = products.find(p => p.id === item.productId)?.category?.trim();
-  return stored || guessCategory(item.productName);
+  return resolveCategory(stored, item.productName);
 }
 
 function formatWhen(iso: string) {
