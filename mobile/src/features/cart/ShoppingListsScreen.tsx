@@ -15,6 +15,7 @@ import {
   ArrowLeft,
   ClipboardList,
   QrCode,
+  Receipt,
   ShoppingCart,
   Store,
 } from 'lucide-react-native';
@@ -241,16 +242,16 @@ export function ShoppingListsScreen() {
             <SoftCard onPress={() => setSelected(item)} style={styles.listCard}>
               <View style={styles.listRow}>
                 <View style={styles.itemIcon}>
-                  <ClipboardList size={18} color={colors.navy} />
+                  <Receipt size={16} color={colors.navy} />
                 </View>
-                <View style={{flex: 1, minWidth: 0}}>
+                <View style={styles.listBody}>
                   <Text style={styles.name} numberOfLines={1}>
-                    {item.name}
-                  </Text>
-                  <Text style={styles.muted} numberOfLines={1}>
-                    {item.marketName || 'Mercado'} · {item.itemCount} itens
+                    {item.marketName || item.name}
                   </Text>
                   <View style={styles.metaLine}>
+                    <Text style={styles.muted} numberOfLines={1}>
+                      {item.name} · {formatListDate(item.finishedAt)}
+                    </Text>
                     <View
                       style={[
                         styles.pill,
@@ -260,9 +261,6 @@ export function ShoppingListsScreen() {
                         {item.nfceKey ? 'Nota' : 'Lista'}
                       </Text>
                     </View>
-                    <Text style={styles.date}>
-                      {formatListDate(item.finishedAt)}
-                    </Text>
                   </View>
                 </View>
                 <Text style={styles.price}>{formatBrl(item.subtotal)}</Text>
@@ -373,34 +371,25 @@ const styles = StyleSheet.create({
   chipOn: {backgroundColor: colors.navy},
   chipText: {fontWeight: '800', color: colors.ink, fontSize: 13},
   chipTextOn: {color: colors.white},
-  listCard: {marginBottom: space.sm, borderRadius: 22},
-  listRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
+  listCard: {marginBottom: 8, paddingVertical: 10, paddingHorizontal: 12},
+  listRow: {flexDirection: 'row', alignItems: 'center', gap: 10},
+  listBody: {flex: 1, minWidth: 0, gap: 2},
   itemIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 14,
-    backgroundColor: '#EEF2FF',
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: '#FFF6D8',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  name: {fontWeight: '900', color: colors.navy, fontSize: 16},
-  muted: {color: colors.muted, marginTop: 2, fontWeight: '600', fontSize: 13},
-  metaLine: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 8,
-  },
-  pill: {borderRadius: radii.pill, paddingHorizontal: 8, paddingVertical: 3},
+  name: {fontWeight: '900', color: colors.navy, fontSize: 14},
+  muted: {flexShrink: 1, color: colors.muted, fontWeight: '600', fontSize: 12},
+  metaLine: {flexDirection: 'row', alignItems: 'center', gap: 6},
+  pill: {borderRadius: radii.pill, paddingHorizontal: 8, paddingVertical: 2},
   pillNote: {backgroundColor: '#DCFCE7'},
   pillList: {backgroundColor: '#E0E7FF'},
   pillText: {fontSize: 11, fontWeight: '800', color: colors.navy},
-  date: {fontSize: 12, fontWeight: '700', color: colors.muted},
-  price: {fontWeight: '900', color: colors.navy, fontSize: 17},
+  price: {fontWeight: '900', color: colors.navy, fontSize: 14},
   importBtn: {
     flexDirection: 'row',
     alignItems: 'center',

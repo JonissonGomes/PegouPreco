@@ -215,40 +215,34 @@ function PurchaseCard({
   row: {list: ShoppingList; categories: string[]};
   onPress: () => void;
 }) {
-  const shown = row.categories.slice(0, 2);
+  const shown = row.categories.slice(0, 1);
   const extra = row.categories.length - shown.length;
   return (
     <SoftCard onPress={onPress} style={styles.card}>
       <View style={styles.top}>
         <View style={styles.icon}>
-          <Receipt size={18} color={colors.navy} />
+          <Receipt size={16} color={colors.navy} />
         </View>
         <View style={styles.body}>
           <Text style={styles.name} numberOfLines={1}>
             {marketLabel(row.list)}
           </Text>
-          <Text style={styles.meta} numberOfLines={1}>
-            {row.list.name} · {row.list.itemCount} itens
-          </Text>
+          <View style={styles.metaRow}>
+            <Text style={styles.meta} numberOfLines={1}>
+              {row.list.name} · {formatWhen(row.list.finishedAt)}
+            </Text>
+            {shown.map(cat => {
+              const tone = categoryTone(cat);
+              return (
+                <View key={cat} style={[styles.pill, {backgroundColor: tone.bg}]}>
+                  <Text style={[styles.pillText, {color: tone.fg}]}>{cat}</Text>
+                </View>
+              );
+            })}
+            {extra > 0 ? <Text style={styles.extra}>+{extra}</Text> : null}
+          </View>
         </View>
         <Text style={styles.price}>{formatBrl(row.list.subtotal)}</Text>
-      </View>
-      <View style={styles.dash} />
-      <View style={styles.foot}>
-        <View style={styles.pills}>
-          {shown.map(cat => {
-            const tone = categoryTone(cat);
-            return (
-              <View key={cat} style={[styles.pill, {backgroundColor: tone.bg}]}>
-                <Text style={[styles.pillText, {color: tone.fg}]}>{cat}</Text>
-              </View>
-            );
-          })}
-          {extra > 0 ? (
-            <Text style={styles.extra}>+{extra}</Text>
-          ) : null}
-        </View>
-        <Text style={styles.date}>{formatWhen(row.list.finishedAt)}</Text>
       </View>
     </SoftCard>
   );
@@ -287,28 +281,25 @@ const styles = StyleSheet.create({
   list: {
     paddingHorizontal: space.md,
     paddingBottom: spacing.bottomNavClearance,
-    gap: space.sm,
+    gap: 8,
   },
   listEmpty: {flexGrow: 1},
-  card: {gap: 10},
-  top: {flexDirection: 'row', alignItems: 'flex-start', gap: 10},
+  card: {paddingVertical: 10, paddingHorizontal: 12},
+  top: {flexDirection: 'row', alignItems: 'center', gap: 10},
   icon: {
-    width: 40,
-    height: 40,
-    borderRadius: 14,
+    width: 32,
+    height: 32,
+    borderRadius: 10,
     backgroundColor: '#FFF6D8',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  body: {flex: 1, minWidth: 0},
-  name: {fontWeight: '900', color: colors.navy, fontSize: 15},
-  meta: {color: colors.muted, fontWeight: '600', fontSize: 12, marginTop: 2},
-  price: {fontWeight: '900', color: colors.navy, fontSize: 16},
-  dash: {borderTopWidth: 1, borderStyle: 'dashed', borderColor: colors.border},
-  foot: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8},
-  pills: {flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1},
-  pill: {borderRadius: radii.pill, paddingHorizontal: 10, paddingVertical: 4},
-  pillText: {fontWeight: '800', fontSize: 12},
-  extra: {color: colors.muted, fontWeight: '800', fontSize: 12},
-  date: {color: colors.muted, fontWeight: '700', fontSize: 12},
+  body: {flex: 1, minWidth: 0, gap: 2},
+  name: {fontWeight: '900', color: colors.navy, fontSize: 14},
+  metaRow: {flexDirection: 'row', alignItems: 'center', gap: 6},
+  meta: {flexShrink: 1, color: colors.muted, fontWeight: '600', fontSize: 12},
+  price: {fontWeight: '900', color: colors.navy, fontSize: 14},
+  pill: {borderRadius: radii.pill, paddingHorizontal: 8, paddingVertical: 2},
+  pillText: {fontWeight: '800', fontSize: 11},
+  extra: {color: colors.muted, fontWeight: '800', fontSize: 11},
 });

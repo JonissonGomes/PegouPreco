@@ -20,7 +20,7 @@ import {
   MoreVertical,
   Plus,
   Barcode,
-  ScanLine,
+  QrCode,
   Trash2,
 } from 'lucide-react-native';
 import {AppButton, AppField} from '@/ui/chrome';
@@ -283,9 +283,11 @@ export function CartScreen() {
             <Text style={styles.menuTitle}>Ações</Text>
             <Pressable
               style={styles.menuItem}
-              onPress={() => runMenuAction(goCapture)}>
-              <ScanLine size={18} color={colors.navy} />
-              <Text style={styles.menuItemText}>Escanear item</Text>
+              onPress={() =>
+                runMenuAction(() => nav.navigate('ImportPurchase'))
+              }>
+              <QrCode size={18} color={colors.navy} />
+              <Text style={styles.menuItemText}>Cadastrar nota</Text>
             </Pressable>
             <Pressable
               style={styles.menuItem}

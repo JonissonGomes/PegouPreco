@@ -27,27 +27,34 @@ export function KeyboardSafeSheet({
 }) {
   const insets = useSafeAreaInsets();
   const {mounted, backdropStyle, sheetStyle} = useAnimatedSheet(visible);
-  const [keyboardPad, setKeyboardPad] = useState(0);
+  const [keyboardLift, setKeyboardLift] = useState(0);
 
   useEffect(() => {
     if (!visible) {
-      setKeyboardPad(0);
+      setKeyboardLift(0);
       return;
     }
-    const baseHeight = Dimensions.get('window').height;
-    const apply = (height: number) => {
-      const shrunk = baseHeight - Dimensions.get('window').height;
-      // Se a janela já encolheu, não soma a altura do teclado de novo.
-      setKeyboardPad(shrunk > 80 ? 0 : height);
+    const overlap = (e: {endCoordinates: {screenY: number; height: number}}) => {
+      const windowH = Dimensions.get('window').height;
+      const screenY = e.endCoordinates.screenY;
+      const height = e.endCoordinates.height;
+      if (!Number.isFinite(windowH)) return 0;
+      if (!Number.isFinite(screenY) || screenY < 40) {
+        return Math.min(Math.max(0, height), Math.round(windowH * 0.5));
+      }
+      return Math.max(0, Math.round(windowH - screenY));
     };
     const show = Keyboard.addListener('keyboardDidShow', e => {
-      const height = e.endCoordinates.height;
-      apply(height);
-      setTimeout(() => apply(height), 60);
+      setKeyboardLift(overlap(e));
+      setTimeout(() => setKeyboardLift(overlap(e)), 80);
     });
-    const hide = Keyboard.addListener('keyboardDidHide', () => setKeyboardPad(0));
+    const frame = Keyboard.addListener('keyboardDidChangeFrame', e => {
+      setKeyboardLift(overlap(e));
+    });
+    const hide = Keyboard.addListener('keyboardDidHide', () => setKeyboardLift(0));
     return () => {
       show.remove();
+      frame.remove();
       hide.remove();
     };
   }, [visible]);
@@ -74,14 +81,18 @@ export function KeyboardSafeSheet({
             styles.sheet,
             sheetStyle,
             {
-              paddingBottom:
-                Math.max(insets.bottom, 16) + keyboardPad,
+              marginBottom: keyboardLift,
+              paddingBottom: Math.max(insets.bottom, 12),
+              maxHeight:
+                Dimensions.get('window').height - keyboardLift - insets.top - 24,
             },
           ]}>
           <View style={styles.handle} />
           <ScrollView
+            style={styles.scroll}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
+            bounces={false}
             contentContainerStyle={styles.content}>
             {children}
           </ScrollView>
@@ -115,5 +126,6 @@ const styles = StyleSheet.create({
     marginTop: 10,
     marginBottom: 4,
   },
-  content: {padding: 16, gap: 8, paddingBottom: 8},
+  scroll: {flexGrow: 0},
+  content: {padding: 16, gap: 8, paddingBottom: 8, flexGrow: 0},
 });

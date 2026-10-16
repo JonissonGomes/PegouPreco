@@ -1,7 +1,7 @@
-import React, {useCallback, useEffect, useRef, useState} from 'react';
-import {StyleSheet, Text, View} from 'react-native';
+import React, {useCallback, useRef, useState} from 'react';
+import {Pressable, StyleSheet, Text, View} from 'react-native';
 import {useNavigation} from '@react-navigation/native';
-import {Camera, useCameraDevice, useCodeScanner} from 'react-native-vision-camera';
+import {Camera} from 'react-native-vision-camera';
 import {ArrowLeft} from 'lucide-react-native';
 import {AppButton, AppField} from '@/ui/chrome';
 import {appAlert} from '@/ui/appDialog';
@@ -15,35 +15,19 @@ import {
   type NfceDraft,
 } from '@/data/archivePurchase';
 import {NfceReviewSheet} from '@/features/cart/NfceReviewSheet';
-import {refreshPermissionFlags} from '@/app/permissions';
+import {useReceiptCamera} from '@/features/cart/useReceiptCamera';
 import {useAppStore} from '@/store/appStore';
 import {requestAutoSync} from '@/data/syncWorker';
 
 export function ImportPurchaseScreen() {
   const nav = useNavigation<any>();
   const refresh = useAppStore(s => s.refresh);
-  const device = useCameraDevice('back');
-  const cameraGranted = useAppStore(s => s.permissions.camera);
   const [url, setUrl] = useState('');
   const [busy, setBusy] = useState(false);
   const [pasteOpen, setPasteOpen] = useState(false);
   const [draft, setDraft] = useState<NfceDraft | null>(null);
   const [saving, setSaving] = useState(false);
   const lock = useRef<string | null>(null);
-
-  const ensureCamera = useCallback(async () => {
-    const flags = await refreshPermissionFlags();
-    useAppStore.setState({permissions: flags});
-    if (flags.camera) return;
-    const status = await Camera.requestCameraPermission();
-    useAppStore.setState({
-      permissions: {...flags, camera: status === 'granted'},
-    });
-  }, []);
-
-  useEffect(() => {
-    void ensureCamera();
-  }, [ensureCamera]);
 
   const run = useCallback(
     async (raw: string) => {
@@ -79,6 +63,11 @@ export function ImportPurchaseScreen() {
       }
     },
     [],
+  );
+
+  const cam = useReceiptCamera(
+    value => void run(value),
+    busy || pasteOpen || draft != null,
   );
 
   const saveDraft = async (purchasedAt: string) => {
@@ -119,16 +108,6 @@ export function ImportPurchaseScreen() {
     }
   };
 
-  const codeScanner = useCodeScanner({
-    codeTypes: ['qr', 'pdf-417'],
-    onCodeScanned: codes => {
-      if (busy) return;
-      const value = codes.map(c => c.value).find((v): v is string => !!v);
-      if (!value || !nfceConsultUrl(value)) return;
-      void run(value);
-    },
-  });
-
   return (
     <View style={styles.root}>
       <SoftHeader
@@ -140,23 +119,53 @@ export function ImportPurchaseScreen() {
           </BackCircleButton>
         }
       />
-      <View style={styles.stage}>
-        {cameraGranted && device ? (
+      <View
+        style={styles.stage}
+        onLayout={e =>
+          cam.onLayout(e.nativeEvent.layout.width, e.nativeEvent.layout.height)
+        }>
+        {cam.cameraGranted && cam.device ? (
+          <>
           <Camera
+            ref={cam.cameraRef}
             style={StyleSheet.absoluteFill}
-            device={device}
+            device={cam.device}
             isActive={!pasteOpen && !busy && draft == null}
-            codeScanner={codeScanner}
+            codeScanner={cam.codeScanner}
+            zoom={cam.zoom}
+            enableZoomGesture
+            onInitialized={() => cam.focusCenter()}
           />
+          <Pressable
+            style={styles.frameHit}
+            onPress={e => cam.focusTap(e.nativeEvent.locationX, e.nativeEvent.locationY)}>
+            <View style={styles.frame} pointerEvents="none" />
+            <Text style={styles.frameHint}>
+              Enquadre o QR do rodapé. A câmera aproxima e foca sozinha.
+            </Text>
+          </Pressable>
+          <View style={styles.zoomRow}>
+            <Pressable
+              style={styles.zoomBtn}
+              onPress={() => cam.nudgeZoom(-0.4)}>
+              <Text style={styles.zoomText}>−</Text>
+            </Pressable>
+            <Pressable
+              style={styles.zoomBtn}
+              onPress={() => cam.nudgeZoom(0.4)}>
+              <Text style={styles.zoomText}>+</Text>
+            </Pressable>
+          </View>
+          </>
         ) : (
           <View style={styles.idle}>
             <Text style={styles.idleText}>
-              {cameraGranted
+              {cam.cameraGranted
                 ? 'Preparando a câmera…'
                 : 'Libere a câmera para ler o QR da nota.'}
             </Text>
-            {!cameraGranted ? (
-              <AppButton label="Liberar câmera" onPress={() => void ensureCamera()} />
+            {!cam.cameraGranted ? (
+              <AppButton label="Liberar câmera" onPress={() => void cam.ensureCamera()} />
             ) : null}
           </View>
         )}
@@ -202,6 +211,41 @@ export function ImportPurchaseScreen() {
 const styles = StyleSheet.create({
   root: {flex: 1, backgroundColor: colors.bg},
   stage: {flex: 1, backgroundColor: '#111', overflow: 'hidden'},
+  frameHit: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  frame: {
+    width: 220,
+    height: 220,
+    borderRadius: 24,
+    borderWidth: 3,
+    borderColor: colors.yellow,
+    backgroundColor: 'transparent',
+  },
+  frameHint: {
+    marginTop: 16,
+    color: '#fff',
+    fontWeight: '800',
+    textAlign: 'center',
+    paddingHorizontal: 24,
+  },
+  zoomRow: {
+    position: 'absolute',
+    right: 16,
+    top: 16,
+    gap: 8,
+  },
+  zoomBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  zoomText: {color: '#fff', fontSize: 22, fontWeight: '800'},
   idle: {flex: 1, alignItems: 'center', justifyContent: 'center', padding: space.lg, gap: 16},
   idleText: {color: '#fff', fontWeight: '700', textAlign: 'center'},
   badge: {
