@@ -2,14 +2,13 @@ import React, {useMemo, useState} from 'react';
 import {
   FlatList,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
 import {useNavigation} from '@react-navigation/native';
-import {History, Receipt, ScanLine, Store} from 'lucide-react-native';
+import {History, Receipt, ScanLine, SlidersHorizontal, Store} from 'lucide-react-native';
 import {FeatureEmptyGuide} from '@/ui/FeatureEmptyGuide';
 import {SoftCard, SoftHeader} from '@/ui/screenChrome';
 import {colors, radii, space, spacing} from '@/ui/theme';
@@ -19,6 +18,7 @@ import {useAppStore} from '@/store/appStore';
 import type {CartItem, ShoppingList} from '@/data/types';
 import {categoryTone} from './categoryTone';
 import {HistoryDetailSheet} from './HistoryDetailSheet';
+import {HistoryFilterSheet} from './HistoryFilterSheet';
 
 function parseItems(list: ShoppingList): CartItem[] {
   try {
@@ -49,8 +49,9 @@ export function HistoryScreen() {
   const products = useAppStore(s => s.products);
   const lists = useAppStore(s => s.lists);
   const [query, setQuery] = useState('');
-  const [market, setMarket] = useState('Todos');
-  const [category, setCategory] = useState('Todas');
+  const [market, setMarket] = useState<string | null>(null);
+  const [category, setCategory] = useState<string | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [openList, setOpenList] = useState<ShoppingList | null>(null);
 
   const catalog = useMemo(
@@ -74,23 +75,25 @@ export function HistoryScreen() {
   );
   const markets = useMemo(() => {
     const names = new Set(withCats.map(row => marketLabel(row.list)));
-    return ['Todos', ...Array.from(names).sort((a, b) => a.localeCompare(b, 'pt-BR'))];
+    return Array.from(names).sort((a, b) => a.localeCompare(b, 'pt-BR'));
   }, [withCats]);
   const categories = useMemo(() => {
     const names = new Set(withCats.flatMap(row => row.categories));
-    return ['Todas', ...Array.from(names).sort((a, b) => a.localeCompare(b, 'pt-BR'))];
+    return Array.from(names).sort((a, b) => a.localeCompare(b, 'pt-BR'));
   }, [withCats]);
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     return withCats.filter(row => {
-      if (market !== 'Todos' && marketLabel(row.list) !== market) return false;
-      if (category !== 'Todas' && !row.categories.includes(category)) return false;
+      if (market && marketLabel(row.list) !== market) return false;
+      if (category && !row.categories.includes(category)) return false;
       if (!q) return true;
       if (row.list.name.toLowerCase().includes(q)) return true;
       if (marketLabel(row.list).toLowerCase().includes(q)) return true;
       return row.items.some(it => it.productName.toLowerCase().includes(q));
     });
   }, [withCats, query, market, category]);
+
+  const filterCount = (market ? 1 : 0) + (category ? 1 : 0);
 
   return (
     <View style={styles.root}>
@@ -107,52 +110,14 @@ export function HistoryScreen() {
             placeholderTextColor={colors.muted}
             style={styles.search}
           />
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.chips}>
-            {markets.map(name => {
-              const on = market === name;
-              return (
-                <Pressable
-                  key={name}
-                  onPress={() => setMarket(name)}
-                  style={[styles.chip, on && styles.chipMarketOn]}>
-                  <Store size={14} color={on ? colors.navy : colors.muted} />
-                  <Text style={styles.chipText}>{name}</Text>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.chips}>
-            {categories.map(name => {
-              const on = category === name;
-              const tone = name === 'Todas' ? null : categoryTone(name);
-              return (
-                <Pressable
-                  key={name}
-                  onPress={() => setCategory(name)}
-                  style={[
-                    styles.chip,
-                    tone && {backgroundColor: tone.bg, borderColor: tone.bg},
-                    on && !tone && styles.chipOn,
-                    on && tone && {backgroundColor: tone.fg, borderColor: tone.fg},
-                  ]}>
-                  <Text
-                    style={[
-                      styles.chipText,
-                      tone && {color: tone.fg},
-                      on && styles.chipTextOn,
-                    ]}>
-                    {name}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
+          <Pressable style={styles.filterBtn} onPress={() => setFiltersOpen(true)}>
+            <SlidersHorizontal size={16} color={colors.navy} />
+            {filterCount > 0 ? (
+              <View style={styles.filterBadge}>
+                <Text style={styles.filterBadgeText}>{filterCount}</Text>
+              </View>
+            ) : null}
+          </Pressable>
         </View>
       ) : null}
       <FlatList
@@ -171,14 +136,14 @@ export function HistoryScreen() {
             steps={[
               {
                 n: '1',
-                title: 'Filtre o mercado',
-                text: 'A primeira fileira mostra só as compras daquele mercado.',
+                title: 'Abra os filtros',
+                text: 'O botão ao lado da busca escolhe mercado e categoria.',
                 Icon: Store,
               },
               {
                 n: '2',
-                title: 'Filtre a categoria',
-                text: 'A pílula colorida deixa hortifruti, limpeza e as outras em destaque.',
+                title: 'Escolha a categoria',
+                text: 'No modal, cada categoria aparece com a cor dela.',
                 Icon: Receipt,
               },
               {
@@ -203,6 +168,19 @@ export function HistoryScreen() {
         list={openList}
         products={products}
         onClose={() => setOpenList(null)}
+      />
+      <HistoryFilterSheet
+        visible={filtersOpen}
+        market={market}
+        category={category}
+        markets={markets}
+        categories={categories}
+        onClose={() => setFiltersOpen(false)}
+        onApply={next => {
+          setMarket(next.market);
+          setCategory(next.category);
+          setFiltersOpen(false);
+        }}
       />
     </View>
   );
@@ -250,8 +228,15 @@ function PurchaseCard({
 
 const styles = StyleSheet.create({
   root: {flex: 1, backgroundColor: colors.bg},
-  filters: {paddingHorizontal: space.md, gap: 8, marginBottom: space.sm},
+  filters: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: space.md,
+    gap: 8,
+    marginBottom: space.sm,
+  },
   search: {
+    flex: 1,
     height: 48,
     backgroundColor: colors.white,
     borderRadius: radii.pill,
@@ -262,22 +247,29 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  chips: {gap: 8, paddingRight: space.md},
-  chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: radii.pill,
+  filterBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: colors.white,
     borderWidth: 1,
     borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  chipOn: {backgroundColor: colors.navy, borderColor: colors.navy},
-  chipMarketOn: {backgroundColor: colors.yellow, borderColor: colors.yellow},
-  chipText: {fontWeight: '800', color: colors.navy, fontSize: 13},
-  chipTextOn: {color: colors.white},
+  filterBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: colors.yellow,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+  },
+  filterBadgeText: {fontSize: 10, fontWeight: '900', color: colors.navy},
   list: {
     paddingHorizontal: space.md,
     paddingBottom: spacing.bottomNavClearance,

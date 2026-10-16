@@ -22,9 +22,11 @@ import {parseLabel, type LabelFields} from '@/domain/labelParser';
 import {
   formatBrl,
   formatMoneyInput,
+  formatQty,
   maskMoneyTyping,
   parseBrl,
 } from '@/domain/money';
+import {effectiveUnitPrice, lineTotal} from '@/domain/pricing';
 import {recognizeLabelFromPhoto} from '@/data/ocr/labelOcr';
 import {refreshPermissionFlags} from '@/app/permissions';
 import {
@@ -146,6 +148,44 @@ function LabelHitPreview({
   );
 }
 
+function PriceQuote({
+  fields,
+  qtyText,
+}: {
+  fields: LabelFields;
+  qtyText: string;
+}) {
+  if (fields.retailPrice == null) return null;
+  const quantity = Number.parseFloat(qtyText.replace(',', '.'));
+  if (!Number.isFinite(quantity) || quantity <= 0) {
+    return <Text style={styles.preview}>Informe a quantidade.</Text>;
+  }
+  const line = {
+    quantity,
+    retailPrice: fields.retailPrice,
+    wholesalePrice: fields.wholesalePrice,
+    minWholesaleQty: fields.minWholesaleQty,
+  };
+  const unit = effectiveUnitPrice(line);
+  const atacado =
+    fields.wholesalePrice != null &&
+    fields.minWholesaleQty != null &&
+    quantity >= fields.minWholesaleQty;
+  const falta =
+    fields.wholesalePrice != null &&
+    fields.minWholesaleQty != null &&
+    !atacado
+      ? ` Faltam ${formatQty(fields.minWholesaleQty - quantity)} para o atacado.`
+      : '';
+  return (
+    <Text style={styles.preview}>
+      {formatQty(quantity)} un · {atacado ? 'atacado' : 'varejo'}{' '}
+      {formatBrl(unit)} · total {formatBrl(lineTotal(line))}
+      {falta}
+    </Text>
+  );
+}
+
 export function CaptureScreen() {
   const nav = useNavigation<any>();
   const route = useRoute<any>();
@@ -178,6 +218,7 @@ export function CaptureScreen() {
   pastModeRef.current = pastMode;
   const [scanning, setScanning] = useState(false);
   const [status, setStatus] = useState('Aponte para a etiqueta');
+  const [qtyText, setQtyText] = useState('1');
 
   const auth = useAppStore(s => s.auth);
 
@@ -204,6 +245,11 @@ export function CaptureScreen() {
     setHit(null);
     setFields({...f});
     setRaw(f.rawText);
+    const targetId = route.params?.cartItemId as number | undefined;
+    const current = targetId
+      ? cartRepo.all().find(c => c.id === targetId)
+      : undefined;
+    setQtyText(formatQty(current?.quantity ?? 1));
   };
 
   const runOcrFromText = (text: string) => {
@@ -353,6 +399,11 @@ export function CaptureScreen() {
       appAlert('Falta preencher', 'Informe produto e preço de varejo.');
       return;
     }
+    const quantity = Number.parseFloat(qtyText.replace(',', '.'));
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      appAlert('Quantidade', 'Informe quantas unidades vão para o carrinho.');
+      return;
+    }
     if (auth && !auth.emailVerified) {
       appAlert(
         'Conta sem verificação',
@@ -372,10 +423,16 @@ export function CaptureScreen() {
       const current = cartRepo.all().find(c => c.id === targetId);
       cartRepo.updateItem(targetId, {
         productName: fields.productName,
-        quantity: current?.quantity ?? 1,
+        quantity,
         retailPrice: fields.retailPrice,
         wholesalePrice: fields.wholesalePrice,
         minWholesaleQty: fields.minWholesaleQty,
+        useWholesale:
+          fields.wholesalePrice != null &&
+          fields.minWholesaleQty != null &&
+          quantity >= fields.minWholesaleQty
+            ? 1
+            : 0,
       });
       if (current) productRepo.rename(current.productId, fields.productName);
       if (current && !current.checkedOff) cartRepo.toggleChecked(targetId);
@@ -385,7 +442,7 @@ export function CaptureScreen() {
       cartRepo.upsert({
         productId: product.id,
         productName: fields.productName,
-        quantity: 1,
+        quantity,
         retailPrice: fields.retailPrice,
         wholesalePrice: fields.wholesalePrice,
         minWholesaleQty: fields.minWholesaleQty,
@@ -782,7 +839,7 @@ export function CaptureScreen() {
         }}>
         <Text style={styles.modalTitle}>Confirmar leitura</Text>
         <Text style={styles.hint}>
-          Confira nome e preços antes de salvar
+          Confira a quantidade. Se ela atingir a mínima, o total usa o atacado.
         </Text>
         <AppField
           label="Produto"
@@ -795,6 +852,39 @@ export function CaptureScreen() {
         {fields?.barcode ? (
           <Text style={styles.barcodeHint}>EAN {fields.barcode}</Text>
         ) : null}
+        <View style={{flexDirection: 'row', gap: 10}}>
+          <AppField
+            label="Qtd no carrinho"
+            compact
+            keyboardType="decimal-pad"
+            placeholder="1"
+            value={qtyText}
+            onChangeText={setQtyText}
+          />
+          <AppField
+            label="Qtd mín. atacado"
+            compact
+            keyboardType="number-pad"
+            placeholder="ex.: 2"
+            value={
+              fields?.minWholesaleQty != null
+                ? String(fields.minWholesaleQty)
+                : ''
+            }
+            onChangeText={t =>
+              setFields(f =>
+                f
+                  ? {
+                      ...f,
+                      minWholesaleQty: t
+                        ? Number.parseInt(t.replace(/\D/g, ''), 10) || null
+                        : null,
+                    }
+                  : f,
+              )
+            }
+          />
+        </View>
         <View style={{flexDirection: 'row', gap: 10}}>
           <View style={[styles.fieldAccent, styles.retail]}>
             <AppField
@@ -832,36 +922,8 @@ export function CaptureScreen() {
             />
           </View>
         </View>
-        <AppField
-          label="Qtd mín. atacado"
-          compact
-          keyboardType="number-pad"
-          placeholder="ex.: 2"
-          value={
-            fields?.minWholesaleQty != null
-              ? String(fields.minWholesaleQty)
-              : ''
-          }
-          onChangeText={t =>
-            setFields(f =>
-              f
-                ? {
-                    ...f,
-                    minWholesaleQty: t
-                      ? Number.parseInt(t.replace(/\D/g, ''), 10) || null
-                      : null,
-                  }
-                : f,
-            )
-          }
-        />
         {fields?.retailPrice != null ? (
-          <Text style={styles.preview}>
-            Preço varejo {formatBrl(fields.retailPrice)}
-            {fields.wholesalePrice != null
-              ? ` · Preço atacado ${formatBrl(fields.wholesalePrice)}`
-              : ''}
-          </Text>
+          <PriceQuote fields={fields} qtyText={qtyText} />
         ) : null}
         <AppButton label="Salvar no carrinho" onPress={saveToCart} />
         <AppButton

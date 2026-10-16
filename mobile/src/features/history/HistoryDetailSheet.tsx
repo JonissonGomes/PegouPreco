@@ -67,7 +67,7 @@ export function HistoryDetailSheet({
         <>
           <Text style={styles.title}>{list.marketName || list.name}</Text>
           <Text style={styles.sub}>
-            {items.length} itens · {formatBrl(list.subtotal)}
+            {items.length} itens · {formatBrl(list.subtotal)} · {formatWhen(list.finishedAt)}
           </Text>
           <TextInput
             value={query}
@@ -111,27 +111,23 @@ export function HistoryDetailSheet({
             const tone = categoryTone(cat);
             return (
               <View key={`${item.productId}-${index}`} style={styles.card}>
-                <View style={styles.top}>
-                  <View style={styles.icon}>
-                    <Receipt size={16} color={colors.navy} />
-                  </View>
-                  <View style={styles.body}>
-                    <Text style={styles.name} numberOfLines={2}>
-                      {item.productName}
-                    </Text>
-                    <Text style={styles.meta}>
+                <View style={styles.icon}>
+                  <Receipt size={14} color={colors.navy} />
+                </View>
+                <View style={styles.body}>
+                  <Text style={styles.name} numberOfLines={1}>
+                    {item.productName}
+                  </Text>
+                  <View style={styles.metaRow}>
+                    <Text style={styles.meta} numberOfLines={1}>
                       {formatQty(item.quantity)} × {formatBrl(item.retailPrice)}
                     </Text>
+                    <View style={[styles.pill, {backgroundColor: tone.bg}]}>
+                      <Text style={[styles.pillText, {color: tone.fg}]}>{cat}</Text>
+                    </View>
                   </View>
-                  <Text style={styles.price}>{formatBrl(lineTotal(item))}</Text>
                 </View>
-                <View style={styles.dash} />
-                <View style={styles.foot}>
-                  <View style={[styles.pill, {backgroundColor: tone.bg}]}>
-                    <Text style={[styles.pillText, {color: tone.fg}]}>{cat}</Text>
-                  </View>
-                  <Text style={styles.date}>{formatWhen(list.finishedAt)}</Text>
-                </View>
+                <Text style={styles.price}>{formatBrl(lineTotal(item))}</Text>
               </View>
             );
           })}
@@ -169,28 +165,28 @@ const styles = StyleSheet.create({
   chipText: {fontWeight: '800', color: colors.navy, fontSize: 13},
   chipTextOn: {color: colors.white},
   card: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: colors.bg,
-    borderRadius: 18,
-    padding: 14,
-    gap: 10,
+    borderRadius: 14,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    gap: 8,
   },
-  top: {flexDirection: 'row', alignItems: 'flex-start', gap: 10},
   icon: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
+    width: 28,
+    height: 28,
+    borderRadius: 8,
     backgroundColor: colors.white,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  body: {flex: 1, minWidth: 0},
-  name: {fontWeight: '900', color: colors.navy, fontSize: 15},
-  meta: {color: colors.muted, fontWeight: '600', fontSize: 12, marginTop: 2},
-  price: {fontWeight: '900', color: colors.navy, fontSize: 16},
-  dash: {borderTopWidth: 1, borderStyle: 'dashed', borderColor: colors.border},
-  foot: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'},
-  pill: {borderRadius: radii.pill, paddingHorizontal: 10, paddingVertical: 4},
-  pillText: {fontWeight: '800', fontSize: 12},
-  date: {color: colors.muted, fontWeight: '700', fontSize: 12},
+  body: {flex: 1, minWidth: 0, gap: 2},
+  name: {fontWeight: '900', color: colors.navy, fontSize: 14},
+  metaRow: {flexDirection: 'row', alignItems: 'center', gap: 6},
+  meta: {flexShrink: 1, color: colors.muted, fontWeight: '600', fontSize: 12},
+  price: {fontWeight: '900', color: colors.navy, fontSize: 14},
+  pill: {borderRadius: radii.pill, paddingHorizontal: 8, paddingVertical: 2},
+  pillText: {fontWeight: '800', fontSize: 11},
   empty: {color: colors.muted, fontWeight: '700', textAlign: 'center', marginTop: 8},
 });
