@@ -1,4 +1,4 @@
-import React, {useCallback, useEffect, useMemo, useState} from 'react';
+import React, {useCallback, useMemo, useState} from 'react';
 import {
   FlatList,
   Pressable,
@@ -7,7 +7,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import {useFocusEffect, useNavigation} from '@react-navigation/native';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {ClipboardList, ScanLine, Store} from 'lucide-react-native';
 import {
   AppButton,
@@ -22,7 +22,7 @@ import {MarketSuggestRow} from '@/ui/MarketSuggestRow';
 import {FeatureEmptyGuide} from '@/ui/FeatureEmptyGuide';
 import {Reveal} from '@/ui/reveal';
 import {InsightsBoard} from '@/features/insights/InsightsBoard';
-import {colors, radii, space, spacing} from '@/ui/theme';
+import {colors, radii, space} from '@/ui/theme';
 import {formatBrl} from '@/domain/money';
 import {lineTotal} from '@/domain/pricing';
 import {dateSearchText} from '@/domain/dateSearch';
@@ -88,6 +88,7 @@ function periodCaption(period: InsightPeriod): string {
 
 export function InsightsScreen() {
   const nav = useNavigation<any>();
+  const insets = useSafeAreaInsets();
   const lists = useAppStore(s => s.lists);
   const markets = useAppStore(s => s.markets);
   const products = useAppStore(s => s.products);
@@ -103,21 +104,15 @@ export function InsightsScreen() {
   const [period, setPeriod] = useState<InsightPeriod>('week');
   const [locTick, setLocTick] = useState(0);
 
-  useEffect(() => {
-    if (!auth?.token) {
-      setRep(null);
-      return;
-    }
-    syncApi
-      .reputation(auth.token)
-      .then(setRep)
-      .catch(() => setRep(null));
-  }, [auth?.token]);
-
   useFocusEffect(
     useCallback(() => {
       setLocTick(t => t + 1);
-    }, []),
+      if (!auth?.token) return;
+      syncApi
+        .reputation(auth.token)
+        .then(setRep)
+        .catch(() => undefined);
+    }, [auth?.token]),
   );
 
   const origin = useMemo(() => prefs.getLastLocation(), [locTick]);
@@ -227,7 +222,6 @@ export function InsightsScreen() {
     TrustEngine.levelForPoints(rep?.points ?? 0);
 
   const data: Array<{type: string; key: string; payload?: any}> = [];
-  data.push({type: 'period', key: 'period'});
   const barMax = Math.max(1, ...cheaper.map(c => c.dropPct));
   data.push({
     type: 'board',
@@ -392,7 +386,6 @@ export function InsightsScreen() {
       <AppScreenHeader
         showLogo={false}
         title="Insights"
-        subtitle="Todas as notas cadastradas"
         actions={
           <View style={{flexDirection: 'row'}}>
             <Pressable
@@ -418,25 +411,43 @@ export function InsightsScreen() {
           <FiscalBadge level={fiscalLevel} points={rep?.points ?? 0} />
         }
       />
-      <View style={styles.heroHint}>
-        <Text style={styles.heroHintText}>
-          Todas as compras das notas fiscais, sem limite de distância.
-        </Text>
+      <View style={styles.toolbar}>
+        <View style={styles.periodRow}>
+          {PERIODS.map(p => {
+            const on = period === p.id;
+            return (
+              <Pressable
+                key={p.id}
+                style={[styles.periodChip, on && styles.periodChipOn]}
+                onPress={() => setPeriod(p.id)}>
+                <Text
+                  style={[
+                    styles.periodChipText,
+                    on && styles.periodChipTextOn,
+                  ]}>
+                  {p.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        <TextInput
+          style={styles.search}
+          placeholder="Buscar item, mercado ou lista…"
+          placeholderTextColor={colors.muted}
+          value={query}
+          onChangeText={setQuery}
+        />
       </View>
-      <TextInput
-        style={styles.search}
-        placeholder="Buscar item, mercado ou lista…"
-        placeholderTextColor={colors.muted}
-        value={query}
-        onChangeText={setQuery}
-      />
       <FlatList
         data={data}
         keyExtractor={i => i.key}
         contentContainerStyle={{
-          padding: 16,
-          paddingBottom: spacing.bottomNavClearance,
+          paddingHorizontal: 16,
+          paddingTop: 8,
+          paddingBottom: insets.bottom + 148,
         }}
+        ListFooterComponent={<View style={{height: 24}} />}
         renderItem={({item, index}) => {
           const node = (() => {
           if (item.type === 'board') {
@@ -448,29 +459,6 @@ export function InsightsScreen() {
                 ringValue={item.payload.ringValue}
                 bars={item.payload.bars}
               />
-            );
-          }
-          if (item.type === 'period') {
-            return (
-              <View style={styles.periodRow}>
-                {PERIODS.map(p => {
-                  const on = period === p.id;
-                  return (
-                    <Pressable
-                      key={p.id}
-                      style={[styles.periodChip, on && styles.periodChipOn]}
-                      onPress={() => setPeriod(p.id)}>
-                      <Text
-                        style={[
-                          styles.periodChipText,
-                          on && styles.periodChipTextOn,
-                        ]}>
-                        {p.label}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
             );
           }
           if (item.type === 'guide') {
@@ -524,7 +512,7 @@ export function InsightsScreen() {
             const isCat = item.type === 'cat-section';
             return (
               <View style={[styles.sectionRow, isCat && styles.catSectionRow]}>
-                <Text style={[styles.section, isCat && styles.catSection]}>
+                <Text style={[styles.section, isCat && styles.catSection]} numberOfLines={1}>
                   {item.payload.title}
                 </Text>
                 <View style={styles.sectionPill}>
@@ -546,15 +534,19 @@ export function InsightsScreen() {
                   <View style={styles.placeBadge}>
                     <Text style={styles.placeBadgeText}>{r.place}</Text>
                   </View>
-                  <View style={{flex: 1}}>
-                    <Text style={styles.name}>{r.marketName}</Text>
-                    <Text style={styles.muted}>
+                  <View style={{flex: 1, minWidth: 0}}>
+                    <Text style={styles.name} numberOfLines={2}>
+                      {r.marketName}
+                    </Text>
+                    <Text style={styles.muted} numberOfLines={1}>
                       {r.winCount} produto{r.winCount === 1 ? '' : 's'} mais
                       barato{r.winCount === 1 ? '' : 's'}
-                      {r.topCategories?.length
-                        ? ` · ${r.topCategories.join(', ')}`
-                        : ''}
                     </Text>
+                    {r.topCategories?.length ? (
+                      <Text style={styles.cats} numberOfLines={1}>
+                        {r.topCategories.join(' · ')}
+                      </Text>
+                    ) : null}
                   </View>
                 </View>
               </AppListCard>
@@ -731,24 +723,7 @@ export function InsightsScreen() {
 const styles = StyleSheet.create({
   root: {flex: 1, backgroundColor: colors.bg},
   iconBtn: {padding: 8},
-  heroHint: {
-    marginHorizontal: space.md,
-    marginTop: space.sm,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    backgroundColor: '#EEF2FF',
-    borderRadius: radii.md,
-  },
-  heroHintText: {
-    color: colors.navy,
-    fontWeight: '700',
-    fontSize: 12,
-    lineHeight: 16,
-    textAlign: 'center',
-  },
   search: {
-    margin: 16,
-    marginBottom: 0,
     backgroundColor: '#fff',
     borderRadius: 14,
     borderWidth: 1,
@@ -758,11 +733,15 @@ const styles = StyleSheet.create({
     color: colors.ink,
     fontWeight: '600',
   },
+  toolbar: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 4,
+    gap: 10,
+  },
   periodRow: {
     flexDirection: 'row',
     gap: 8,
-    marginBottom: 12,
-    justifyContent: 'center',
   },
   periodChip: {
     flex: 1,
@@ -816,6 +795,7 @@ const styles = StyleSheet.create({
   },
   sectionPillText: {fontSize: 11, fontWeight: '800', color: colors.navy},
   muted: {color: colors.muted, fontWeight: '600', fontSize: 12},
+  cats: {color: colors.navy, fontWeight: '700', fontSize: 12, marginTop: 2},
   emptyLine: {
     color: colors.muted,
     marginBottom: 10,

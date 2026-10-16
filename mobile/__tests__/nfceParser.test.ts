@@ -20,12 +20,24 @@ describe('nfceParser', () => {
       <nfeProc xmlns="http://www.portalfiscal.inf.br/nfe">
         <NFe><infNFe>
           <ide><dhEmi>2026-10-10T15:32:29-03:00</dhEmi></ide>
-          <emit><CNPJ>20308157085103</CNPJ><xNome>ATACAREJO IGARASSU</xNome></emit>
+          <emit>
+            <CNPJ>20308157085103</CNPJ>
+            <xNome>ATACAREJO IGARASSU</xNome>
+            <enderEmit>
+              <xLgr>AV NORTE</xLgr>
+              <nro>100</nro>
+              <xBairro>CENTRO</xBairro>
+              <xMun>IGARASSU</xMun>
+              <UF>PE</UF>
+              <CEP>53610000</CEP>
+            </enderEmit>
+          </emit>
           <det nItem="1"><prod><xProd>CEBOLA ROXA KG</xProd><qCom>0.1600</qCom><vUnCom>7.98</vUnCom></prod></det>
         </infNFe></NFe>
       </nfeProc>`;
     const result = parseNfceXml(xml);
     expect(result.marketName).toBe('ATACAREJO IGARASSU');
+    expect(result.marketAddress).toBe('AV NORTE, 100, CENTRO, IGARASSU - PE, 53610000');
     expect(result.items).toEqual([
       {description: 'CEBOLA ROXA KG', quantity: 0.16, unitPrice: 7.98},
     ]);

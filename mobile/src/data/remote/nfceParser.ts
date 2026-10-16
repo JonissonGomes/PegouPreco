@@ -9,6 +9,7 @@ export type NfceItem = {
 export type NfceParseResult = {
   marketName: string | null;
   marketCnpj: string | null;
+  marketAddress: string | null;
   issuedAt: string | null;
   items: NfceItem[];
 };
@@ -50,6 +51,25 @@ function xmlTag(block: string, name: string): string | null {
   return m ? decodeXml(m[1]) : null;
 }
 
+function emitAddress(emit: string): string | null {
+  const block =
+    emit.match(/<(?:\w+:)?enderEmit[\s>][\s\S]*?<\/(?:\w+:)?enderEmit>/)?.[0] ??
+    '';
+  if (!block) return null;
+  const street = xmlTag(block, 'xLgr');
+  const number = xmlTag(block, 'nro');
+  const district = xmlTag(block, 'xBairro');
+  const city = xmlTag(block, 'xMun');
+  const uf = xmlTag(block, 'UF');
+  const cep = xmlTag(block, 'CEP');
+  const line = [street, number && number !== 'S/N' ? number : null]
+    .filter(Boolean)
+    .join(', ');
+  const place = [city, uf].filter(Boolean).join(' - ');
+  const parts = [line, district, place, cep].filter(Boolean);
+  return parts.length >= 2 ? parts.join(', ') : null;
+}
+
 const SEFAZ_ERRORS: Record<string, string> = {
   '217': 'A SEFAZ não encontrou essa nota.',
   '236': 'O QR não confere. Enquadre o código inteiro, inclusive as bordas.',
@@ -77,6 +97,7 @@ export function parseNfceXml(xml: string): NfceParseResult {
   return {
     marketName: xmlTag(emit, 'xFant') ?? xmlTag(emit, 'xNome'),
     marketCnpj: xmlTag(emit, 'CNPJ'),
+    marketAddress: emitAddress(emit),
     issuedAt:
       issuedDate && !Number.isNaN(issuedDate.getTime())
         ? issuedDate.toISOString()
@@ -129,6 +150,7 @@ export function parseNfceHtml(html: string): NfceParseResult {
   return {
     marketName: nameMatch?.[1]?.trim() ?? null,
     marketCnpj: cnpjMatch?.[1] ?? null,
+    marketAddress: null,
     issuedAt: issuedAtFromHtml(html),
     items,
   };

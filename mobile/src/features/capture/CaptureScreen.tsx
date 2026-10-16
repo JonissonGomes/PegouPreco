@@ -31,7 +31,6 @@ import {recognizeLabelFromPhoto} from '@/data/ocr/labelOcr';
 import {refreshPermissionFlags} from '@/app/permissions';
 import {
   cartRepo,
-  marketRepo,
   prefs,
   priceLogRepo,
   productRepo,
@@ -47,9 +46,7 @@ import {
 } from '@/data/archivePurchase';
 import {NfceReviewSheet} from '@/features/cart/NfceReviewSheet';
 import {extractAccessKey, looksLikeReceipt, nfceConsultUrl} from '@/domain/nfceScan';
-import {geocodeMarketNear} from '@/data/remote/geocodeMarket';
-import {MAPBOX_ACCESS_TOKEN} from '@/config/env';
-import Geolocation from 'react-native-geolocation-service';
+import {ensureMarketOnMap} from '@/data/archivePurchase';
 
 type ExtraMode = 'none' | 'text' | 'nfce';
 
@@ -454,23 +451,6 @@ export function CaptureScreen() {
     setStatus('Item salvo — aponte para a próxima etiqueta');
   };
 
-  const resolveGps = (): Promise<{lat: number; lng: number} | null> =>
-    new Promise(resolve => {
-      const last = prefs.getLastLocation();
-      Geolocation.getCurrentPosition(
-        pos => {
-          const next = {
-            lat: pos.coords.latitude,
-            lng: pos.coords.longitude,
-          };
-          prefs.setLastLocation(next.lat, next.lng);
-          resolve(next);
-        },
-        () => resolve(last),
-        {enableHighAccuracy: false, timeout: 8000, maximumAge: 60000},
-      );
-    });
-
   const fetchNfce = async (explicit?: string): Promise<boolean> => {
     const target = (explicit ?? qrUrl).trim();
     if (!ensureList() || !target) return false;
@@ -479,44 +459,19 @@ export function CaptureScreen() {
       const parsed = await fetchAndParseNfce(target);
       let marketNotice: string | null = null;
       if (parsed.marketName) {
-        const origin = await resolveGps();
-        let m;
-        if (origin) {
-          const geo = await geocodeMarketNear(
-            parsed.marketName,
-            origin,
-            MAPBOX_ACCESS_TOKEN,
-          );
-          if (geo) {
-            m = marketRepo.resolveOrCreateNear(
-              parsed.marketName,
-              geo.lat,
-              geo.lng,
-              parsed.marketCnpj,
-            );
-            marketRepo.upsertGeo(m.id, {
-              lat: geo.lat,
-              lng: geo.lng,
-              address: geo.address ?? m.address,
-            });
-          } else {
-            m = marketRepo.resolveOrCreate(
-              parsed.marketName,
-              parsed.marketCnpj,
-            );
-          }
-        } else {
-          m = marketRepo.resolveOrCreate(
-            parsed.marketName,
-            parsed.marketCnpj,
-          );
-        }
-        const prevActive = prefs.getActiveMarketId();
-        prefs.setCurrentMarketId(m.id);
-        if (prefs.getActiveListName()) {
-          prefs.setActiveMarketId(m.id);
-          if (prevActive != null && prevActive !== m.id) {
-            marketNotice = `Mercado da lista atualizado para ${m.name}`;
+        const placed = await ensureMarketOnMap(
+          parsed.marketName,
+          parsed.marketCnpj,
+          parsed.marketAddress,
+        );
+        if (placed.marketId != null) {
+          const prevActive = prefs.getActiveMarketId();
+          prefs.setCurrentMarketId(placed.marketId);
+          if (prefs.getActiveListName()) {
+            prefs.setActiveMarketId(placed.marketId);
+            if (prevActive != null && prevActive !== placed.marketId) {
+              marketNotice = `Mercado da lista atualizado para ${placed.marketName}`;
+            }
           }
         }
       }

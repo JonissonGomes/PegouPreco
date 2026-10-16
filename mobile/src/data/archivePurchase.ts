@@ -1,6 +1,6 @@
 import type {NfceParseResult} from './remote/nfceParser';
 import {fetchAndParseNfce} from './remote/sefazClient';
-import {geocodeMarketNear} from './remote/geocodeMarket';
+import {geocodeAddress, geocodeMarketNear} from './remote/geocodeMarket';
 import {haversineKm} from './remote/nearbyMarkets';
 import {extractAccessKey} from '@/domain/nfceScan';
 import {guessCategory} from '@/domain/productCategory';
@@ -46,15 +46,46 @@ export async function previewPastNfce(
   return {qrUrl, parsed, subtotal};
 }
 
-async function ensureMarketOnMap(
+export async function ensureMarketOnMap(
   name: string,
   cnpj: string | null,
+  address: string | null,
 ): Promise<{
   marketId: number | null;
   marketName: string;
   placedOnMap: boolean;
   mapKnown: boolean;
 }> {
+  const noteAddress = address?.trim() || null;
+  if (noteAddress) {
+    const geo = await geocodeAddress(noteAddress, MAPBOX_ACCESS_TOKEN);
+    if (geo) {
+      const market = marketRepo.resolveOrCreateNear(
+        name,
+        geo.lat,
+        geo.lng,
+        cnpj,
+      );
+      marketRepo.upsertGeo(market.id, {
+        lat: geo.lat,
+        lng: geo.lng,
+        address: noteAddress,
+      });
+      return {
+        marketId: market.id,
+        marketName: market.name,
+        placedOnMap: true,
+        mapKnown: true,
+      };
+    }
+    const market = marketRepo.resolveOrCreate(name, cnpj);
+    return {
+      marketId: market.id,
+      marketName: market.name,
+      placedOnMap: false,
+      mapKnown: false,
+    };
+  }
   const origin = prefs.getLastLocation();
   const existing = marketRepo
     .all()
@@ -121,7 +152,11 @@ export async function archiveNfcePurchase(
   }
 
   const placed = parsed.marketName
-    ? await ensureMarketOnMap(parsed.marketName, parsed.marketCnpj)
+    ? await ensureMarketOnMap(
+        parsed.marketName,
+        parsed.marketCnpj,
+        parsed.marketAddress,
+      )
     : {
         marketId: null,
         marketName: 'Nota fiscal',

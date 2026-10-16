@@ -8,12 +8,13 @@ import {
   View,
 } from 'react-native';
 import {useNavigation} from '@react-navigation/native';
-import {History, Receipt, ScanLine, SlidersHorizontal, Store} from 'lucide-react-native';
+import {History, QrCode, Receipt, ScanLine, SlidersHorizontal, Store, ClipboardList} from 'lucide-react-native';
 import {FeatureEmptyGuide} from '@/ui/FeatureEmptyGuide';
 import {SoftCard, SoftHeader} from '@/ui/screenChrome';
 import {colors, radii, space, spacing} from '@/ui/theme';
 import {formatBrl} from '@/domain/money';
 import {dateSearchText} from '@/domain/dateSearch';
+import {isFiscalList} from '@/domain/fiscal';
 import {PRODUCT_CATEGORIES, resolveCategory} from '@/domain/productCategory';
 import {useAppStore} from '@/store/appStore';
 import type {CartItem, ShoppingList} from '@/data/types';
@@ -107,6 +108,15 @@ export function HistoryScreen() {
       <SoftHeader
         title="Histórico"
         subtitle={`${lists.length} compras`}
+        trailing={
+          <Pressable
+            style={styles.noteBtn}
+            onPress={() => nav.navigate('ImportPurchase')}
+            accessibilityLabel="Cadastrar nota fiscal">
+            <QrCode size={16} color={colors.navy} />
+            <Text style={styles.noteBtnText}>Nota</Text>
+          </Pressable>
+        }
       />
       {lists.length > 0 ? (
         <View style={styles.filters}>
@@ -202,11 +212,19 @@ function PurchaseCard({
 }) {
   const shown = row.categories.slice(0, 1);
   const extra = row.categories.length - shown.length;
+  const fiscal = isFiscalList(row.list);
   return (
     <SoftCard onPress={onPress} style={styles.card}>
       <View style={styles.top}>
-        <View style={styles.icon}>
-          <Receipt size={16} color={colors.navy} />
+        <View style={[styles.icon, fiscal ? styles.iconNote : styles.iconList]}>
+          {fiscal ? (
+            <Receipt size={16} color={colors.navy} />
+          ) : (
+            <ClipboardList size={16} color={colors.navy} />
+          )}
+          <View style={[styles.mark, fiscal ? styles.markNote : styles.markList]}>
+            <Text style={styles.markText}>{fiscal ? 'NF' : 'L'}</Text>
+          </View>
         </View>
         <View style={styles.body}>
           <Text style={styles.name} numberOfLines={1}>
@@ -230,6 +248,16 @@ function PurchaseCard({
 
 const styles = StyleSheet.create({
   root: {flex: 1, backgroundColor: colors.bg},
+  noteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.yellow,
+    borderRadius: radii.pill,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  noteBtnText: {fontWeight: '900', color: colors.navy, fontSize: 13},
   filters: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -281,13 +309,30 @@ const styles = StyleSheet.create({
   card: {paddingVertical: 10, paddingHorizontal: 12},
   top: {flexDirection: 'row', alignItems: 'center', gap: 10},
   icon: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    backgroundColor: '#FFF6D8',
+    width: 36,
+    height: 36,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  iconNote: {backgroundColor: '#FFF6D8'},
+  iconList: {backgroundColor: '#E4ECFA'},
+  mark: {
+    position: 'absolute',
+    right: -4,
+    bottom: -4,
+    minWidth: 16,
+    height: 14,
+    borderRadius: 7,
+    paddingHorizontal: 3,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.white,
+  },
+  markNote: {backgroundColor: colors.navy},
+  markList: {backgroundColor: colors.cyan},
+  markText: {fontSize: 8, fontWeight: '900', color: colors.white},
   body: {flex: 1, minWidth: 0, gap: 2},
   name: {fontWeight: '900', color: colors.navy, fontSize: 14},
   metaRow: {flexDirection: 'row', alignItems: 'center', gap: 6},

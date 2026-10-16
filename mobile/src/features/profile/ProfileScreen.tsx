@@ -83,6 +83,14 @@ function ActionRow({
   );
 }
 
+function spentOf(rows: {subtotal: number; finishedAt: string}[], sinceMs = 0) {
+  return rows.reduce((sum, list) => {
+    const at = new Date(list.finishedAt).getTime();
+    if (!Number.isFinite(at) || at < sinceMs) return sum;
+    return sum + (Number(list.subtotal) || 0);
+  }, 0);
+}
+
 export function ProfileScreen() {
   const nav = useNavigation<any>();
   const auth = useAppStore(s => s.auth);
@@ -105,6 +113,25 @@ export function ProfileScreen() {
     [lists, products],
   );
   const receiptLists = useMemo(() => lists.filter(isFiscalList), [lists]);
+  const spent3m = useMemo(
+    () => spentOf(receiptLists, Date.now() - 90 * 86400000),
+    [receiptLists],
+  );
+  const notes3m = useMemo(() => {
+    const since = Date.now() - 90 * 86400000;
+    return receiptLists.filter(list => new Date(list.finishedAt).getTime() >= since)
+      .length;
+  }, [receiptLists]);
+  const spentRecent = useMemo(() => {
+    const recent = [...receiptLists]
+      .sort(
+        (a, b) =>
+          new Date(b.finishedAt).getTime() - new Date(a.finishedAt).getTime(),
+      )
+      .slice(0, 5);
+    return spentOf(recent);
+  }, [receiptLists]);
+  const spentAll = useMemo(() => spentOf(receiptLists), [receiptLists]);
   const savings3m = useMemo(() => {
     const purchases = pointsFromLists(receiptLists, products);
     const refs = [...purchases, ...pointsFromLogs(priceLogs, products)];
@@ -113,25 +140,6 @@ export function ProfileScreen() {
       refs,
       Date.now() - 90 * 86400000,
     ).saved;
-  }, [receiptLists, products, priceLogs]);
-  const savingsRecent = useMemo(() => {
-    const recent = [...receiptLists]
-      .sort(
-        (a, b) =>
-          new Date(b.finishedAt).getTime() - new Date(a.finishedAt).getTime(),
-      )
-      .slice(0, 5);
-    const purchases = pointsFromLists(recent, products);
-    const refs = [
-      ...pointsFromLists(receiptLists, products),
-      ...pointsFromLogs(priceLogs, products),
-    ];
-    return economyAgainstAverage(purchases, refs, 0).saved;
-  }, [receiptLists, products, priceLogs]);
-  const savingsAll = useMemo(() => {
-    const purchases = pointsFromLists(receiptLists, products);
-    const refs = [...purchases, ...pointsFromLogs(priceLogs, products)];
-    return economyAgainstAverage(purchases, refs, 0).saved;
   }, [receiptLists, products, priceLogs]);
 
   const headerLocation = useMemo(() => {
@@ -209,18 +217,19 @@ export function ProfileScreen() {
         geoOnceRef.current = true;
         void detectRegion({silent: true});
       }
-    }, [detectRegion]),
+      if (!auth?.token) {
+        setRep(null);
+        return;
+      }
+      syncApi
+        .reputation(auth.token)
+        .then(setRep)
+        .catch(() => undefined);
+    }, [detectRegion, auth?.token]),
   );
 
   useEffect(() => {
-    if (!auth?.token) {
-      setRep(null);
-      return;
-    }
-    syncApi
-      .reputation(auth.token)
-      .then(setRep)
-      .catch(() => setRep(null));
+    if (!auth?.token) return;
     syncApi
       .me(auth.token)
       .then(me => {
@@ -356,23 +365,34 @@ export function ProfileScreen() {
               onPress={() => nav.navigate('Insights')}>
               <View style={styles.cardHead}>
                 <TrendingDown size={18} color={colors.trustGreen} />
-                <Text style={styles.cardTitle}>Sua economia</Text>
+                <Text style={styles.cardTitle}>Suas compras</Text>
               </View>
-              <Text style={styles.savingsHero}>{formatBrl(savings3m)}</Text>
-              <Text style={styles.savingsHeroLabel}>nos últimos 3 meses</Text>
+              <Text style={styles.savingsHero}>{formatBrl(spent3m)}</Text>
+              <Text style={styles.savingsHeroLabel}>
+                {notes3m === 0
+                  ? 'nenhuma nota nos últimos 3 meses'
+                  : `${notes3m} nota${notes3m === 1 ? '' : 's'} nos últimos 3 meses`}
+              </Text>
+              {savings3m > 0 ? (
+                <Text style={styles.economyLine}>
+                  Economia {formatBrl(savings3m)} abaixo da média
+                </Text>
+              ) : null}
               <View style={styles.savingsRow}>
                 <View style={styles.savingsCell}>
                   <Text style={styles.savingsCellValue}>
-                    {formatBrl(savingsRecent)}
+                    {formatBrl(spentRecent)}
                   </Text>
-                  <Text style={styles.savingsCellLabel}>últimas 5 compras</Text>
+                  <Text style={styles.savingsCellLabel}>últimas 5 notas</Text>
                 </View>
                 <View style={styles.savingsDivider} />
                 <View style={styles.savingsCell}>
                   <Text style={styles.savingsCellValue}>
-                    {formatBrl(savingsAll)}
+                    {formatBrl(spentAll)}
                   </Text>
-                  <Text style={styles.savingsCellLabel}>no total</Text>
+                  <Text style={styles.savingsCellLabel}>
+                    {receiptLists.length} no total
+                  </Text>
                 </View>
               </View>
               <View style={styles.insightsCta}>
@@ -613,8 +633,14 @@ const styles = StyleSheet.create({
   savingsHero: {
     fontSize: 28,
     fontWeight: '900',
-    color: colors.trustGreen,
+    color: colors.navy,
     marginTop: 4,
+  },
+  economyLine: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: colors.trustGreen,
+    marginBottom: 4,
   },
   savingsHeroLabel: {
     fontSize: 13,

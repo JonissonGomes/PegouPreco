@@ -73,3 +73,41 @@ export async function geocodeMarketNear(
     return null;
   }
 }
+
+/** Geocodifica o endereço do emitente impresso na NFC-e. */
+export async function geocodeAddress(
+  address: string,
+  mapboxToken?: string,
+): Promise<GeocodeMarketHit | null> {
+  const q = address.trim();
+  const token = mapboxToken?.trim();
+  if (q.length < 8 || !token) return null;
+  try {
+    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(q)}.json`;
+    const {data} = await axios.get(url, {
+      params: {
+        country: 'BR',
+        types: 'address',
+        limit: 1,
+        language: 'pt',
+        access_token: token,
+      },
+      timeout: 10000,
+    });
+    const feature = (data.features as Array<{
+      text?: string;
+      place_name?: string;
+      center?: [number, number];
+    }>)?.[0];
+    const center = feature?.center;
+    if (!center) return null;
+    return {
+      name: (feature.text || q).trim(),
+      lat: center[1],
+      lng: center[0],
+      address: q,
+    };
+  } catch {
+    return null;
+  }
+}
