@@ -24,6 +24,7 @@ import {Reveal} from '@/ui/reveal';
 import {InsightsBoard} from '@/features/insights/InsightsBoard';
 import {colors, radii, space, spacing} from '@/ui/theme';
 import {formatBrl} from '@/domain/money';
+import {lineTotal} from '@/domain/pricing';
 import {dateSearchText} from '@/domain/dateSearch';
 import {guessCategory} from '@/domain/productCategory';
 import {
@@ -49,7 +50,7 @@ import {
 } from '@/store/appStore';
 import {syncApi, type ReputationRemote} from '@/data/remote/syncApi';
 import {isFiscalList, isFiscalLog} from '@/domain/fiscal';
-import type {FiscalLevel, PriceLog, Product} from '@/data/types';
+import type {FiscalLevel, PriceLog, Product, ShoppingList, CartItem} from '@/data/types';
 
 const PERIODS: Array<{id: InsightPeriod; label: string}> = [
   {id: 'week', label: 'Semana'},
@@ -68,6 +69,15 @@ function miniDate(iso: string) {
   });
   if (day.getTime() === today.getTime()) return `hoje · ${time}`;
   return `${local.toLocaleDateString('pt-BR', {day: '2-digit', month: '2-digit'})} · ${time}`;
+}
+
+function purchaseLines(list: ShoppingList): CartItem[] {
+  try {
+    const raw = JSON.parse(list.itemsJson) as CartItem[];
+    return Array.isArray(raw) ? raw : [];
+  } catch {
+    return [];
+  }
 }
 
 function periodCaption(period: InsightPeriod): string {
@@ -640,18 +650,29 @@ export function InsightsScreen() {
             );
           }
           const l = item.payload;
+          const lines = purchaseLines(l);
           return (
             <AppListCard onPress={() => nav.navigate('ShoppingLists')}>
-              <View style={styles.row}>
-                <View style={{flex: 1}}>
-                  <Text style={styles.name}>{l.name}</Text>
-                  <Text style={styles.muted}>
-                    {l.marketName} ·{' '}
-                    {new Date(l.finishedAt).toLocaleDateString('pt-BR')} ·{' '}
-                    {l.itemCount} itens
-                  </Text>
+              <View style={styles.purchase}>
+                <View style={styles.row}>
+                  <View style={{flex: 1}}>
+                    <Text style={styles.name} numberOfLines={1}>
+                      {l.marketName || l.name}
+                    </Text>
+                    <Text style={styles.muted}>
+                      {new Date(l.finishedAt).toLocaleDateString('pt-BR')}
+                    </Text>
+                  </View>
+                  <Text style={styles.price}>{formatBrl(l.subtotal)}</Text>
                 </View>
-                <Text style={styles.price}>{formatBrl(l.subtotal)}</Text>
+                {lines.map((it, index) => (
+                  <View key={`${it.productId}-${index}`} style={styles.itemLine}>
+                    <Text style={styles.itemName} numberOfLines={1}>
+                      {it.productName}
+                    </Text>
+                    <Text style={styles.itemPrice}>{formatBrl(lineTotal(it))}</Text>
+                  </View>
+                ))}
               </View>
             </AppListCard>
           );
@@ -802,6 +823,15 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   row: {flexDirection: 'row', alignItems: 'center', gap: 8},
+  purchase: {gap: 8},
+  itemLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingLeft: 2,
+  },
+  itemName: {flex: 1, color: colors.ink, fontWeight: '700', fontSize: 13},
+  itemPrice: {color: colors.navy, fontWeight: '800', fontSize: 13},
   placeBadge: {
     width: 28,
     height: 28,

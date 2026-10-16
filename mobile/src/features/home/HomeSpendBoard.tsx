@@ -4,7 +4,7 @@ import Svg, {Circle, Defs, LinearGradient, Polyline, Stop} from 'react-native-sv
 import {formatBrl} from '@/domain/money';
 import type {HomeDash, HomePeriodDays} from '@/domain/homeDashboard';
 import {Reveal, useDraw} from '@/ui/reveal';
-import {primary, primaryAt} from '@/ui/primaryColors';
+import {pastel, pastelAt} from '@/ui/primaryColors';
 import {colors, space} from '@/ui/theme';
 
 const PERIOD_LABEL: Record<HomePeriodDays, string> = {
@@ -63,26 +63,26 @@ export function HomeSpendBoard({
             />
           </View>
           <View style={styles.tiles}>
-            <View style={[styles.tile, {backgroundColor: '#FFE4E6'}]}>
-              <Text style={[styles.tileValue, {color: primary.red}]}>{formatBrl(dash.spent)}</Text>
+            <View style={[styles.tile, {backgroundColor: pastel.rose}]}>
+              <Text style={[styles.tileValue, {color: pastel.roseInk}]}>{formatBrl(dash.spent)}</Text>
               <Text style={styles.tileLabel}>Gasto</Text>
             </View>
-            <View style={[styles.tile, {backgroundColor: '#FFF6D8'}]}>
-              <Text style={[styles.tileValue, {color: '#92400E'}]}>{formatBrl(dash.savings)}</Text>
+            <View style={[styles.tile, {backgroundColor: pastel.butter}]}>
+              <Text style={[styles.tileValue, {color: pastel.butterInk}]}>{formatBrl(dash.savings)}</Text>
               <Text style={styles.tileLabel}>Economia</Text>
             </View>
-            <View style={[styles.tile, {backgroundColor: '#DBEAFE'}]}>
-              <Text style={[styles.tileValue, {color: primary.blue}]}>{dash.categories.length}</Text>
+            <View style={[styles.tile, {backgroundColor: pastel.sky}]}>
+              <Text style={[styles.tileValue, {color: pastel.skyInk}]}>{dash.categories.length}</Text>
               <Text style={styles.tileLabel}>Categorias</Text>
             </View>
           </View>
-          <View style={[styles.track, {backgroundColor: primary.yellow}]}>
+          <View style={[styles.track, {backgroundColor: pastel.butter}]}>
             <View
               style={[
                 styles.trackSpend,
                 {
                   flex: dash.spent + dash.savings > 0 ? dash.spent * draw : 1,
-                  backgroundColor: primary.red,
+                  backgroundColor: pastel.rose,
                 },
               ]}
             />
@@ -109,7 +109,7 @@ export function HomeSpendBoard({
                   play={play}
                   slices={slices.map((item, index) => ({
                     total: item.total,
-                    color: primaryAt(index),
+                    color: pastelAt(index),
                   }))}
                   center={`${leadPct}%`}
                 />
@@ -123,7 +123,7 @@ export function HomeSpendBoard({
                     <View
                       style={[
                         styles.dot,
-                        {backgroundColor: primaryAt(index)},
+                        {backgroundColor: pastelAt(index)},
                       ]}
                     />
                     <Text style={styles.legendName} numberOfLines={1}>
@@ -165,7 +165,7 @@ function MiniRing({ratio, play}: {ratio: number; play: number}) {
           cx={size / 2}
           cy={size / 2}
           r={radius}
-          stroke="#DBEAFE"
+          stroke={pastel.sky}
           strokeWidth={stroke}
           fill="none"
         />
@@ -173,7 +173,7 @@ function MiniRing({ratio, play}: {ratio: number; play: number}) {
           cx={size / 2}
           cy={size / 2}
           r={radius}
-          stroke={primary.red}
+          stroke={pastel.rose}
           strokeWidth={stroke}
           fill="none"
           strokeDasharray={`${part} ${length - part}`}
@@ -184,7 +184,7 @@ function MiniRing({ratio, play}: {ratio: number; play: number}) {
         />
       </Svg>
       <View style={styles.donutCenter}>
-        <Text style={[styles.ringPct, {color: primary.red}]}>{pct}%</Text>
+        <Text style={[styles.ringPct, {color: pastel.roseInk}]}>{pct}%</Text>
       </View>
     </View>
   );
@@ -282,9 +282,9 @@ function Trend({
       <Svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`}>
         <Defs>
           <LinearGradient id="spendLine" x1="0" y1="0" x2="1" y2="0">
-            <Stop offset="0" stopColor={primary.red} />
-            <Stop offset="0.5" stopColor={primary.yellow} />
-            <Stop offset="1" stopColor={primary.blue} />
+            <Stop offset="0" stopColor={pastel.rose} />
+            <Stop offset="0.5" stopColor={pastel.butter} />
+            <Stop offset="1" stopColor={pastel.sky} />
           </LinearGradient>
         </Defs>
         <Polyline
@@ -351,8 +351,8 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     flexDirection: 'row',
   },
-  trackSpend: {backgroundColor: primary.red},
-  trackSave: {backgroundColor: primary.blue},
+  trackSpend: {backgroundColor: pastel.rose},
+  trackSave: {backgroundColor: pastel.sky},
   ringPct: {fontSize: 14, fontWeight: '900', color: colors.navy},
   cardTitle: {fontSize: 16, fontWeight: '900', color: colors.navy},
   empty: {color: colors.muted, fontWeight: '600'},

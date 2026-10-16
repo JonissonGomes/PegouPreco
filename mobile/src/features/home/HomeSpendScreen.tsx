@@ -7,7 +7,6 @@ import {formatBrl, formatQty} from '@/domain/money';
 import {guessCategory} from '@/domain/productCategory';
 import {lineTotal} from '@/domain/pricing';
 import {buildHomeDash, type HomePeriodDays} from '@/domain/homeDashboard';
-import {HomeSpendBoard} from '@/features/home/HomeSpendBoard';
 import {CategoryIcon} from '@/features/history/categoryIcon';
 import {priceLogRepo, useAppStore} from '@/store/appStore';
 import {colors, space} from '@/ui/theme';
@@ -77,7 +76,6 @@ export function HomeSpendScreen() {
         <Text style={styles.title}>Gastos</Text>
       </View>
       <ScrollView contentContainerStyle={{paddingBottom: insets.bottom + 24}}>
-        <HomeSpendBoard dash={dash} period={period} />
         <Text style={styles.section}>
           {categories.length ? categories.join(' · ') : 'Todas as notas'}
         </Text>

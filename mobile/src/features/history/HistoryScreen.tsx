@@ -12,6 +12,7 @@ import {History, Receipt, ScanLine, SlidersHorizontal, Store} from 'lucide-react
 import {FeatureEmptyGuide} from '@/ui/FeatureEmptyGuide';
 import {SoftCard, SoftHeader} from '@/ui/screenChrome';
 import {colors, radii, space, spacing} from '@/ui/theme';
+import {formatBrl} from '@/domain/money';
 import {dateSearchText} from '@/domain/dateSearch';
 import {guessCategory} from '@/domain/productCategory';
 import {useAppStore} from '@/store/appStore';
