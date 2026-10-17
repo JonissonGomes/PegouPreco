@@ -1,3 +1,42 @@
+export const PRODUCT_CATEGORIES = [
+  'Bebidas',
+  'Mercearia',
+  'Laticínios',
+  'Açougue',
+  'Peixaria',
+  'Frios',
+  'Frutas',
+  'Verduras',
+  'Padaria',
+  'Congelados',
+  'Biscoitos e doces',
+  'Café e matinais',
+  'Molhos e temperos',
+  'Enlatados',
+  'Limpeza',
+  'Higiene',
+  'Bebê',
+  'Pet',
+  'Descartáveis',
+  'Outros',
+] as const;
+
+function foldCategory(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .toLowerCase()
+    .trim();
+}
+
+/** Aceita só uma categoria da lista. “Outros” e texto fora da lista viram null. */
+export function canonicalCategory(raw: string): string | null {
+  const folded = foldCategory(raw);
+  const hit = PRODUCT_CATEGORIES.find(name => foldCategory(name) === folded);
+  if (!hit || hit === 'Outros') return null;
+  return hit;
+}
+
 export type JevResult = {
   action: string;
   plausible: number;
@@ -118,6 +157,35 @@ export class JevClient {
     );
     if (decided.fallback) return args.localSame;
     return decided.action === 'merge';
+  }
+
+  /**
+   * Categoria de prateleira quando a regra local devolveu “Outros”.
+   * Sem chave, ou se a chamada falhar, devolve null e a categoria local fica.
+   */
+  async classifyCategory(productName: string): Promise<string | null> {
+    const name = productName.trim();
+    if (!this.enabled || name.length < 2) return null;
+    const criteria: Record<string, string> = {};
+    for (const category of PRODUCT_CATEGORIES) {
+      criteria[category] =
+        category === 'Outros'
+          ? 'None of the other shelf categories fit'
+          : `Belongs on the Brazilian supermarket shelf “${category}”`;
+    }
+    const decided = await this.decide(
+      {productName: name, currency: 'BRL'},
+      {
+        action: {
+          type: 'choice',
+          instructions:
+            'Classify this Brazilian supermarket item into one shelf category. Read abbreviations on the label, such as CERV, BEB, ENERG and H2O. Pick Outros only when nothing else fits.',
+          criteria,
+        },
+      },
+    );
+    if (decided.fallback) return null;
+    return canonicalCategory(decided.action);
   }
 
   async classifyPrice(args: {

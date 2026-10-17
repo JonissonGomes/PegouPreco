@@ -27,6 +27,23 @@ let syncInFlight: Promise<{ok: boolean; message: string}> | null = null;
 let lastAutoAttempt = 0;
 let autoStarted = false;
 const AUTO_MIN_MS = 90_000;
+const categoryAsked = new Set<number>();
+
+function categoryIsWeak(category: string | null | undefined) {
+  const local = (category ?? '').trim();
+  return !local || local === 'Outros' || local === 'Hortifruti';
+}
+
+/** Produto já sincronizado e ainda em Outros: tenta o JEV uma vez por abertura do app. */
+function categoryRetryDue(product: {
+  id: number;
+  category: string | null;
+}): boolean {
+  if (!categoryIsWeak(product.category) || categoryAsked.has(product.id)) {
+    return false;
+  }
+  return true;
+}
 
 export async function runFullSync(): Promise<{ok: boolean; message: string}> {
   if (syncInFlight) return syncInFlight;
@@ -109,7 +126,7 @@ async function doFullSync(): Promise<{ok: boolean; message: string}> {
 
     const st = getState();
     const products = st.products
-      .filter(p => !p.synced)
+      .filter(p => !p.synced || categoryRetryDue(p))
       .map(p => ({
         localId: p.id,
         remoteId: p.remoteId,
@@ -144,6 +161,8 @@ async function doFullSync(): Promise<{ok: boolean; message: string}> {
         localId: l.id,
         remoteId: l.remoteId,
         productLocalId: l.productId,
+        productRemoteId:
+          st.products.find(p => p.id === l.productId)?.remoteId ?? null,
         marketLocalId: l.marketId,
         marketRemoteId:
           st.markets.find(m => m.id === l.marketId)?.remoteId ?? null,
@@ -187,6 +206,10 @@ async function doFullSync(): Promise<{ok: boolean; message: string}> {
     })) as Record<string, Record<string, string>>;
 
     applyIdMaps(pushed);
+    for (const sent of products) {
+      const saved = getState().products.find(p => p.id === sent.localId);
+      if (saved && categoryIsWeak(saved.category)) categoryAsked.add(saved.id);
+    }
 
     const loc = prefs.getLocationPrefs();
     await syncApi.putPrefs(session.token, {
@@ -272,6 +295,18 @@ function applyPull(pull: Record<string, unknown>) {
       p = productRepo.resolveOrCreate(name, (r.category as string) ?? null);
     }
     p.remoteId = String(r.id ?? p.remoteId);
+    const remoteCategory = String(r.category ?? '').trim();
+    const localCategory = (p.category ?? '').trim();
+    const localWeak =
+      !localCategory || localCategory === 'Outros' || localCategory === 'Hortifruti';
+    if (
+      localWeak &&
+      remoteCategory &&
+      remoteCategory !== 'Outros' &&
+      remoteCategory !== 'Hortifruti'
+    ) {
+      p.category = remoteCategory;
+    }
     p.synced = 1;
     p.updatedAt = String(r.updatedAt ?? p.updatedAt);
   }
@@ -417,10 +452,23 @@ function applyIdMaps(maps: Record<string, Record<string, string>>) {
   const logMap = maps.priceLogIdMap ?? {};
   const listMap = maps.shoppingListIdMap ?? {};
 
+  const categoryFixes = maps.categoryFixes ?? {};
   for (const [localId, remoteId] of Object.entries(productMap)) {
     const p = st.products.find(x => String(x.id) === String(localId));
     if (p) {
       p.remoteId = remoteId;
+      p.synced = 1;
+    }
+  }
+  for (const [localId, category] of Object.entries(categoryFixes)) {
+    const p = st.products.find(x => String(x.id) === String(localId));
+    const local = (p?.category ?? '').trim();
+    if (
+      p &&
+      category &&
+      (!local || local === 'Outros' || local === 'Hortifruti')
+    ) {
+      p.category = category;
       p.synced = 1;
     }
   }

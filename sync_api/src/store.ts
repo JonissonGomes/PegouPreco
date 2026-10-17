@@ -859,6 +859,7 @@ export class DataStore {
     const marketIdMap: Record<string, string> = {};
     const priceLogIdMap: Record<string, string> = {};
     const shoppingListIdMap: Record<string, string> = {};
+    const categoryFixes: Record<string, string> = {};
     await this._forgetPushed(userId, body);
 
     for (const raw of (body.markets as unknown[] | undefined) ?? []) {
@@ -905,6 +906,16 @@ export class DataStore {
 
     for (const raw of (body.products as unknown[] | undefined) ?? []) {
       const p = {...(raw as Record<string, unknown>)};
+      if (this._weakCategory(p.category)) {
+        const known = await this._findProduct(
+          p.remoteId != null ? String(p.remoteId) : '',
+          String(p.name ?? ''),
+        );
+        if (known && !this._weakCategory(known.category)) {
+          p.category = known.category;
+          categoryFixes[String(p.localId)] = String(known.category);
+        }
+      }
       const remoteId = await this._upsertLww({
         collection: 'products',
         mem: this._memProducts,
@@ -919,13 +930,20 @@ export class DataStore {
         matchKeys: ['name'],
       });
       productIdMap[String(p.localId)] = remoteId;
+      const picked = await this._ensureProductCategory(remoteId);
+      if (picked) categoryFixes[String(p.localId)] = picked;
     }
 
     for (const raw of (body.priceLogs as unknown[] | undefined) ?? []) {
       const l = {...(raw as Record<string, unknown>)};
       const productRemote =
         productIdMap[String(l.productLocalId)] ??
+        (l.productRemoteId != null ? String(l.productRemoteId) : null) ??
         (await this._resolveProductRemote(l.productLocalId));
+      if (productRemote) {
+        const picked = await this._ensureProductCategory(productRemote);
+        if (picked) categoryFixes[String(l.productLocalId)] = picked;
+      }
       const marketRemote =
         (l.marketRemoteId != null ? String(l.marketRemoteId) : null) ??
         (l.marketLocalId == null
@@ -1027,7 +1045,66 @@ export class DataStore {
       marketIdMap,
       priceLogIdMap,
       shoppingListIdMap,
+      categoryFixes,
     };
+  }
+
+  private _weakCategory(value: unknown): boolean {
+    const name = String(value ?? '').trim();
+    return !name || name === 'Outros' || name === 'Hortifruti';
+  }
+
+  private async _findProduct(
+    id: string,
+    name: string,
+  ): Promise<Record<string, unknown> | null> {
+    if (this.mode === 'memory') {
+      if (id && this._memProducts[id]) return this._memProducts[id];
+      const wanted = name.trim().toLowerCase();
+      if (!wanted) return null;
+      for (const doc of Object.values(this._memProducts)) {
+        if (String(doc.name ?? '').trim().toLowerCase() === wanted) return doc;
+      }
+      return null;
+    }
+    if (id) {
+      const byId = (await this.col('products').findOne({id})) as Record<
+        string,
+        unknown
+      > | null;
+      if (byId) return byId;
+    }
+    const trimmed = name.trim();
+    if (!trimmed) return null;
+    return (await this.col('products').findOne({name: trimmed})) as Record<
+      string,
+      unknown
+    > | null;
+  }
+
+  private async _saveProduct(product: Record<string, unknown>): Promise<void> {
+    const id = String(product.id ?? '');
+    if (!id) return;
+    if (this.mode === 'memory') {
+      this._memProducts[id] = product;
+      return;
+    }
+    await this.col('products').replaceOne({id}, product);
+  }
+
+  /** Classifica “Outros” uma vez e grava a categoria para o próximo pull. */
+  private async _ensureProductCategory(productId: string): Promise<string | null> {
+    const jev = this._jev;
+    if (!jev?.enabled || !productId) return null;
+    const product = await this._findProduct(productId, '');
+    if (!product || !this._weakCategory(product.category)) return null;
+    const name = String(product.name ?? '').trim();
+    const picked = await jev.classifyCategory(name);
+    if (!picked) return null;
+    product.category = picked;
+    product.updatedAt = new Date().toISOString();
+    await this._saveProduct(product);
+    return picked;
   }
 
   private async _resolveProductRemote(_localId: unknown): Promise<string | null> {
