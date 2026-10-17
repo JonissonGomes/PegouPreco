@@ -1,8 +1,8 @@
 import React from 'react';
 import {Pressable, StyleSheet, Text, View} from 'react-native';
 import {
-  ClipboardList,
   History,
+  Lightbulb,
   MapPin,
   QrCode,
   ShoppingCart,
@@ -40,7 +40,7 @@ export const homeShortcutIcons = {
   map: MapPin,
   lists: ShoppingCart,
   note: QrCode,
-  insights: ClipboardList,
+  insights: Lightbulb,
   history: History,
   community: UsersRound,
 };

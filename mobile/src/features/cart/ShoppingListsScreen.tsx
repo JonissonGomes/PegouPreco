@@ -204,7 +204,7 @@ export function ShoppingListsScreen() {
             onDelete={() => {
               appAlert(
                 'Excluir compra?',
-                'Ela sai do histórico, dos gastos, dos insights e da comunidade neste aparelho.',
+                'Ela sai do histórico, dos gastos, das dicas e da comunidade neste aparelho.',
                 [
                   {label: 'Cancelar', style: 'cancel'},
                   {
@@ -344,7 +344,7 @@ export function ShoppingListsScreen() {
                   onPress={() => {
                     appAlert(
                       'Excluir compra?',
-                      'Ela sai do histórico, dos gastos, dos insights e da comunidade neste aparelho.',
+                      'Ela sai do histórico, dos gastos, das dicas e da comunidade neste aparelho.',
                       [
                         {label: 'Cancelar', style: 'cancel'},
                         {

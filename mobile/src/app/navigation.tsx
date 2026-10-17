@@ -12,7 +12,7 @@ import {NavigationContainer} from '@react-navigation/native';
 import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
 import {
-  ChartLine,
+  Lightbulb,
   History,
   Home,
   ShoppingCart,
@@ -118,8 +118,8 @@ function Tabs() {
         name="Insights"
         component={InsightsScreen}
         options={{
-          title: 'Insights',
-          tabBarIcon: ({color}) => <ChartLine size={20} color={color} />,
+          title: 'Dicas',
+          tabBarIcon: ({color}) => <Lightbulb size={20} color={color} />,
         }}
       />
       <Tab.Screen

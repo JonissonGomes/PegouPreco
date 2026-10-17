@@ -18,7 +18,7 @@ import {
   Map,
   ScanLine,
   Shield,
-  Sparkles,
+  Lightbulb,
   Store,
   TrendingDown,
   UsersRound,
@@ -396,9 +396,9 @@ export function ProfileScreen() {
                 </View>
               </View>
               <View style={styles.insightsCta}>
-                <Sparkles size={14} color={colors.navy} />
+                <Lightbulb size={14} color={colors.navy} />
                 <Text style={styles.insightsCtaText}>
-                  Ver insights de mercados e categorias
+                  Ver dicas de mercados e categorias
                 </Text>
                 <ChevronRight size={16} color={colors.navy} />
               </View>
@@ -407,8 +407,8 @@ export function ProfileScreen() {
 
             <View style={styles.actionsCard}>
               <ActionRow
-                icon={<TrendingDown size={20} color={colors.navy} />}
-                label="Insights"
+                icon={<Lightbulb size={20} color={colors.navy} />}
+                label="Dicas"
                 hint="Onde economizar e o que subiu"
                 onPress={() => nav.navigate('Insights')}
               />

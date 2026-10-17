@@ -200,7 +200,7 @@ export function HistoryScreen() {
         onDelete={list => {
           appAlert(
             'Remover esta compra?',
-            'A nota sai do histórico, dos gastos, dos insights e da comunidade neste aparelho.',
+            'A nota sai do histórico, dos gastos, das dicas e da comunidade neste aparelho.',
             [
               {label: 'Cancelar', style: 'cancel'},
               {

@@ -374,7 +374,7 @@ export function HomeScreen() {
                 onPress: () => nav.navigate('ImportPurchase'),
               },
               {
-                label: 'Insights',
+                label: 'Dicas',
                 Icon: homeShortcutIcons.insights,
                 onPress: () => nav.navigate('Insights'),
               },
@@ -443,7 +443,7 @@ export function HomeScreen() {
                 <Pressable
                   style={styles.ctaCard}
                   onPress={() => nav.navigate('Insights')}>
-                  <Text style={styles.ctaCardTitle}>Insights</Text>
+                  <Text style={styles.ctaCardTitle}>Dicas</Text>
                   <Text style={styles.ctaCardSub}>
                     Alertas e menores preços
                   </Text>

@@ -38,7 +38,7 @@ export function InsightsScreen() {
   return (
     <View style={styles.root}>
       <SoftHeader
-        title="Insights"
+        title="Dicas"
         subtitle="Onde economizar, sem lista infinita"
       />
       <ScrollView
