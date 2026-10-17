@@ -1,21 +1,15 @@
-import React, {useCallback, useMemo, useState} from 'react';
+import React, {useEffect, useMemo, useState} from 'react';
 import {Pressable, ScrollView, StyleSheet, Text, View} from 'react-native';
-import {useFocusEffect, useNavigation, useRoute} from '@react-navigation/native';
+import {useNavigation, useRoute} from '@react-navigation/native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
-import {ArrowLeft} from 'lucide-react-native';
+import {ArrowLeft, SlidersHorizontal} from 'lucide-react-native';
 import {formatBrl, formatQty} from '@/domain/money';
-import {resolveCategory} from '@/domain/productCategory';
+import {PRODUCT_CATEGORIES, resolveCategory} from '@/domain/productCategory';
 import {lineTotal} from '@/domain/pricing';
-import {isFiscalList, isFiscalLog} from '@/domain/fiscal';
 import {buildHomeDash, type HomePeriodDays} from '@/domain/homeDashboard';
-import {
-  cheaperCategories,
-  pointsFromLists,
-  pointsFromLogs,
-} from '@/domain/purchaseInsights';
 import {CategoryIcon} from '@/features/history/categoryIcon';
-import {HomeCheaperChart} from '@/features/home/HomeCheaperChart';
-import {HomeSpendBoard} from '@/features/home/HomeSpendBoard';
+import {HomeFilterSheet} from '@/features/home/HomeFilterSheet';
+import {SpendOverview} from '@/features/home/SpendOverview';
 import {priceLogRepo, useAppStore} from '@/store/appStore';
 import {colors, space} from '@/ui/theme';
 import type {CartItem, ShoppingList} from '@/data/types';
@@ -47,49 +41,27 @@ export function HomeSpendScreen() {
   const insets = useSafeAreaInsets();
   const route = useRoute();
   const params = (route.params ?? {}) as Partial<Params>;
-  const period = params.period ?? 30;
-  const marketId = params.marketId ?? null;
-  const categories =
-    params.categories ??
-    (params.category ? [params.category] : []);
+  const [period, setPeriod] = useState<HomePeriodDays>(params.period ?? 30);
+  const [marketId, setMarketId] = useState<number | null>(params.marketId ?? null);
+  const [categories, setCategories] = useState<string[]>(
+    params.categories ?? (params.category ? [params.category] : []),
+  );
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const lists = useAppStore(s => s.lists);
   const products = useAppStore(s => s.products);
+  const markets = useAppStore(s => s.markets);
   const logs = useMemo(() => priceLogRepo.all(), [lists, products]);
-  const [play, setPlay] = useState(0);
-  useFocusEffect(
-    useCallback(() => {
-      setPlay(n => n + 1);
-    }, []),
-  );
+  useEffect(() => {
+    setPeriod(params.period ?? 30);
+    setMarketId(params.marketId ?? null);
+    setCategories(params.categories ?? (params.category ? [params.category] : []));
+  }, [params.period, params.marketId, params.category, params.categories]);
   const dash = useMemo(
     () => buildHomeDash(lists, products, period, marketId, categories, logs),
     [lists, products, period, marketId, categories, logs],
   );
-  const dearest = useMemo(() => {
-    let best: {market: string; total: number} | null = null;
-    for (const list of dash.purchases) {
-      for (const item of parseItems(list)) {
-        const stored = products.find(p => p.id === item.productId)?.category?.trim();
-        const cat = resolveCategory(stored, item.productName);
-        if (categories.length > 0 && !categories.includes(cat)) continue;
-        const total = lineTotal(item);
-        if (!best || total > best.total) {
-          best = {market: list.marketName || list.name, total};
-        }
-      }
-    }
-    return best;
-  }, [dash.purchases, products, categories]);
-  const cheaper = useMemo(() => {
-    const receipts = lists.filter(isFiscalList);
-    const fiscalLogs = logs.filter(isFiscalLog);
-    const purchases = pointsFromLists(receipts, products);
-    return cheaperCategories(
-      purchases,
-      [...purchases, ...pointsFromLogs(fiscalLogs, products)],
-      7,
-    ).filter(item => categories.length === 0 || categories.includes(item.category));
-  }, [lists, products, logs, categories]);
+  const filterCount =
+    (period !== 30 ? 1 : 0) + (marketId != null ? 1 : 0) + categories.length;
 
   return (
     <View style={[styles.root, {paddingTop: insets.top + 8}]}>
@@ -98,27 +70,20 @@ export function HomeSpendScreen() {
           <ArrowLeft size={20} color={colors.navy} />
         </Pressable>
         <Text style={styles.title}>Gastos</Text>
+        <Pressable style={styles.filterBtn} onPress={() => setFiltersOpen(true)}>
+          <SlidersHorizontal size={16} color={colors.navy} />
+          {filterCount > 0 ? (
+            <View style={styles.filterBadge}>
+              <Text style={styles.filterBadgeText}>{filterCount}</Text>
+            </View>
+          ) : null}
+        </Pressable>
       </View>
       <ScrollView contentContainerStyle={{paddingBottom: insets.bottom + 24}}>
-        <HomeSpendBoard dash={dash} period={period} play={play} />
-        <HomeCheaperChart items={cheaper} play={play} />
+        <SpendOverview dash={dash} />
         <Text style={styles.section}>
-          {categories.length ? categories.join(' · ') : 'Todas as notas'}
+          {categories.length ? categories.join(' · ') : 'Compras do filtro'}
         </Text>
-        <View style={styles.summary}>
-          <View style={styles.summaryCard}>
-            <Text style={styles.summaryLabel}>Total</Text>
-            <Text style={styles.summaryValue}>{formatBrl(dash.spent)}</Text>
-          </View>
-          <View style={styles.summaryCard}>
-            <Text style={styles.summaryLabel}>Mais cara</Text>
-            <Text style={styles.summaryValue} numberOfLines={1}>
-              {dearest
-                ? `${dearest.market} · ${formatBrl(dearest.total)}`
-                : '—'}
-            </Text>
-          </View>
-        </View>
         {dash.purchases.length === 0 ? (
           <Text style={styles.empty}>Nenhuma compra neste filtro.</Text>
         ) : (
@@ -158,6 +123,21 @@ export function HomeSpendScreen() {
           ))
         )}
       </ScrollView>
+      <HomeFilterSheet
+        visible={filtersOpen}
+        period={period}
+        marketId={marketId}
+        category={categories}
+        markets={markets.map(market => ({id: market.id, name: market.name}))}
+        categories={[...PRODUCT_CATEGORIES]}
+        onClose={() => setFiltersOpen(false)}
+        onApply={next => {
+          setPeriod(next.period);
+          setMarketId(next.marketId);
+          setCategories(next.category);
+          setFiltersOpen(false);
+        }}
+      />
     </View>
   );
 }
@@ -179,7 +159,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  title: {fontSize: 22, fontWeight: '900', color: colors.navy},
+  title: {flex: 1, fontSize: 22, fontWeight: '900', color: colors.navy},
+  filterBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterBadge: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: colors.yellow,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterBadgeText: {fontSize: 10, fontWeight: '900', color: colors.navy},
   section: {
     marginHorizontal: space.md,
     marginBottom: space.sm,

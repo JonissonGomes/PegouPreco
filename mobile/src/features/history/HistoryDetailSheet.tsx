@@ -5,7 +5,7 @@ import {KeyboardSafeSheet} from '@/ui/keyboardSheet';
 import {colors, radii, space} from '@/ui/theme';
 import {formatBrl, formatQty} from '@/domain/money';
 import {resolveCategory} from '@/domain/productCategory';
-import {lineTotal} from '@/domain/pricing';
+import {lineSavings, lineTotal} from '@/domain/pricing';
 import type {CartItem, Product, ShoppingList} from '@/data/types';
 import {categoryTone} from './categoryTone';
 import {CategoryIcon} from './categoryIcon';
@@ -57,6 +57,19 @@ export function HistoryDetailSheet({
       return true;
     });
   }, [items, products, query, category]);
+  const byCategory = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const item of items) {
+      const cat = itemCategory(item, products);
+      counts.set(cat, (counts.get(cat) ?? 0) + 1);
+    }
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  }, [items, products]);
+  const discount = useMemo(
+    () => items.reduce((sum, item) => sum + lineSavings(item), 0),
+    [items],
+  );
+  const maxCount = Math.max(...byCategory.map(([, count]) => count), 1);
 
   return (
     <KeyboardSafeSheet
@@ -70,8 +83,36 @@ export function HistoryDetailSheet({
         <>
           <Text style={styles.title}>{list.marketName || list.name}</Text>
           <Text style={styles.sub}>
-            {items.length} itens · {formatBrl(list.subtotal)} · {formatWhen(list.finishedAt)}
+            {formatWhen(list.finishedAt)}
           </Text>
+          <View style={styles.chart}>
+            <Text style={styles.chartPrice}>{formatBrl(list.subtotal)}</Text>
+            <Text style={styles.chartCount}>
+              {items.length} {items.length === 1 ? 'item' : 'itens'}
+            </Text>
+            {discount > 0 ? (
+              <Text style={styles.chartSave}>
+                Desconto {formatBrl(discount)}
+              </Text>
+            ) : null}
+            {byCategory.slice(0, 4).map(([name, count]) => (
+              <View key={name} style={styles.chartRow}>
+                <CategoryIcon name={name} size={12} />
+                <Text style={styles.chartName} numberOfLines={1}>
+                  {name}
+                </Text>
+                <View style={styles.chartTrack}>
+                  <View
+                    style={[
+                      styles.chartFill,
+                      {width: `${Math.max(8, (count / maxCount) * 100)}%`},
+                    ]}
+                  />
+                </View>
+                <Text style={styles.chartQty}>{count}</Text>
+              </View>
+            ))}
+          </View>
           <TextInput
             value={query}
             onChangeText={setQuery}
@@ -148,6 +189,26 @@ export function HistoryDetailSheet({
 const styles = StyleSheet.create({
   title: {fontWeight: '900', color: colors.navy, fontSize: 22},
   sub: {color: colors.muted, fontWeight: '700', marginBottom: 4},
+  chart: {
+    backgroundColor: colors.bg,
+    borderRadius: 16,
+    padding: 12,
+    gap: 8,
+  },
+  chartPrice: {fontSize: 28, fontWeight: '900', color: colors.navy},
+  chartCount: {fontWeight: '800', color: colors.ink},
+  chartSave: {fontWeight: '800', color: colors.trustGreen},
+  chartRow: {flexDirection: 'row', alignItems: 'center', gap: 6},
+  chartName: {width: 88, fontSize: 12, fontWeight: '700', color: colors.ink},
+  chartTrack: {
+    flex: 1,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.white,
+    overflow: 'hidden',
+  },
+  chartFill: {height: '100%', borderRadius: 4, backgroundColor: colors.navy},
+  chartQty: {width: 18, textAlign: 'right', fontWeight: '800', color: colors.navy, fontSize: 12},
   search: {
     height: 44,
     backgroundColor: colors.bg,

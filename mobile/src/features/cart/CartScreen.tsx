@@ -1,4 +1,4 @@
-import React, {useEffect, useMemo, useState} from 'react';
+import React, {useCallback, useEffect, useMemo, useState} from 'react';
 import {
   ActivityIndicator,
   Keyboard,
@@ -12,7 +12,7 @@ import {
   UIManager,
   View,
 } from 'react-native';
-import {useNavigation} from '@react-navigation/native';
+import {useFocusEffect, useNavigation, useRoute} from '@react-navigation/native';
 import Geolocation from 'react-native-geolocation-service';
 import {
   ClipboardList,
@@ -70,6 +70,7 @@ function qtyPhrase(qty: number) {
 
 export function CartScreen() {
   const nav = useNavigation<any>();
+  const route = useRoute<any>();
   const cart = useAppStore(s => s.cart);
   const refresh = useAppStore(s => s.refresh);
   const finalize = useAppStore(s => s.finalize);
@@ -151,6 +152,16 @@ export function CartScreen() {
     setMenuOpen(false);
     action();
   };
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!route.params?.askMarket) return;
+      const name = String(route.params.listName ?? '').trim();
+      if (name) setListName(name);
+      setStartOpen(true);
+      nav.setParams({askMarket: undefined, listName: undefined});
+    }, [nav, route.params?.askMarket, route.params?.listName]),
+  );
 
   useEffect(() => {
     const show = Keyboard.addListener('keyboardDidShow', () =>

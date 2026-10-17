@@ -5,6 +5,8 @@ const TONES: Record<string, {bg: string; fg: string}> = {
   Mercearia: {bg: '#FFF4C2', fg: colors.navy},
   Laticínios: {bg: '#E4ECFA', fg: colors.navy},
   Açougue: {bg: '#FEE2E2', fg: '#B91C1C'},
+  Frutas: {bg: '#DCFCE7', fg: '#15803D'},
+  Verduras: {bg: '#D1FAE5', fg: '#047857'},
   Peixaria: {bg: '#E0F2FE', fg: '#075985'},
   Frios: {bg: '#FDE68A', fg: '#92400E'},
   Hortifruti: {bg: '#DCFCE7', fg: '#15803D'},

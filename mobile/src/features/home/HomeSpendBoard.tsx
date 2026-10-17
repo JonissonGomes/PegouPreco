@@ -1,6 +1,6 @@
 import React from 'react';
 import {Pressable, StyleSheet, Text, View} from 'react-native';
-import Svg, {Circle, Defs, LinearGradient, Polyline, Stop} from 'react-native-svg';
+import Svg, {Circle} from 'react-native-svg';
 import {formatBrl} from '@/domain/money';
 import type {HomeDash, HomePeriodDays} from '@/domain/homeDashboard';
 import {Reveal, useDraw} from '@/ui/reveal';
@@ -260,51 +260,30 @@ function Trend({
   max: number;
   play: number;
 }) {
-  const width = 280;
-  const height = 72;
-  const step = points.length > 1 ? width / (points.length - 1) : width;
-  const progress = useDraw(280, 1000, play);
-  const coords = points.map((point, index) => {
-    const x = index * step;
-    const y = height - 8 - (point.total / max) * (height - 16);
-    return {x, y};
-  });
-  let length = 0;
-  for (let i = 1; i < coords.length; i += 1) {
-    const dx = coords[i].x - coords[i - 1].x;
-    const dy = coords[i].y - coords[i - 1].y;
-    length += Math.hypot(dx, dy);
-  }
-  length = Math.max(length, 1);
-  const drawn = coords.map(point => `${point.x},${point.y}`).join(' ');
+  const progress = useDraw(160, 800, play);
   return (
-    <View>
-      <Svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`}>
-        <Defs>
-          <LinearGradient id="spendLine" x1="0" y1="0" x2="1" y2="0">
-            <Stop offset="0" stopColor={palette.navy} />
-            <Stop offset="0.5" stopColor={palette.yellow} />
-            <Stop offset="1" stopColor={palette.cyan} />
-          </LinearGradient>
-        </Defs>
-        <Polyline
-          points={drawn}
-          fill="none"
-          stroke="url(#spendLine)"
-          strokeWidth={4}
-          strokeLinejoin="round"
-          strokeLinecap="round"
-          strokeDasharray={`${length}`}
-          strokeDashoffset={length * (1 - progress)}
-        />
-      </Svg>
-      <View style={styles.trendLabels}>
-        {points.map((point, index) => (
-          <Text key={`${point.label}-${index}`} style={styles.trendLabel}>
-            {point.label}
-          </Text>
-        ))}
-      </View>
+    <View style={styles.bars}>
+      {points.map((point, index) => {
+        const ratio = max > 0 ? Math.min(1, point.total / max) : 0;
+        return (
+          <View key={`${point.label}-${index}`} style={styles.barCol}>
+            <View style={styles.barTrack}>
+              <View
+                style={[
+                  styles.barFill,
+                  {
+                    height: `${Math.max(4, ratio * progress * 100)}%`,
+                    backgroundColor: paletteAt(index),
+                  },
+                ]}
+              />
+            </View>
+            <Text style={styles.trendLabel} numberOfLines={1}>
+              {point.label}
+            </Text>
+          </View>
+        );
+      })}
     </View>
   );
 }
@@ -368,6 +347,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   donutPct: {fontSize: 18, fontWeight: '900', color: colors.navy},
-  trendLabels: {flexDirection: 'row', justifyContent: 'space-between'},
   trendLabel: {fontSize: 11, fontWeight: '700', color: colors.muted},
+  bars: {flexDirection: 'row', alignItems: 'flex-end', gap: 8, height: 108},
+  barCol: {flex: 1, alignItems: 'center', gap: 4},
+  barTrack: {
+    width: '70%',
+    height: 84,
+    borderRadius: 8,
+    backgroundColor: colors.bg,
+    justifyContent: 'flex-end',
+    overflow: 'hidden',
+  },
+  barFill: {width: '100%', borderRadius: 8},
 });

@@ -1,10 +1,11 @@
-import React, {useEffect, useState} from 'react';
+import React, {useEffect, useRef, useState} from 'react';
 import {
   Animated,
   Dimensions,
   Keyboard,
   KeyboardAvoidingView,
   Modal,
+  PanResponder,
   Platform,
   Pressable,
   ScrollView,
@@ -27,6 +28,34 @@ export function KeyboardSafeSheet({
 }) {
   const insets = useSafeAreaInsets();
   const {mounted, backdropStyle, sheetStyle} = useAnimatedSheet(visible);
+  const dragY = useRef(new Animated.Value(0)).current;
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  const pan = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, gesture) =>
+        gesture.dy > 8 && Math.abs(gesture.dy) > Math.abs(gesture.dx),
+      onPanResponderMove: (_, gesture) => {
+        dragY.setValue(Math.max(0, gesture.dy));
+      },
+      onPanResponderRelease: (_, gesture) => {
+        if (gesture.dy > 72 || gesture.vy > 0.9) {
+          onCloseRef.current?.();
+          dragY.setValue(0);
+          return;
+        }
+        Animated.spring(dragY, {
+          toValue: 0,
+          useNativeDriver: true,
+          friction: 8,
+        }).start();
+      },
+    }),
+  ).current;
+
+  useEffect(() => {
+    if (visible) dragY.setValue(0);
+  }, [visible, dragY]);
   const [keyboardLift, setKeyboardLift] = useState(0);
 
   useEffect(() => {
@@ -87,7 +116,10 @@ export function KeyboardSafeSheet({
                 Dimensions.get('window').height - keyboardLift - insets.top - 24,
             },
           ]}>
-          <View style={styles.handle} />
+          <Animated.View style={{transform: [{translateY: dragY}]}}>
+          <View style={styles.handleHit} {...pan.panHandlers}>
+            <View style={styles.handle} />
+          </View>
           <ScrollView
             style={styles.scroll}
             keyboardShouldPersistTaps="handled"
@@ -96,6 +128,7 @@ export function KeyboardSafeSheet({
             contentContainerStyle={styles.content}>
             {children}
           </ScrollView>
+          </Animated.View>
         </Animated.View>
       </KeyboardAvoidingView>
     </Modal>
@@ -117,14 +150,17 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderBottomWidth: 0,
   },
+  handleHit: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 10,
+    paddingBottom: 8,
+  },
   handle: {
-    alignSelf: 'center',
     width: 42,
     height: 4,
     borderRadius: 2,
     backgroundColor: colors.border,
-    marginTop: 10,
-    marginBottom: 4,
   },
   scroll: {flexGrow: 0},
   content: {padding: 16, gap: 8, paddingBottom: 8, flexGrow: 0},

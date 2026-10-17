@@ -5,7 +5,8 @@ export const PRODUCT_CATEGORIES = [
   'Açougue',
   'Peixaria',
   'Frios',
-  'Hortifruti',
+  'Frutas',
+  'Verduras',
   'Padaria',
   'Congelados',
   'Biscoitos e doces',
@@ -31,13 +32,14 @@ const RULES: Array<[RegExp, string]> = [
   [/presunto|mortadela|salame|peito de peru|queijo prato|apresuntado/i, 'Frios'],
   [/peixe|camarão|camarao|tilápia|tilapia|salmão|salmao|bacalhau|atum fresco/i, 'Peixaria'],
   [/carne|frango|linguiç|linguic|bovin|picanha|costela|bacon|suín|suin|alcatra/i, 'Açougue'],
-  [/banana|maçã|maca|tomate|cebola|batata|alface|limão|limao|hort|laranja|mamão|mamao|cenoura|abobrinha|couve|morango/i, 'Hortifruti'],
+  [/banana|maçã|\bmaca\b|laranja|mamão|mamao|morango|uva|melancia|abacaxi|limão|limao|manga|\bpera\b|kiwi|melão|melao|goiaba|abacate|fruta/i, 'Frutas'],
+  [/tomate|cebola|batata|alface|cenoura|abobrinha|couve|alho|piment|brócolis|brocolis|repolho|pepino|beterraba|chuchu|mandioca|inhame|vagem|espinafre|verdura|legume/i, 'Verduras'],
   [/leite|queijo|iogur|manteiga|requeij|nata\b|coalhada|bebida láctea|bebida lactea/i, 'Laticínios'],
   [/café|cafe|achocolat|cereal|aveia|cappuccino|capuccino/i, 'Café e matinais'],
   [/biscoito|bolacha|chocolate|cookie|bala\b|wafer|bombom|paçoca|pacoca|doce de leite/i, 'Biscoitos e doces'],
   [/ketchup|maionese|mostarda|molho|tempero|extrato de tomate|shoyu|vinagre/i, 'Molhos e temperos'],
   [/sardinha|atum enlat|milho enlat|ervilha|seleta|milho verde/i, 'Enlatados'],
-  [/cerveja|refrigerante|suco|vinho|vodka|whisky|energético|energetico|isotônico|isotonico|água de coco|agua de coco|\bágua\b|\bagua\b|\bchá\b|\bcha\b/i, 'Bebidas'],
+  [/cerveja|\bcerv\b|refrigerante|\brefri\b|suco|vinho|vodka|whisky|\benerg\b|energy|energético|energetico|\bbeb\b|\bh2o\b|\bh20\b|gatorade|powerade|isotônico|isotonico|água de coco|agua de coco|\bágua\b|\bagua\b|\bchá\b|\bcha\b/i, 'Bebidas'],
   [/arroz|feij|macarr|farinha|açúcar|acucar|óleo|oleo|\bsal\b|azeite|macarrão|macarrao/i, 'Mercearia'],
 ];
 
@@ -54,6 +56,8 @@ export function resolveCategory(
   name: string,
 ): string {
   const trimmed = stored?.trim() ?? '';
-  if (!trimmed || trimmed === 'Outros') return guessCategory(name);
+  if (!trimmed || trimmed === 'Outros' || trimmed === 'Hortifruti') {
+    return guessCategory(name);
+  }
   return trimmed;
 }

@@ -7,6 +7,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import {useFocusEffect, useNavigation} from '@react-navigation/native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {ClipboardList, ScanLine, Store} from 'lucide-react-native';
 import {

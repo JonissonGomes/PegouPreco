@@ -11,14 +11,7 @@ import {
 } from 'react-native';
 import {FlatList, ScrollView} from 'react-native-gesture-handler';
 import {useNavigation} from '@react-navigation/native';
-import {
-  ArrowLeft,
-  ClipboardList,
-  QrCode,
-  Receipt,
-  ShoppingCart,
-  Store,
-} from 'lucide-react-native';
+import {ArrowLeft, ClipboardList, QrCode, Receipt, ShoppingCart, SlidersHorizontal, Store} from 'lucide-react-native';
 import {AppButton} from '@/ui/chrome';
 import {appAlert} from '@/ui/appDialog';
 import {FeatureEmptyGuide} from '@/ui/FeatureEmptyGuide';
@@ -32,7 +25,8 @@ import {
 import {colors, radii, space, spacing} from '@/ui/theme';
 import {formatBrl, formatQty} from '@/domain/money';
 import {dateSearchText} from '@/domain/dateSearch';
-import {guessCategory} from '@/domain/productCategory';
+import {isFiscalList} from '@/domain/fiscal';
+import {resolveCategory} from '@/domain/productCategory';
 import {lineTotal} from '@/domain/pricing';
 import {CategoryIcon} from '@/features/history/categoryIcon';
 import {requestAutoSync} from '@/data/syncWorker';
@@ -70,10 +64,10 @@ export function ShoppingListsScreen() {
   const nav = useNavigation<any>();
   const lists = useAppStore(s => s.lists);
   const refresh = useAppStore(s => s.refresh);
-  const startList = useAppStore(s => s.startList);
   const [selected, setSelected] = useState<ShoppingList | null>(null);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<'all' | 'nfce' | 'list'>('all');
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const totalSpent = lists.reduce((s, l) => s + l.subtotal, 0);
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -99,24 +93,20 @@ export function ShoppingListsScreen() {
       cartRepo.upsert({
         productId: it.productId,
         productName: it.productName,
-        quantity: it.quantity,
-        retailPrice: it.retailPrice,
-        wholesalePrice: it.wholesalePrice,
-        minWholesaleQty: it.minWholesaleQty,
-        useWholesale: it.useWholesale,
+        quantity: 0,
+        retailPrice: 0,
+        wholesalePrice: null,
+        minWholesaleQty: null,
+        useWholesale: 0,
         checkedOff: 0,
       });
     }
-    if (list.marketId == null) {
-      appAlert(
-        'Mercado ausente',
-        'Esta lista não tem mercado vinculado. Crie uma nova compra e escolha o mercado.',
-      );
-      return;
-    }
-    startList(list.name, list.marketId);
+    refresh();
     setSelected(null);
-    nav.navigate('Main', {screen: 'Lists'});
+    nav.navigate('Main', {
+      screen: 'Lists',
+      params: {askMarket: true, listName: list.name},
+    });
   };
 
   return (
@@ -152,31 +142,15 @@ export function ShoppingListsScreen() {
               <TextInput
                 value={query}
                 onChangeText={setQuery}
-                placeholder="Buscar lista ou mercado"
+                placeholder="Buscar lista, mercado ou item"
                 placeholderTextColor={colors.muted}
                 style={styles.search}
               />
-              <View style={styles.chips}>
-                {(
-                  [
-                    ['all', 'Todas'],
-                    ['nfce', 'Notas'],
-                    ['list', 'Listas'],
-                  ] as const
-                ).map(([id, label]) => {
-                  const on = filter === id;
-                  return (
-                    <Pressable
-                      key={id}
-                      onPress={() => setFilter(id)}
-                      style={[styles.chip, on && styles.chipOn]}>
-                      <Text style={[styles.chipText, on && styles.chipTextOn]}>
-                        {label}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
+              <Pressable
+                style={styles.filterBtn}
+                onPress={() => setFiltersOpen(true)}>
+                <SlidersHorizontal size={16} color={colors.navy} />
+              </Pressable>
             </View>
           ) : null
         }
@@ -202,7 +176,7 @@ export function ShoppingListsScreen() {
               {
                 n: '3',
                 title: 'Refaça quando quiser',
-                text: 'Toque em uma lista para reabrir os itens no carrinho.',
+                text: 'Toque em uma lista para usar os itens de novo, lendo a etiqueta.',
                 Icon: Store,
               },
             ]}
@@ -246,8 +220,15 @@ export function ShoppingListsScreen() {
             }}>
             <SoftCard onPress={() => setSelected(item)} style={styles.listCard}>
               <View style={styles.listRow}>
-                <View style={styles.itemIcon}>
-                  <Receipt size={16} color={colors.navy} />
+                <View style={[styles.itemIcon, isFiscalList(item) ? styles.iconNote : styles.iconList]}>
+                  {isFiscalList(item) ? (
+                    <Receipt size={16} color={colors.navy} />
+                  ) : (
+                    <ClipboardList size={16} color={colors.navy} />
+                  )}
+                  <View style={[styles.mark, isFiscalList(item) ? styles.markNote : styles.markList]}>
+                    <Text style={styles.markText}>{isFiscalList(item) ? 'NF' : 'L'}</Text>
+                  </View>
                 </View>
                 <View style={styles.listBody}>
                   <Text style={styles.name} numberOfLines={1}>
@@ -257,15 +238,6 @@ export function ShoppingListsScreen() {
                     <Text style={styles.muted} numberOfLines={1}>
                       {item.name} · {formatListDate(item.finishedAt)}
                     </Text>
-                    <View
-                      style={[
-                        styles.pill,
-                        item.nfceKey ? styles.pillNote : styles.pillList,
-                      ]}>
-                      <Text style={styles.pillText}>
-                        {item.nfceKey ? 'Nota' : 'Lista'}
-                      </Text>
-                    </View>
                   </View>
                 </View>
                 <Text style={styles.price}>{formatBrl(item.subtotal)}</Text>
@@ -275,6 +247,31 @@ export function ShoppingListsScreen() {
         )}
       />
 
+      <KeyboardSafeSheet
+        visible={filtersOpen}
+        onClose={() => setFiltersOpen(false)}>
+        <Text style={styles.detailTitle}>Filtro</Text>
+        {(
+          [
+            ['all', 'Todas'],
+            ['nfce', 'Notas fiscais'],
+            ['list', 'Listas manuais'],
+          ] as const
+        ).map(([id, label]) => (
+          <Pressable
+            key={id}
+            style={styles.filterOption}
+            onPress={() => {
+              setFilter(id);
+              setFiltersOpen(false);
+            }}>
+            <Text style={styles.filterOptionText}>
+              {filter === id ? '● ' : ''}
+              {label}
+            </Text>
+          </Pressable>
+        ))}
+      </KeyboardSafeSheet>
       <KeyboardSafeSheet
         visible={selected != null}
         onClose={() => setSelected(null)}>
@@ -296,7 +293,7 @@ export function ShoppingListsScreen() {
                     styles.detailRow,
                     idx < detailItems.length - 1 && styles.detailRowBorder,
                   ]}>
-                  <CategoryIcon name={guessCategory(it.productName)} size={14} />
+                  <CategoryIcon name={resolveCategory(null, it.productName)} size={14} />
                   <View style={{flex: 1, minWidth: 0}}>
                     <Text style={styles.detailName} numberOfLines={1}>
                       {it.productName}
@@ -314,7 +311,7 @@ export function ShoppingListsScreen() {
             <View style={styles.detailActions}>
               <View style={{flex: 1}}>
                 <AppButton
-                  label="Refazer esta lista"
+                  label="Usar essa lista"
                   onPress={() => redoList(selected)}
                 />
               </View>
@@ -353,20 +350,40 @@ export function ShoppingListsScreen() {
 
 const styles = StyleSheet.create({
   root: {flex: 1, backgroundColor: colors.bg},
-  listPad: {padding: space.md, paddingBottom: 40},
+  listPad: {padding: space.md, paddingBottom: spacing.bottomNavClearance},
   listPadEmpty: {
     flexGrow: 1,
     paddingBottom: spacing.bottomNavClearance,
   },
-  filters: {gap: 10, marginBottom: space.sm},
+  filters: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: space.sm,
+  },
   search: {
+    flex: 1,
     backgroundColor: colors.white,
     borderRadius: radii.pill,
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    height: 48,
     fontWeight: '600',
     color: colors.ink,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
+  filterBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterOption: {paddingVertical: 12},
+  filterOptionText: {fontWeight: '800', color: colors.navy, fontSize: 16},
   chips: {flexDirection: 'row', gap: 8},
   chip: {
     borderRadius: radii.pill,
@@ -381,13 +398,29 @@ const styles = StyleSheet.create({
   listRow: {flexDirection: 'row', alignItems: 'center', gap: 10},
   listBody: {flex: 1, minWidth: 0, gap: 2},
   itemIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    backgroundColor: '#FFF6D8',
+    width: 36,
+    height: 36,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  iconNote: {backgroundColor: '#FFF6D8'},
+  iconList: {backgroundColor: '#E4ECFA'},
+  mark: {
+    position: 'absolute',
+    right: -4,
+    bottom: -4,
+    minWidth: 16,
+    height: 14,
+    borderRadius: 7,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.white,
+  },
+  markNote: {backgroundColor: colors.navy},
+  markList: {backgroundColor: colors.cyan},
+  markText: {fontSize: 8, fontWeight: '900', color: colors.white},
   name: {fontWeight: '900', color: colors.navy, fontSize: 14},
   muted: {flexShrink: 1, color: colors.muted, fontWeight: '600', fontSize: 12},
   metaLine: {flexDirection: 'row', alignItems: 'center', gap: 6},
