@@ -45,6 +45,7 @@ import {
   type NfceDraft,
 } from '@/data/archivePurchase';
 import {NfceReviewSheet} from '@/features/cart/NfceReviewSheet';
+import {SpendLimitBar} from '@/features/cart/SpendLimitBar';
 import {SavedMarketReview} from '@/features/cart/SavedMarketReview';
 import {extractAccessKey, looksLikeReceipt, nfceConsultUrl} from '@/domain/nfceScan';
 import {ensureMarketOnMap} from '@/data/archivePurchase';
@@ -189,6 +190,8 @@ export function CaptureScreen() {
   const route = useRoute<any>();
   const activeListName = useAppStore(s => s.activeListName);
   const activeMarketId = useAppStore(s => s.activeMarketId);
+  const spendLimit = useAppStore(s => s.spendLimit);
+  const cart = useAppStore(s => s.cart);
   const refresh = useAppStore(s => s.refresh);
   const cameraGranted = useAppStore(s => s.permissions.camera);
   const marketName = useMarketName(
@@ -670,6 +673,13 @@ export function CaptureScreen() {
       </View>
 
       <View style={styles.dock}>
+        {spendLimit != null && activeListName && !pastMode ? (
+          <SpendLimitBar
+            spent={cartRepo.computeTotals(cart).subtotal}
+            limit={spendLimit}
+            onDark
+          />
+        ) : null}
         <AppButton
           icon={
             scanning ? (

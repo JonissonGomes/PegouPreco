@@ -54,6 +54,15 @@ export const prefs = {
     metaSet('activeListName', name);
     metaSet('activeMarketId', String(marketId));
   },
+  getSpendLimit: (): number | null => {
+    const raw = metaGet('spendLimit');
+    if (!raw) return null;
+    const value = Number(raw);
+    return Number.isFinite(value) && value > 0 ? value : null;
+  },
+  setSpendLimit: (value: number | null) => {
+    metaSet('spendLimit', value == null || value <= 0 ? '' : String(value));
+  },
   /** Atualiza só o mercado da lista ativa (ex.: NFC-e do emitente). */
   setActiveMarketId: (marketId: number) => {
     metaSet('activeMarketId', String(marketId));
@@ -61,12 +70,14 @@ export const prefs = {
   clearActiveList: () => {
     metaSet('activeListName', '');
     metaSet('activeMarketId', '');
+    metaSet('spendLimit', '');
   },
   /** Evita mercado “fantasma” sem lista ativa. */
   ensureActiveListConsistency: () => {
     const name = metaGet('activeListName');
     if (!name) {
       metaSet('activeMarketId', '');
+      metaSet('spendLimit', '');
     }
   },
   getCurrentMarketId: () => {

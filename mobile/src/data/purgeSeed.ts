@@ -77,6 +77,7 @@ export function purgeSeedData() {
   if (seedMarketIds.has(activeMarket)) {
     metaSet('activeListName', '');
     metaSet('activeMarketId', '');
+    metaSet('spendLimit', '');
   }
   const current = Number(metaGet('currentMarketId') || '');
   if (seedMarketIds.has(current)) metaSet('currentMarketId', '');

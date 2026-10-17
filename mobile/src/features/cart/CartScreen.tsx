@@ -42,7 +42,8 @@ if (
 ) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
-import {formatBrl, formatQty, parseBrl} from '@/domain/money';
+import {formatBrl, formatQty, maskMoneyTyping, parseBrl} from '@/domain/money';
+import {parseSpendLimit, SpendLimitBar} from '@/features/cart/SpendLimitBar';
 import {lineTotal} from '@/domain/pricing';
 import {
   formatDistanceKm,
@@ -78,12 +79,14 @@ export function CartScreen() {
   const startList = useAppStore(s => s.startList);
   const activeListName = useAppStore(s => s.activeListName);
   const activeMarketId = useAppStore(s => s.activeMarketId);
+  const spendLimit = useAppStore(s => s.spendLimit);
   const markets = useAppStore(s => s.markets);
   const marketName = useMarketName(activeMarketId);
   const [editItem, setEditItem] = useState<CartItem | null>(null);
   const [startOpen, setStartOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [listName, setListName] = useState('Compras de hoje');
+  const [spendLimitText, setSpendLimitText] = useState('');
   const [marketQuery, setMarketQuery] = useState('');
   const [origin, setOrigin] = useState<{lat: number; lng: number} | null>(
     () => prefs.getLastLocation(),
@@ -183,6 +186,7 @@ export function CartScreen() {
     setConfirmHint(null);
     setPickedMarketId(null);
     setMarketQuery('');
+    setSpendLimitText('');
 
     const finishWithOrigin = async (next: {lat: number; lng: number} | null) => {
       if (cancelled) return;
@@ -255,6 +259,27 @@ export function CartScreen() {
     !markets.some(
       m => m.name.toLowerCase() === marketQuery.trim().toLowerCase(),
     );
+
+  const beginList = (marketId: number) => {
+    const name = listName.trim();
+    if (!name) {
+      appAlert('Lista incompleta', 'Informe o nome da lista.');
+      return;
+    }
+    const limit = parseSpendLimit(spendLimitText);
+    if (limit === 'invalid') {
+      appAlert(
+        'Limite inválido',
+        'Informe um valor maior que zero ou deixe o campo em branco.',
+      );
+      return;
+    }
+    startList(name, marketId, limit);
+    setSpendLimitText('');
+    setStartOpen(false);
+    setPickedMarketId(null);
+    setStartStep('loading');
+  };
 
   return (
     <View style={styles.root}>
@@ -371,6 +396,9 @@ export function CartScreen() {
                 ) : null}
               </View>
               <ProgressBar progress={progress} height={8} />
+              {spendLimit != null ? (
+                <SpendLimitBar spent={totals.subtotal} limit={spendLimit} />
+              ) : null}
             </SoftCard>
             {cart.length === 0 ? (
               <Text style={styles.emptyList}>
@@ -532,6 +560,14 @@ export function CartScreen() {
           onChangeText={setListName}
           compact
         />
+        <AppField
+          label="Limite total da compra"
+          value={spendLimitText}
+          onChangeText={text => setSpendLimitText(maskMoneyTyping(text))}
+          placeholder="Opcional"
+          keyboardType="numeric"
+          compact
+        />
         {startStep === 'loading' ? (
           <View style={styles.discoverBox}>
             <ActivityIndicator color={colors.navy} />
@@ -566,15 +602,11 @@ export function CartScreen() {
             <AppButton
               label="Sim, estou aqui"
               onPress={() => {
-                const name = listName.trim();
-                if (!name || pickedMarketId == null) {
+                if (pickedMarketId == null) {
                   appAlert('Lista incompleta', 'Informe o nome da lista.');
                   return;
                 }
-                startList(name, pickedMarketId);
-                setStartOpen(false);
-                setPickedMarketId(null);
-                setStartStep('loading');
+                beginList(pickedMarketId);
               }}
             />
             <AppButton
@@ -671,10 +703,7 @@ export function CartScreen() {
                     ? markets.find(m => m.id === pickedMarketId) ??
                       marketRepo.resolveOrCreate(q)
                     : marketRepo.resolveOrCreate(q);
-                startList(name, market.id);
-                setStartOpen(false);
-                setPickedMarketId(null);
-                setStartStep('loading');
+                beginList(market.id);
               }}
             />
           </>

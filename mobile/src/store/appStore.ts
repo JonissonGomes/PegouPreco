@@ -45,13 +45,14 @@ type AppState = {
   products: Product[];
   activeListName: string | null;
   activeMarketId: number | null;
+  spendLimit: number | null;
   currentMarketId: number | null;
   auth: AuthSession | null;
   bootstrap: () => Promise<void>;
   refresh: () => void;
   setNavVisible: (v: boolean) => void;
   completeOnboarding: () => void;
-  startList: (name: string, marketId: number) => void;
+  startList: (name: string, marketId: number, spendLimit?: number | null) => void;
   setCurrentMarket: (id: number) => void;
   finalize: () => boolean;
   /** Encerra a compra atual (itens + mercado) para começar outra. */
@@ -71,6 +72,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   products: [],
   activeListName: null,
   activeMarketId: null,
+  spendLimit: null,
   currentMarketId: null,
   auth: null,
   bootstrap: async () => {
@@ -104,6 +106,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       products: productRepo.all(),
       activeListName: prefs.getActiveListName(),
       activeMarketId: prefs.getActiveMarketId(),
+      spendLimit: prefs.getSpendLimit(),
       currentMarketId: prefs.getCurrentMarketId(),
       onboardingDone: prefs.getOnboardingDone(),
     });
@@ -113,8 +116,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     prefs.setOnboardingDone(true);
     set({onboardingDone: true});
   },
-  startList: (name, marketId) => {
+  startList: (name, marketId, spendLimit = null) => {
     prefs.setActiveList(name, marketId);
+    prefs.setSpendLimit(spendLimit);
     prefs.setCurrentMarketId(marketId);
     get().refresh();
   },
