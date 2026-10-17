@@ -409,7 +409,7 @@ export function ProfileScreen() {
               <ActionRow
                 icon={<TrendingDown size={20} color={colors.navy} />}
                 label="Insights"
-                hint="Rankings e economia por mercado"
+                hint="Onde economizar e o que subiu"
                 onPress={() => nav.navigate('Insights')}
               />
               <ActionRow

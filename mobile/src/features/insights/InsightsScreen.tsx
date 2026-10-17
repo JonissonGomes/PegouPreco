@@ -1,830 +1,231 @@
-import React, {useCallback, useMemo, useState} from 'react';
-import {
-  FlatList,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
-import {useFocusEffect, useNavigation} from '@react-navigation/native';
-import {useSafeAreaInsets} from 'react-native-safe-area-context';
-import {ClipboardList, ScanLine, Store} from 'lucide-react-native';
-import {
-  AppButton,
-  AppField,
-  AppListCard,
-  AppScreenHeader,
-  AppScreenNavyBar,
-} from '@/ui/chrome';
-import {FiscalBadge} from '@/ui/components';
-import {KeyboardSafeSheet} from '@/ui/keyboardSheet';
-import {MarketSuggestRow} from '@/ui/MarketSuggestRow';
-import {FeatureEmptyGuide} from '@/ui/FeatureEmptyGuide';
-import {Reveal} from '@/ui/reveal';
-import {InsightsBoard} from '@/features/insights/InsightsBoard';
-import {colors, radii, space} from '@/ui/theme';
+import React, {useMemo, useState} from 'react';
+import {Pressable, ScrollView, StyleSheet, Text, View} from 'react-native';
+import {useNavigation} from '@react-navigation/native';
+import {SoftCard, SoftHeader} from '@/ui/screenChrome';
+import {CategoryIcon} from '@/features/history/categoryIcon';
+import {colors, radii, space, spacing} from '@/ui/theme';
 import {formatBrl} from '@/domain/money';
-import {lineTotal} from '@/domain/pricing';
-import {dateSearchText} from '@/domain/dateSearch';
-import {resolveCategory} from '@/domain/productCategory';
-import {
-  cheaperCategories,
-  economyAgainstAverage,
-  pointsFromLists,
-  pointsFromLogs,
-} from '@/domain/purchaseInsights';
-import {rankNearestMarkets} from '@/domain/marketUi';
-import {TrustEngine} from '@/domain/trust';
-import {
-  type InsightPeriod,
-  periodStart,
-  rankCategoryMarketWins,
-  rankCheapestMarkets,
-} from '@/domain/homeInsights';
-import {
-  marketRepo,
-  prefs,
-  priceLogRepo,
-  useAppStore,
-  useMarketName,
-} from '@/store/appStore';
-import {syncApi, type ReputationRemote} from '@/data/remote/syncApi';
+import {buildInsightBoard} from '@/domain/insightBoard';
+import type {InsightPeriod} from '@/domain/homeInsights';
 import {isFiscalList, isFiscalLog} from '@/domain/fiscal';
-import type {FiscalLevel, PriceLog, Product, ShoppingList, CartItem} from '@/data/types';
+import {priceLogRepo, useAppStore} from '@/store/appStore';
 
 const PERIODS: Array<{id: InsightPeriod; label: string}> = [
-  {id: 'week', label: 'Semana'},
-  {id: 'month', label: 'Mês'},
+  {id: 'week', label: '7 dias'},
+  {id: 'month', label: '30 dias'},
   {id: 'all', label: 'Tudo'},
 ];
 
-function miniDate(iso: string) {
-  const local = new Date(iso);
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const day = new Date(local.getFullYear(), local.getMonth(), local.getDate());
-  const time = local.toLocaleTimeString('pt-BR', {
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-  if (day.getTime() === today.getTime()) return `hoje · ${time}`;
-  return `${local.toLocaleDateString('pt-BR', {day: '2-digit', month: '2-digit'})} · ${time}`;
-}
-
-function purchaseLines(list: ShoppingList): CartItem[] {
-  try {
-    const raw = JSON.parse(list.itemsJson) as CartItem[];
-    return Array.isArray(raw) ? raw : [];
-  } catch {
-    return [];
-  }
-}
-
-function periodCaption(period: InsightPeriod): string {
-  if (period === 'week') return 'últimos 7 dias';
-  if (period === 'month') return 'últimos 30 dias';
-  return 'todo o histórico';
-}
-
 export function InsightsScreen() {
   const nav = useNavigation<any>();
-  const insets = useSafeAreaInsets();
   const lists = useAppStore(s => s.lists);
   const markets = useAppStore(s => s.markets);
   const products = useAppStore(s => s.products);
-  const auth = useAppStore(s => s.auth);
-  const currentMarketId = useAppStore(s => s.currentMarketId);
-  const setCurrentMarket = useAppStore(s => s.setCurrentMarket);
-  const refresh = useAppStore(s => s.refresh);
-  const marketName = useMarketName(currentMarketId);
-  const [query, setQuery] = useState('');
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [marketQuery, setMarketQuery] = useState('');
-  const [rep, setRep] = useState<ReputationRemote | null>(null);
-  const [period, setPeriod] = useState<InsightPeriod>('week');
-  const [locTick, setLocTick] = useState(0);
+  const [period, setPeriod] = useState<InsightPeriod>('month');
 
-  useFocusEffect(
-    useCallback(() => {
-      setLocTick(t => t + 1);
-      if (!auth?.token) return;
-      syncApi
-        .reputation(auth.token)
-        .then(setRep)
-        .catch(() => undefined);
-    }, [auth?.token]),
-  );
+  const board = useMemo(() => {
+    const notes = lists.filter(isFiscalList);
+    const logs = priceLogRepo.all().filter(isFiscalLog);
+    return buildInsightBoard({lists: notes, logs, products, markets, period});
+  }, [lists, markets, products, period]);
 
-  const origin = useMemo(() => prefs.getLastLocation(), [locTick]);
-
-  const receiptLists = useMemo(() => lists.filter(isFiscalList), [lists]);
-  const logs = useMemo(
-    () => priceLogRepo.all().filter(isFiscalLog),
-    [lists, products],
-  );
-
-  const marketRanks = useMemo(
-    () => rankCheapestMarkets(logs, markets, products, period),
-    [logs, markets, products, period],
-  );
-  const categoryWins = useMemo(
-    () => rankCategoryMarketWins(logs, markets, products, period),
-    [logs, markets, products, period],
-  );
-  const purchasePoints = useMemo(
-    () => pointsFromLists(receiptLists, products),
-    [receiptLists, products],
-  );
-  const referencePoints = useMemo(
-    () => [...purchasePoints, ...pointsFromLogs(logs, products)],
-    [purchasePoints, logs, products],
-  );
-  const periodSince = periodStart(period)?.getTime() ?? 0;
-  const periodEconomy = useMemo(
-    () => economyAgainstAverage(purchasePoints, referencePoints, periodSince),
-    [purchasePoints, referencePoints, periodSince],
-  );
-  const cheaper = useMemo(() => {
-    const days = period === 'week' ? 7 : period === 'month' ? 30 : 90;
-    return cheaperCategories(purchasePoints, referencePoints, days);
-  }, [purchasePoints, referencePoints, period]);
-
-  const cheap = useMemo(() => {
-    const out: Array<{
-      product: Product;
-      log: PriceLog;
-      marketName: string | null;
-    }> = [];
-    for (const p of products) {
-      const plogs = logs.filter(l => l.productId === p.id);
-      if (!plogs.length) continue;
-      const best = plogs.reduce((a, b) =>
-        a.retailPrice < b.retailPrice ? a : b,
-      );
-      out.push({
-        product: p,
-        log: best,
-        marketName: markets.find(m => m.id === best.marketId)?.name ?? null,
-      });
-    }
-    return out
-      .sort((a, b) => a.log.retailPrice - b.log.retailPrice)
-      .slice(0, 40);
-  }, [logs, products, markets]);
-
-  const opps = useMemo(() => priceLogRepo.opportunities(), [lists, markets]);
-  const today = useMemo(() => {
-    // Mercado atual do picker, se estiver no escopo; senão o 1º do escopo.
-    const focusId = currentMarketId;
-    return focusId != null ? priceLogRepo.forMarketToday(focusId) : [];
-  }, [currentMarketId, lists]);
-
-  const q = query.trim().toLowerCase();
-  const match = (t: string) => !q || t.toLowerCase().includes(q);
-
-  const cheapF = cheap.filter(
-    r =>
-      match(r.product.name) ||
-      match(r.marketName ?? '') ||
-      dateSearchText(r.log.capturedAt).includes(q),
-  );
-  const cheapByCat = useMemo(() => {
-    const map = new Map<string, typeof cheapF>();
-    for (const r of cheapF) {
-      const cat = resolveCategory(r.product.category, r.product.name);
-      const arr = map.get(cat) ?? [];
-      arr.push(r);
-      map.set(cat, arr);
-    }
-    return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0], 'pt-BR'));
-  }, [cheapF]);
-  const oppsF = opps.filter(o => match(o.product.name));
-  const listsF = receiptLists.filter(
-    l =>
-      match(l.name) ||
-      match(l.marketName ?? '') ||
-      dateSearchText(l.finishedAt).includes(q),
-  );
-  const todayF = today.filter(i => match(i.productName));
-  const alerts = cheapF.length + oppsF.length;
-
-  const suggested = rankNearestMarkets(markets, origin, {
-    query: marketQuery,
-    limit: 8,
-  });
-  const canCreate =
-    marketQuery.trim().length > 0 &&
-    !markets.some(
-      m => m.name.toLowerCase() === marketQuery.trim().toLowerCase(),
-    );
-  const fiscalLevel =
-    (rep?.level as FiscalLevel) ??
-    TrustEngine.levelForPoints(rep?.points ?? 0);
-
-  const data: Array<{type: string; key: string; payload?: any}> = [];
-  const barMax = Math.max(1, ...cheaper.map(c => c.dropPct));
-  data.push({
-    type: 'board',
-    key: 'board',
-    payload: {
-      spentLabel:
-        periodEconomy.saved > 0
-          ? `Economia · ${periodCaption(period)}`
-          : 'Itens comparados',
-      spent:
-        periodEconomy.saved > 0
-          ? formatBrl(periodEconomy.saved)
-          : String(periodEconomy.compared || cheap.length),
-      ringValue: String(alerts),
-      ringLabel: 'alertas',
-      bars: cheaper.slice(0, 3).map(c => ({
-        label: c.category,
-        value: `-${Math.round(c.dropPct * 100)}%`,
-        ratio: c.dropPct / barMax,
-      })),
-    },
-  });
-  if (periodEconomy.saved > 0) {
-    data.push({
-      type: 'savings',
-      key: 'savings',
-      payload: {amount: periodEconomy.saved, caption: periodCaption(period)},
-    });
-  }
-  const hasInsightBody =
-    cheaper.length > 0 ||
-    marketRanks.length > 0 ||
-    categoryWins.length > 0 ||
-    todayF.length > 0 ||
-    cheapF.length > 0 ||
-    oppsF.length > 0 ||
-    listsF.length > 0;
-
-  if (!hasInsightBody) {
-    data.push({type: 'guide', key: 'empty-guide'});
-  }
-
-  if (marketRanks.length) {
-    data.push({
-      type: 'section',
-      key: 'rank-h',
-      payload: {
-        title: 'Mercados mais baratos',
-        trailing: periodCaption(period),
-      },
-    });
-    marketRanks.slice(0, 8).forEach((r, i) =>
-      data.push({
-        type: 'market-rank',
-        key: `mr-${r.marketId}`,
-        payload: {...r, place: i + 1},
-      }),
-    );
-  }
-  if (cheaper.length) {
-    data.push({
-      type: 'section',
-      key: 'cheaper-h',
-      payload: {
-        title: 'Categorias mais baratas',
-        trailing: periodCaption(period),
-      },
-    });
-    cheaper.forEach(c =>
-      data.push({
-        type: 'cheaper',
-        key: `cheap-cat-${c.category}`,
-        payload: c,
-      }),
-    );
-  }
-  if (categoryWins.length) {
-    data.push({
-      type: 'section',
-      key: 'catwin-h',
-      payload: {
-        title: 'Melhor mercado por categoria',
-        trailing: periodCaption(period),
-      },
-    });
-    categoryWins.slice(0, 10).forEach(r =>
-      data.push({
-        type: 'cat-win',
-        key: `cw-${r.category}`,
-        payload: r,
-      }),
-    );
-  }
-
-  if (marketName && todayF.length) {
-    data.push({
-      type: 'section',
-      key: 'today-h',
-      payload: {title: 'Hoje neste mercado', trailing: String(todayF.length)},
-    });
-    todayF.forEach(i =>
-      data.push({type: 'today', key: `t-${i.id}`, payload: i}),
-    );
-  }
-  if (cheapF.length) {
-    data.push({
-      type: 'section',
-      key: 'cheap-h',
-      payload: {title: 'Preço mais baixo', trailing: `${cheapF.length} itens`},
-    });
-    cheapF.forEach(r =>
-      data.push({type: 'cheap', key: `c-${r.product.id}`, payload: r}),
-    );
-  }
-  if (cheapByCat.length) {
-    data.push({
-      type: 'section',
-      key: 'bycat-h',
-      payload: {title: 'Por categoria', trailing: `${cheapByCat.length} grupos`},
-    });
-    for (const [cat, items] of cheapByCat) {
-      data.push({
-        type: 'cat-section',
-        key: `bycat-${cat}`,
-        payload: {title: cat, trailing: String(items.length)},
-      });
-      items.forEach(r =>
-        data.push({
-          type: 'cheap',
-          key: `bc-${cat}-${r.product.id}`,
-          payload: r,
-        }),
-      );
-    }
-  }
-  if (oppsF.length) {
-    data.push({
-      type: 'section',
-      key: 'opp-h',
-      payload: {title: 'Acima da sua média', trailing: String(oppsF.length)},
-    });
-    oppsF.forEach(o =>
-      data.push({type: 'opp', key: `o-${o.product.id}`, payload: o}),
-    );
-  }
-  if (listsF.length) {
-    data.push({
-      type: 'section',
-      key: 'list-h',
-      payload: {
-        title: 'Compras das notas',
-        trailing: String(listsF.length),
-      },
-    });
-    listsF.forEach(l =>
-      data.push({type: 'list', key: `l-${l.id}`, payload: l}),
-    );
-  }
+  const empty =
+    board.averages.length === 0 &&
+    board.rising.length === 0 &&
+    board.places.length === 0;
 
   return (
     <View style={styles.root}>
-      <AppScreenHeader
-        showLogo={false}
+      <SoftHeader
         title="Insights"
-        actions={
-          <View style={{flexDirection: 'row'}}>
-            <Pressable
-              style={styles.iconBtn}
-              onPress={() => nav.navigate('ShoppingLists')}>
-              <ClipboardList color={colors.navy} size={20} />
-            </Pressable>
-            <Pressable
-              style={styles.iconBtn}
-              onPress={() => {
-                setLocTick(t => t + 1);
-                setPickerOpen(true);
-              }}>
-              <Store color={colors.navy} size={20} />
-            </Pressable>
-          </View>
-        }
+        subtitle="Onde economizar, sem lista infinita"
       />
-      <AppScreenNavyBar
-        value={String(alerts)}
-        label="alertas"
-        trailing={
-          <FiscalBadge level={fiscalLevel} points={rep?.points ?? 0} />
-        }
-      />
-      <View style={styles.toolbar}>
-        <View style={styles.periodRow}>
-          {PERIODS.map(p => {
-            const on = period === p.id;
+      <ScrollView
+        contentContainerStyle={styles.pad}
+        showsVerticalScrollIndicator={false}>
+        <View style={styles.periods}>
+          {PERIODS.map(item => {
+            const on = period === item.id;
             return (
               <Pressable
-                key={p.id}
-                style={[styles.periodChip, on && styles.periodChipOn]}
-                onPress={() => setPeriod(p.id)}>
-                <Text
-                  style={[
-                    styles.periodChipText,
-                    on && styles.periodChipTextOn,
-                  ]}>
-                  {p.label}
+                key={item.id}
+                onPress={() => setPeriod(item.id)}
+                style={[styles.period, on && styles.periodOn]}>
+                <Text style={[styles.periodText, on && styles.periodTextOn]}>
+                  {item.label}
                 </Text>
               </Pressable>
             );
           })}
         </View>
-        <TextInput
-          style={styles.search}
-          placeholder="Buscar item, mercado ou lista…"
-          placeholderTextColor={colors.muted}
-          value={query}
-          onChangeText={setQuery}
-        />
-      </View>
-      <FlatList
-        data={data}
-        keyExtractor={i => i.key}
-        contentContainerStyle={{
-          paddingHorizontal: 16,
-          paddingTop: 8,
-          paddingBottom: insets.bottom + 148,
-        }}
-        ListFooterComponent={<View style={{height: 24}} />}
-        renderItem={({item, index}) => {
-          const node = (() => {
-          if (item.type === 'board') {
-            return (
-              <InsightsBoard
-                spentLabel={item.payload.spentLabel}
-                spent={item.payload.spent}
-                ringLabel={item.payload.ringLabel}
-                ringValue={item.payload.ringValue}
-                bars={item.payload.bars}
-              />
-            );
-          }
-          if (item.type === 'guide') {
-            return (
-              <FeatureEmptyGuide
-                HeroIcon={Store}
-                title="Nada para comparar neste período"
-                subtitle="Ainda não há notas fiscais neste intervalo. Semana e mês usam os últimos 7 e 30 dias. Tudo mostra o histórico inteiro."
-                stepsLabel="Como encher esta tela"
-                steps={[
-                  {
-                    n: '1',
-                    title: 'Capture no mercado',
-                    text: 'Etiqueta ou NFC-e entram como preço da sua compra.',
-                    Icon: ScanLine,
-                  },
-                  {
-                    n: '2',
-                    title: 'Confirme na Comunidade',
-                    text: 'Preços suspeitos só entram no ranking depois do voto.',
-                    Icon: Store,
-                  },
-                  {
-                    n: '3',
-                    title: 'Volte aos Insights',
-                    text: 'Mercados mais baratos e categorias surgem com dados reais.',
-                    Icon: ClipboardList,
-                  },
-                ]}
-                PrimaryIcon={ScanLine}
-                primaryLabel="Capturar preço"
-                onPrimary={() => nav.navigate('Capture')}
-                secondaryLabel="Ir para a Comunidade"
-                onSecondary={() => nav.navigate('Community')}
-              />
-            );
-          }
-          if (item.type === 'savings') {
-            return (
-              <View style={styles.savingsBanner}>
-                <Text style={styles.savingsBannerLabel}>
-                  Abaixo da média · {item.payload.caption}
-                </Text>
-                <Text style={styles.savingsBannerValue}>
-                  {formatBrl(item.payload.amount)}
-                </Text>
-              </View>
-            );
-          }
-          if (item.type === 'section' || item.type === 'cat-section') {
-            const isCat = item.type === 'cat-section';
-            return (
-              <View style={[styles.sectionRow, isCat && styles.catSectionRow]}>
-                <Text style={[styles.section, isCat && styles.catSection]} numberOfLines={1}>
-                  {item.payload.title}
-                </Text>
-                <View style={styles.sectionPill}>
-                  <Text style={styles.sectionPillText}>
-                    {item.payload.trailing}
-                  </Text>
-                </View>
-              </View>
-            );
-          }
-          if (item.type === 'empty') {
-            return <Text style={styles.emptyLine}>{item.payload}</Text>;
-          }
-          if (item.type === 'market-rank') {
-            const r = item.payload;
-            return (
-              <AppListCard>
-                <View style={styles.row}>
-                  <View style={styles.placeBadge}>
-                    <Text style={styles.placeBadgeText}>{r.place}</Text>
-                  </View>
-                  <View style={{flex: 1, minWidth: 0}}>
-                    <Text style={styles.name} numberOfLines={2}>
-                      {r.marketName}
-                    </Text>
-                    <Text style={styles.muted} numberOfLines={1}>
-                      {r.winCount} produto{r.winCount === 1 ? '' : 's'} mais
-                      barato{r.winCount === 1 ? '' : 's'}
-                    </Text>
-                    {r.topCategories?.length ? (
-                      <Text style={styles.cats} numberOfLines={1}>
-                        {r.topCategories.join(' · ')}
-                      </Text>
-                    ) : null}
-                  </View>
-                </View>
-              </AppListCard>
-            );
-          }
-          if (item.type === 'cheaper') {
-            const c = item.payload;
-            return (
-              <AppListCard>
-                <View style={styles.row}>
-                  <View style={{flex: 1}}>
-                    <Text style={styles.name}>{c.category}</Text>
-                    <Text style={styles.muted}>
-                      {Math.round(c.dropPct * 100)}% abaixo do preço anterior
-                    </Text>
-                  </View>
-                  <Text style={styles.price}>{formatBrl(c.saved)}</Text>
-                </View>
-              </AppListCard>
-            );
-          }
-          if (item.type === 'cat-win') {
-            const r = item.payload;
-            return (
-              <AppListCard>
-                <View style={styles.row}>
-                  <View style={{flex: 1}}>
-                    <Text style={styles.name}>{r.category}</Text>
-                    <Text style={styles.muted}>
-                      {r.marketName} · {r.winCount} vitória
-                      {r.winCount === 1 ? '' : 's'}
-                    </Text>
-                  </View>
-                </View>
-              </AppListCard>
-            );
-          }
-          if (item.type === 'today') {
-            const i = item.payload;
-            return (
-              <AppListCard
-                onPress={() =>
-                  nav.navigate('ProductDetail', {productId: i.productId})
-                }>
-                <View style={styles.row}>
-                  <View style={{flex: 1}}>
-                    <Text style={styles.name}>{i.productName}</Text>
-                    <Text style={styles.muted}>{miniDate(i.capturedAt)}</Text>
-                  </View>
-                  <Text style={styles.price}>{formatBrl(i.retailPrice)}</Text>
-                </View>
-              </AppListCard>
-            );
-          }
-          if (item.type === 'cheap') {
-            const r = item.payload;
-            return (
-              <AppListCard
-                onPress={() =>
-                  nav.navigate('ProductDetail', {productId: r.product.id})
-                }>
-                <View style={styles.row}>
-                  <View style={{flex: 1}}>
-                    <Text style={styles.name}>{r.product.name}</Text>
-                    <Text style={styles.muted}>
-                      {r.marketName || 'Mercado'} · {miniDate(r.log.capturedAt)}
-                    </Text>
-                  </View>
-                  <Text style={[styles.price, {color: colors.trustGreen}]}>
-                    {formatBrl(r.log.retailPrice)}
-                  </Text>
-                </View>
-              </AppListCard>
-            );
-          }
-          if (item.type === 'opp') {
-            const o = item.payload;
-            return (
-              <AppListCard
-                onPress={() =>
-                  nav.navigate('ProductDetail', {productId: o.product.id})
-                }>
-                <View style={styles.row}>
-                  <View style={{flex: 1}}>
-                    <Text style={styles.name}>{o.product.name}</Text>
-                    <Text style={styles.muted}>
-                      +{o.pctAbove.toFixed(0)}% vs média {formatBrl(o.avgPrice)}
-                    </Text>
-                  </View>
-                  <Text style={styles.price}>{formatBrl(o.lastPrice)}</Text>
-                </View>
-              </AppListCard>
-            );
-          }
-          const l = item.payload;
-          const lines = purchaseLines(l);
-          return (
-            <AppListCard onPress={() => nav.navigate('ShoppingLists')}>
-              <View style={styles.purchase}>
-                <View style={styles.row}>
-                  <View style={{flex: 1}}>
-                    <Text style={styles.name} numberOfLines={1}>
-                      {l.marketName || l.name}
-                    </Text>
-                    <Text style={styles.muted}>
-                      {new Date(l.finishedAt).toLocaleDateString('pt-BR')}
-                    </Text>
-                  </View>
-                  <Text style={styles.price}>{formatBrl(l.subtotal)}</Text>
-                </View>
-                {lines.map((it, index) => (
-                  <View key={`${it.productId}-${index}`} style={styles.itemLine}>
-                    <Text style={styles.itemName} numberOfLines={1}>
-                      {it.productName}
-                    </Text>
-                    <Text style={styles.itemPrice}>{formatBrl(lineTotal(it))}</Text>
-                  </View>
-                ))}
-              </View>
-            </AppListCard>
-          );
-          })();
-          return <Reveal delay={Math.min(index, 10) * 40}>{node}</Reveal>;
-        }}
-      />
 
-      <KeyboardSafeSheet
-        visible={pickerOpen}
-        onClose={() => setPickerOpen(false)}>
-        <Text style={styles.modalTitle}>Mercado atual</Text>
-        <Text style={styles.muted}>
-          Busque e selecione. Se não existir, será criado.
-        </Text>
-        <AppField
-          label="Mercado"
-          placeholder="Ex.: Atacadão…"
-          value={marketQuery}
-          onChangeText={setMarketQuery}
-          compact
-        />
-        {suggested.map(m => (
-          <MarketSuggestRow
-            key={m.id}
-            market={m}
-            highlight={m.id === currentMarketId}
-            onPress={() => {
-              setCurrentMarket(m.id);
-              setPickerOpen(false);
-              refresh();
-            }}
-          />
-        ))}
-        {canCreate ? (
-          <AppButton
-            label={`Usar "${marketQuery.trim()}" (novo)`}
-            onPress={() => {
-              const m = marketRepo.resolveOrCreate(marketQuery.trim());
-              setCurrentMarket(m.id);
-              setPickerOpen(false);
-              refresh();
-            }}
-          />
+        <SoftCard style={styles.hero}>
+          <Text style={styles.kicker}>Sua economia</Text>
+          <Text style={styles.heroValue}>
+            {board.saved > 0 ? formatBrl(board.saved) : 'R$ 0,00'}
+          </Text>
+          <Text style={styles.heroHint}>
+            {board.saved > 0
+              ? 'Você pagou abaixo da média dos outros preços do mesmo item.'
+              : 'Quando houver dois preços do mesmo item, a economia aparece aqui.'}
+          </Text>
+        </SoftCard>
+
+        <SoftCard>
+          <Text style={styles.section}>Onde você está mais econômico</Text>
+          {board.bestMarket ? (
+            <>
+              <Text style={styles.place}>{board.bestMarket}</Text>
+              {board.bestDetail ? (
+                <Text style={styles.hint}>{board.bestDetail}</Text>
+              ) : null}
+            </>
+          ) : (
+            <Text style={styles.hint}>Cadastre uma nota para ver o mercado da compra.</Text>
+          )}
+        </SoftCard>
+
+        <SoftCard>
+          <Text style={styles.section}>Onde e quando comprar</Text>
+          {board.places.length === 0 ? (
+            <Text style={styles.hint}>Sem categorias comparadas neste período.</Text>
+          ) : (
+            board.places.map(item => (
+              <View key={item.category} style={styles.row}>
+                <CategoryIcon name={item.category} />
+                <View style={styles.rowBody}>
+                  <Text style={styles.rowTitle} numberOfLines={1}>
+                    {item.category}
+                  </Text>
+                  <Text style={styles.hint} numberOfLines={2}>
+                    {item.marketName} · {item.when}
+                  </Text>
+                </View>
+              </View>
+            ))
+          )}
+        </SoftCard>
+
+        <SoftCard>
+          <Text style={styles.section}>Média de preço por categoria</Text>
+          {board.averages.length === 0 ? (
+            <Text style={styles.hint}>Ainda não há preços de nota neste período.</Text>
+          ) : (
+            board.averages.map(item => (
+              <View key={item.category} style={styles.avgRow}>
+                <CategoryIcon name={item.category} />
+                <Text style={styles.rowTitle} numberOfLines={1}>
+                  {item.category}
+                </Text>
+                <View style={styles.avgValue}>
+                  <Text style={styles.price}>{formatBrl(item.avg)}</Text>
+                  <Text style={styles.hint} numberOfLines={1}>
+                    menor em {item.marketName}
+                  </Text>
+                </View>
+              </View>
+            ))
+          )}
+        </SoftCard>
+
+        <SoftCard>
+          <Text style={styles.section}>Itens que subiram</Text>
+          {board.rising.length === 0 ? (
+            <Text style={styles.hint}>
+              Nenhum item subiu mais de 8% em relação ao preço anterior.
+            </Text>
+          ) : (
+            board.rising.map(item => (
+              <Pressable
+                key={item.productId}
+                style={styles.row}
+                onPress={() =>
+                  nav.navigate('ProductDetail', {productId: item.productId})
+                }>
+                <View style={styles.riseBadge}>
+                  <Text style={styles.riseText}>+{item.pct}%</Text>
+                </View>
+                <View style={styles.rowBody}>
+                  <Text style={styles.rowTitle} numberOfLines={1}>
+                    {item.name}
+                  </Text>
+                  <Text style={styles.hint}>
+                    {formatBrl(item.previous)} → {formatBrl(item.latest)}
+                  </Text>
+                </View>
+              </Pressable>
+            ))
+          )}
+        </SoftCard>
+
+        {empty ? (
+          <Text style={styles.footer}>
+            Os insights usam as notas fiscais. Uma nota já mostra a média; duas do mesmo item mostram economia e alta.
+          </Text>
         ) : null}
-        <AppButton
-          label="Fechar"
-          outlined
-          onPress={() => setPickerOpen(false)}
-        />
-      </KeyboardSafeSheet>
+      </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: {flex: 1, backgroundColor: colors.bg},
-  iconBtn: {padding: 8},
-  search: {
-    backgroundColor: '#fff',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: 12,
-    height: 44,
-    color: colors.ink,
-    fontWeight: '600',
-  },
-  toolbar: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 4,
-    gap: 10,
-  },
-  periodRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  periodChip: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: radii.pill,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.white,
-    alignItems: 'center',
-  },
-  periodChipOn: {
-    backgroundColor: colors.navy,
-    borderColor: colors.navy,
-  },
-  periodChipText: {fontWeight: '800', fontSize: 13, color: colors.muted},
-  periodChipTextOn: {color: colors.white},
-  savingsBanner: {
-    backgroundColor: '#DCFCE7',
-    borderRadius: radii.lg,
+  pad: {
     padding: space.md,
-    alignItems: 'center',
-    marginBottom: 8,
-    gap: 2,
+    paddingBottom: spacing.bottomNavClearance,
+    gap: 12,
   },
-  savingsBannerLabel: {
-    fontWeight: '700',
-    fontSize: 12,
-    color: colors.trustGreen,
-  },
-  savingsBannerValue: {
-    fontWeight: '900',
-    fontSize: 24,
-    color: colors.trustGreen,
-  },
-  sectionRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-    marginTop: 8,
-  },
-  section: {fontWeight: '800', color: colors.navy, fontSize: 15, flex: 1},
-  catSectionRow: {marginTop: 4, marginLeft: 4},
-  catSection: {fontSize: 13, fontWeight: '700', color: colors.muted},
-  sectionPill: {
-    backgroundColor: colors.yellowBright,
+  periods: {flexDirection: 'row', gap: 8},
+  period: {
     borderRadius: radii.pill,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    marginLeft: 8,
+    backgroundColor: colors.white,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
   },
-  sectionPillText: {fontSize: 11, fontWeight: '800', color: colors.navy},
-  muted: {color: colors.muted, fontWeight: '600', fontSize: 12},
-  cats: {color: colors.navy, fontWeight: '700', fontSize: 12, marginTop: 2},
-  emptyLine: {
-    color: colors.muted,
-    marginBottom: 10,
+  periodOn: {backgroundColor: colors.navy},
+  periodText: {fontWeight: '800', color: colors.ink, fontSize: 13},
+  periodTextOn: {color: colors.white},
+  hero: {backgroundColor: colors.navy},
+  kicker: {
+    color: colors.yellow,
+    fontWeight: '800',
+    fontSize: 12,
+    letterSpacing: 0.3,
+  },
+  heroValue: {
+    marginTop: 4,
+    color: colors.white,
+    fontSize: 32,
+    fontWeight: '900',
+  },
+  heroHint: {
+    marginTop: 6,
+    color: '#D6E2F5',
     fontWeight: '600',
     lineHeight: 18,
   },
-  row: {flexDirection: 'row', alignItems: 'center', gap: 8},
-  purchase: {gap: 8},
-  itemLine: {
-    flexDirection: 'row',
+  section: {fontWeight: '900', color: colors.navy, fontSize: 16, marginBottom: 8},
+  place: {fontWeight: '900', color: colors.ink, fontSize: 18},
+  hint: {color: colors.muted, fontWeight: '600', fontSize: 13, lineHeight: 18},
+  row: {flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8},
+  rowBody: {flex: 1, minWidth: 0},
+  rowTitle: {flex: 1, fontWeight: '800', color: colors.navy, fontSize: 14},
+  avgRow: {flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8},
+  avgValue: {alignItems: 'flex-end', maxWidth: 140},
+  price: {fontWeight: '900', color: colors.navy},
+  riseBadge: {
+    minWidth: 52,
+    borderRadius: radii.pill,
+    backgroundColor: '#FEE2E2',
+    paddingHorizontal: 8,
+    paddingVertical: 6,
     alignItems: 'center',
-    gap: 8,
-    paddingLeft: 2,
   },
-  itemName: {flex: 1, color: colors.ink, fontWeight: '700', fontSize: 13},
-  itemPrice: {color: colors.navy, fontWeight: '800', fontSize: 13},
-  placeBadge: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: colors.yellow,
-    borderWidth: 1,
-    borderColor: colors.navy,
-    alignItems: 'center',
-    justifyContent: 'center',
+  riseText: {fontWeight: '900', color: colors.danger, fontSize: 12},
+  footer: {
+    color: colors.muted,
+    fontWeight: '600',
+    fontSize: 13,
+    lineHeight: 18,
   },
-  placeBadgeText: {fontWeight: '900', fontSize: 12, color: colors.navy},
-  name: {fontWeight: '800', color: colors.navy, fontSize: 14},
-  price: {fontWeight: '800', color: colors.navy, fontSize: 15},
-  modalTitle: {fontSize: 18, fontWeight: '800', color: colors.navy},
 });

@@ -12,10 +12,10 @@ import {NavigationContainer} from '@react-navigation/native';
 import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
 import {
+  ChartLine,
   History,
   Home,
   ShoppingCart,
-  UsersRound,
   UserRound,
 } from 'lucide-react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
@@ -115,11 +115,11 @@ function Tabs() {
         }}
       />
       <Tab.Screen
-        name="Community"
-        component={CommunityScreen}
+        name="Insights"
+        component={InsightsScreen}
         options={{
-          title: 'Comunidade',
-          tabBarIcon: ({color}) => <UsersRound size={20} color={color} />,
+          title: 'Insights',
+          tabBarIcon: ({color}) => <ChartLine size={20} color={color} />,
         }}
       />
       <Tab.Screen
@@ -141,10 +141,10 @@ function Tabs() {
         }}
       />
       <Tab.Screen
-        name="Insights"
-        component={InsightsScreen}
+        name="Community"
+        component={CommunityScreen}
         options={{
-          title: 'Insights',
+          title: 'Comunidade',
           tabBarButton: () => null,
           tabBarItemStyle: {display: 'none'},
         }}
