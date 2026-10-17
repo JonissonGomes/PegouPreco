@@ -1,7 +1,7 @@
 import React, {useEffect, useState} from 'react';
 import {Pressable, StyleSheet, Text, View} from 'react-native';
 import {useNavigation} from '@react-navigation/native';
-import {MapPin, Star, TrendingDown, TrendingUp, Minus} from 'lucide-react-native';
+import {MapPin, Star, TrendingDown, TrendingUp, Minus, TriangleAlert} from 'lucide-react-native';
 import {AppButton} from '@/ui/chrome';
 import {appAlert} from '@/ui/appDialog';
 import {KeyboardSafeSheet} from '@/ui/keyboardSheet';
@@ -21,6 +21,7 @@ import {apiErrorMessage} from '@/data/remote/apiError';
 import {reverseGeocode} from '@/data/remote/reverseGeocode';
 import {MAPBOX_ACCESS_TOKEN} from '@/config/env';
 import {PIN_REPORTS, type PinReportId} from '@/domain/pinReports';
+import {friendlyMarketTitle, relatedMarketIds} from '@/domain/marketBrand';
 import {getState} from '@/data/db';
 
 function BandIcon({band}: {band: PriceBand}) {
@@ -29,9 +30,16 @@ function BandIcon({band}: {band: PriceBand}) {
   return <Minus size={16} color={colors.trustYellow} />;
 }
 
-function userRegisteredReceipt(marketId: number) {
+function userRegisteredReceipt(market: Market) {
+  const ids = new Set(relatedMarketIds(market, marketRepo.all()));
   return getState().price_logs.some(
-    log => log.marketId === marketId && log.source === 'nfce' && !!log.nfceKey,
+    log =>
+      log.marketId != null &&
+      ids.has(log.marketId) &&
+      log.source === 'nfce' &&
+      !!log.nfceKey,
+  ) || getState().shopping_lists.some(
+    list => list.marketId != null && ids.has(list.marketId) && !!list.nfceKey,
   );
 }
 
@@ -39,16 +47,17 @@ function marketKey(market: Market) {
   return market.remoteId || `local:${market.id}`;
 }
 
-function localWeeklyVisitors(marketId: number) {
+function localWeeklyVisitors(market: Market) {
+  const ids = new Set(relatedMarketIds(market, marketRepo.all()));
   const since = Date.now() - 7 * 24 * 60 * 60 * 1000;
   const users = new Set<string>();
   for (const log of getState().price_logs) {
-    if (log.marketId !== marketId) continue;
+    if (log.marketId == null || !ids.has(log.marketId)) continue;
     if (Date.parse(log.capturedAt) < since) continue;
-    if (log.contributorId) users.add(log.contributorId);
+    users.add(log.contributorId || 'local-shopper');
   }
   for (const list of getState().shopping_lists) {
-    if (list.marketId !== marketId) continue;
+    if (list.marketId == null || !ids.has(list.marketId)) continue;
     if (Date.parse(list.finishedAt) < since) continue;
     users.add('local-shopper');
   }
@@ -74,6 +83,7 @@ export function MarketPinSheet({
   onUse?: (market: Market) => void;
 }) {
   const nav = useNavigation<any>();
+  const markets = useAppStore(s => s.markets);
   const auth = useAppStore(s => s.auth);
   const [cached, setCached] = useState<Market | null>(market);
   const [cachedDist, setCachedDist] = useState(distanceKm);
@@ -100,7 +110,7 @@ export function MarketPinSheet({
   const band = shown ? resolvePriceBand(shown) : 'unknown';
   const rating = shown?.avgRating ?? 0;
   const visitors = shown
-    ? Math.max(shown.weeklyVisitors ?? 0, localWeeklyVisitors(shown.id))
+    ? Math.max(shown.weeklyVisitors ?? 0, localWeeklyVisitors(shown))
     : 0;
   const locationConfirmed = shown
     ? confirmedKeys.includes(marketKey(shown))
@@ -153,7 +163,7 @@ export function MarketPinSheet({
     return true;
   };
 
-  const submitReview = async (stars: number) => {
+  const submitReview = async (stars: number, tags: string[]) => {
     if (!shown) return;
     if (!requireVerified('avaliar mercados')) return;
     if (!shown.remoteId) {
@@ -177,6 +187,7 @@ export function MarketPinSheet({
         auth.token!,
         shown.remoteId,
         stars,
+        tags,
       )) as {avgRating?: number; ratingsCount?: number};
       if (data?.avgRating != null) {
         marketRepo.upsertGeo(shown.id, {
@@ -259,7 +270,9 @@ export function MarketPinSheet({
                 <MapPin size={22} color={colors.navy} />
               </View>
               <View style={{flex: 1}}>
-                <Text style={styles.title}>{shown.name}</Text>
+                <Text style={styles.title}>
+                  {friendlyMarketTitle(shown, markets)}
+                </Text>
                 <Text style={styles.addr} numberOfLines={3}>
                   {addressLine || 'Buscando endereço…'}
                 </Text>
@@ -306,39 +319,18 @@ export function MarketPinSheet({
 
             {onUse ? (
               <AppButton
-                label="Usar este mercado"
+                label="Estou neste mercado"
                 onPress={() => onUse(shown)}
               />
             ) : null}
-            <AppButton
-              accent
-              icon={
-                <Star size={18} color={colors.navy} fill={colors.navy} />
-              }
-              label={
-                userRegisteredReceipt(shown.id)
-                  ? 'Avaliar mercado · +5 pts'
-                  : 'Avaliar depois de cadastrar a nota'
-              }
-              onPress={() => {
-                if (!userRegisteredReceipt(shown.id)) {
-                  appAlert(
-                    'Cadastre a nota',
-                    'A avaliação deste mercado abre depois que você cadastra uma NFC-e dele.',
-                    [
-                      {label: 'Agora não', style: 'cancel'},
-                      {
-                        label: 'Cadastrar nota',
-                        style: 'primary',
-                        onPress: () => nav.navigate('ImportPurchase'),
-                      },
-                    ],
-                  );
-                  return;
-                }
-                setReviewOpen(true);
-              }}
-            />
+            {userRegisteredReceipt(shown) ? (
+              <AppButton
+                accent
+                icon={<Star size={18} color={colors.navy} fill={colors.navy} />}
+                label="Avaliar mercado · +5 pts"
+                onPress={() => setReviewOpen(true)}
+              />
+            ) : null}
             {locationConfirmed ? null : (
               <AppButton
                 outlined
@@ -346,13 +338,14 @@ export function MarketPinSheet({
                 onPress={() => void submitSuggestion('confirm')}
               />
             )}
-            <AppButton
-              outlined
-              label="Reportar erro neste pin"
-              onPress={reportPin}
-            />
             <Pressable style={styles.secondary} onPress={onClose}>
               <Text style={styles.secondaryText}>Fechar</Text>
+            </Pressable>
+            <Pressable
+              style={styles.alertBtn}
+              onPress={reportPin}
+              accessibilityLabel="Reportar erro neste pin">
+              <TriangleAlert size={18} color={colors.danger} />
             </Pressable>
           </>
         ) : (
@@ -436,4 +429,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   secondaryText: {color: colors.navy, fontWeight: '700'},
+  alertBtn: {
+    alignSelf: 'center',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FEF2F2',
+  },
 });

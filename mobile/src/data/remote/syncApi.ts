@@ -194,11 +194,16 @@ export const syncApi = {
     client
       .get(`/markets/${marketId}/reviews`)
       .then(r => r.data as Array<Record<string, unknown>>),
-  submitMarketReview: (token: string, marketId: string, stars: number) =>
+  submitMarketReview: (
+    token: string,
+    marketId: string,
+    stars: number,
+    tags: string[] = [],
+  ) =>
     client
       .post(
         `/markets/${marketId}/reviews`,
-        {stars},
+        {stars, tags},
         {headers: auth(token)},
       )
       .then(r => r.data),

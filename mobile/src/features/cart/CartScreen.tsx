@@ -1,4 +1,4 @@
-import React, {useCallback, useEffect, useMemo, useState} from 'react';
+import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
   ActivityIndicator,
   Keyboard,
@@ -87,6 +87,7 @@ export function CartScreen() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [listName, setListName] = useState('Compras de hoje');
   const [spendLimitText, setSpendLimitText] = useState('');
+  const presetMarketId = useRef<number | null>(null);
   const [marketQuery, setMarketQuery] = useState('');
   const [origin, setOrigin] = useState<{lat: number; lng: number} | null>(
     () => prefs.getLastLocation(),
@@ -160,10 +161,17 @@ export function CartScreen() {
     useCallback(() => {
       if (!route.params?.askMarket) return;
       const name = String(route.params.listName ?? '').trim();
+      const marketId = Number(route.params.marketId);
+      presetMarketId.current =
+        Number.isFinite(marketId) && marketId > 0 ? marketId : null;
       if (name) setListName(name);
       setStartOpen(true);
-      nav.setParams({askMarket: undefined, listName: undefined});
-    }, [nav, route.params?.askMarket, route.params?.listName]),
+      nav.setParams({
+        askMarket: undefined,
+        listName: undefined,
+        marketId: undefined,
+      });
+    }, [nav, route.params?.askMarket, route.params?.listName, route.params?.marketId]),
   );
 
   useEffect(() => {
@@ -181,6 +189,16 @@ export function CartScreen() {
 
   useEffect(() => {
     if (!startOpen) return;
+    const preset = presetMarketId.current;
+    presetMarketId.current = null;
+    if (preset) {
+      const market = marketRepo.getById(preset);
+      setPickedMarketId(preset);
+      setMarketQuery(market?.name ?? '');
+      setConfirmHint(null);
+      setStartStep('confirm');
+      return;
+    }
     let cancelled = false;
     setStartStep('loading');
     setConfirmHint(null);

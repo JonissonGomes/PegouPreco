@@ -1,4 +1,5 @@
 import {parseBrl} from '@/domain/money';
+import {friendlyEmitName} from '@/domain/marketBrand';
 
 export type NfceItem = {
   description: string;
@@ -95,7 +96,7 @@ export function parseNfceXml(xml: string): NfceParseResult {
   const issued = xmlTag(xml, 'dhEmi');
   const issuedDate = issued ? new Date(issued) : null;
   return {
-    marketName: xmlTag(emit, 'xFant') ?? xmlTag(emit, 'xNome'),
+    marketName: friendlyEmitName(xmlTag(emit, 'xFant'), xmlTag(emit, 'xNome')),
     marketCnpj: xmlTag(emit, 'CNPJ'),
     marketAddress: emitAddress(emit),
     issuedAt:

@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import {WebView, type WebViewMessageEvent} from 'react-native-webview';
+import {useNavigation} from '@react-navigation/native';
 import Geolocation from 'react-native-geolocation-service';
 import {LocateFixed, Plus, RefreshCw, Search, X} from 'lucide-react-native';
 import {MAPBOX_ACCESS_TOKEN} from '@/config/env';
@@ -130,7 +131,7 @@ function buildMapHtml(
     const map = L.map('map', {
       zoomControl: false,
       attributionControl: true,
-    }).setView(center, 12);
+    }).setView(center, 13);
 
     ${tileLayerJs(token)}.addTo(map);
     L.control.zoom({ position: 'bottomright' }).addTo(map);
@@ -215,12 +216,16 @@ function buildMapHtml(
         });
       });
       if (!userMoved && !fitted && pts.length > 1) {
-        map.fitBounds(pts, { padding: [48, 48], maxZoom: 14 });
         fitted = true;
       }
     }
 
     renderMarkets(markets);
+    setTimeout(function () {
+      if (!userMoved && map.flyTo) {
+        map.flyTo(center, 16, { animate: true, duration: 1.2 });
+      }
+    }, 400);
 
     window.setCenter = function(lat, lng) {
       const next = [lat, lng];
@@ -248,6 +253,7 @@ function buildMapHtml(
 }
 
 export function MapScreen() {
+  const nav = useNavigation<any>();
   const markets = useAppStore(s => s.markets);
   const refresh = useAppStore(s => s.refresh);
   const locationGranted = useAppStore(s => s.permissions.location);
@@ -689,8 +695,8 @@ export function MapScreen() {
         distanceKm={selectedDistance}
         onClose={() => setSelected(null)}
         onUse={m => {
-          prefs.setCurrentMarketId(m.id);
           setSelected(null);
+          nav.navigate('Lists', {askMarket: true, marketId: m.id});
         }}
       />
 

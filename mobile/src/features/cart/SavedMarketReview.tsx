@@ -21,7 +21,7 @@ export function SavedMarketReview({
   const refresh = useAppStore(s => s.refresh);
   const [busy, setBusy] = useState(false);
 
-  const submit = async (stars: number) => {
+  const submit = async (stars: number, tags: string[]) => {
     if (!canContribute(auth)) {
       appAlert(
         'Conta necessária',
@@ -44,7 +44,7 @@ export function SavedMarketReview({
         onClose();
         return;
       }
-      await syncApi.submitMarketReview(auth!.token, remoteId, stars);
+      await syncApi.submitMarketReview(auth!.token, remoteId, stars, tags);
       if (market) {
         marketRepo.upsertGeo(market.id, {
           ratingsCount: (market.ratingsCount ?? 0) + 1,

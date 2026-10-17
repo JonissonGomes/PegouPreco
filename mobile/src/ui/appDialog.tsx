@@ -78,7 +78,15 @@ export const useAppDialog = create<DialogState>(set => ({
       actions:
         opts.actions?.length
           ? opts.actions
-          : [{label: 'Entendi', style: 'primary'}],
+          : [
+              {
+                label:
+                  (opts.tone ?? toneFromTitle(opts.title)) === 'success'
+                    ? 'Continuar'
+                    : 'Entendi',
+                style: 'primary',
+              },
+            ],
     }),
   hide: () => set({visible: false}),
 }));
@@ -219,8 +227,9 @@ const styles = StyleSheet.create({
   cardSuccess: {
     borderWidth: 0,
     borderRadius: 28,
+    paddingHorizontal: 22,
     paddingVertical: 28,
-    alignItems: 'center',
+    alignItems: 'stretch',
   },
   bubbleDanger: {backgroundColor: '#FEE2E2'},
   title: {
@@ -238,5 +247,5 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginBottom: 4,
   },
-  actions: {gap: 8, marginTop: 8},
+  actions: {alignSelf: 'stretch', width: '100%', gap: 8, marginTop: 8},
 });

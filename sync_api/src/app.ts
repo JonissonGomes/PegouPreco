@@ -466,6 +466,7 @@ export function createRouter(store: DataStore): Router {
       marketId: req.params.id,
       userId,
       stars,
+      tags: Array.isArray(body.tags) ? body.tags.map(tag => String(tag)) : [],
       comment: body.comment as string | undefined,
     });
     if (result.error != null) {

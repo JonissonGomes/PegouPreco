@@ -1,19 +1,14 @@
 import React, {useEffect, useState} from 'react';
-import {Pressable, ScrollView, StyleSheet, Text, TextInput, View} from 'react-native';
+import {ScrollView, StyleSheet, Text, View} from 'react-native';
 import {Check} from 'lucide-react-native';
 import {AppButton} from '@/ui/chrome';
 import {KeyboardSafeSheet} from '@/ui/keyboardSheet';
-import {colors, radii, space} from '@/ui/theme';
+import {colors, radii} from '@/ui/theme';
 import {formatBrl, formatQty} from '@/domain/money';
 import {guessCategory} from '@/domain/productCategory';
+import {CategoryIcon} from '@/features/history/categoryIcon';
 import type {NfceDraft} from '@/data/archivePurchase';
 
-function maskDate(raw: string): string {
-  const digits = raw.replace(/\D/g, '').slice(0, 8);
-  if (digits.length <= 2) return digits;
-  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
-  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
-}
 function dateToField(iso: string | null): string {
   const d = iso ? new Date(iso) : new Date();
   if (Number.isNaN(d.getTime())) return '';
@@ -21,30 +16,6 @@ function dateToField(iso: string | null): string {
   const month = String(d.getMonth() + 1).padStart(2, '0');
   return `${day}/${month}/${d.getFullYear()}`;
 }
-
-function fieldToIso(text: string): string | null {
-  const match = text.trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if (!match) return null;
-  const day = Number(match[1]);
-  const month = Number(match[2]);
-  const year = Number(match[3]);
-  const date = new Date(year, month - 1, day, 12, 0, 0, 0);
-  if (
-    date.getFullYear() !== year ||
-    date.getMonth() !== month - 1 ||
-    date.getDate() !== day
-  ) {
-    return null;
-  }
-  return date.toISOString();
-}
-
-const RATE_STEPS = [
-  'Salve esta nota no histórico.',
-  'Abra o mercado no mapa.',
-  'Toque em Avaliar mercado.',
-  'Dê a nota de 1 a 5. Só quem cadastrou a nota pode avaliar.',
-];
 
 export function NfceReviewSheet({
   draft,
@@ -61,24 +32,19 @@ export function NfceReviewSheet({
   saveLabel?: string;
   hint?: string;
 }) {
-  const [guide, setGuide] = useState(false);
-  const [dateText, setDateText] = useState('');
-  const [dateError, setDateError] = useState('');
+  const [issuedAt, setIssuedAt] = useState<string | null>(null);
   const items = draft?.parsed.items ?? [];
   const total = draft?.subtotal ?? 0;
 
   useEffect(() => {
-    setDateText(dateToField(draft?.parsed.issuedAt ?? null));
-    setDateError('');
-    setGuide(false);
+    setIssuedAt(draft?.parsed.issuedAt ?? null);
   }, [draft]);
 
   const save = () => {
-    const iso = fieldToIso(dateText);
-    if (!iso) {
-      setDateError('Use o formato dd/mm/aaaa.');
-      return;
-    }
+    const iso =
+      issuedAt && !Number.isNaN(Date.parse(issuedAt))
+        ? issuedAt
+        : new Date().toISOString();
     onSave(iso);
   };
 
@@ -105,30 +71,18 @@ export function NfceReviewSheet({
             </View>
           </View>
           <Text style={styles.factLabel}>Data da compra</Text>
-          <TextInput
-            value={dateText}
-            onChangeText={text => {
-              setDateText(maskDate(text));
-              setDateError('');
-            }}
-            placeholder="dd/mm/aaaa"
-            placeholderTextColor={colors.muted}
-            keyboardType="number-pad"
-            maxLength={10}
-            style={styles.dateInput}
-          />
-          {dateError ? <Text style={styles.dateError}>{dateError}</Text> : null}
+          <Text style={styles.dateValue}>{dateToField(issuedAt)}</Text>
 
           <ScrollView style={styles.list} nestedScrollEnabled>
             {items.map((it, index) => (
               <View key={`${it.description}-${index}`} style={styles.row}>
+                <CategoryIcon name={guessCategory(it.description)} size={14} />
                 <View style={{flex: 1, minWidth: 0}}>
                   <Text style={styles.name} numberOfLines={2}>
                     {it.description}
                   </Text>
                   <Text style={styles.qty}>
-                    {guessCategory(it.description)} · {formatQty(it.quantity)} ×{' '}
-                    {formatBrl(it.unitPrice)}
+                    Quant. {formatQty(it.quantity)} × {formatBrl(it.unitPrice)}
                   </Text>
                 </View>
                 <Text style={styles.line}>
@@ -137,19 +91,6 @@ export function NfceReviewSheet({
               </View>
             ))}
           </ScrollView>
-
-          <Pressable style={styles.guideBtn} onPress={() => setGuide(v => !v)}>
-            <Text style={styles.guideBtnText}>Como avaliar o mercado</Text>
-          </Pressable>
-          {guide ? (
-            <View style={styles.steps}>
-              {RATE_STEPS.map((step, i) => (
-                <Text key={step} style={styles.step}>
-                  {i + 1}. {step}
-                </Text>
-              ))}
-            </View>
-          ) : null}
 
           <AppButton
             label={saving ? 'Salvando…' : saveLabel}
@@ -164,11 +105,7 @@ export function NfceReviewSheet({
 }
 
 const styles = StyleSheet.create({
-  ticket: {
-    backgroundColor: colors.white,
-    borderRadius: 24,
-    gap: 8,
-  },
+  ticket: {backgroundColor: colors.white, borderRadius: 24, gap: 8},
   badge: {
     alignSelf: 'center',
     width: 56,
@@ -179,18 +116,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 4,
   },
-  title: {
-    textAlign: 'center',
-    fontSize: 22,
-    fontWeight: '900',
-    color: colors.ink,
-  },
-  sub: {
-    textAlign: 'center',
-    color: colors.muted,
-    fontWeight: '600',
-    lineHeight: 20,
-  },
+  title: {textAlign: 'center', fontSize: 22, fontWeight: '900', color: colors.ink},
+  sub: {textAlign: 'center', color: colors.muted, fontWeight: '600', lineHeight: 20},
   dash: {
     borderTopWidth: 1,
     borderStyle: 'dashed',
@@ -205,7 +132,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
   },
   factValue: {fontWeight: '900', color: colors.navy, fontSize: 15, marginTop: 2},
-  dateInput: {
+  dateValue: {
     height: 48,
     borderRadius: radii.lg,
     backgroundColor: colors.bg,
@@ -213,8 +140,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '800',
     color: colors.ink,
+    lineHeight: 48,
   },
-  dateError: {color: colors.danger, fontWeight: '700', fontSize: 12},
   list: {maxHeight: 220, marginTop: 4},
   row: {
     flexDirection: 'row',
@@ -227,19 +154,4 @@ const styles = StyleSheet.create({
   name: {fontWeight: '800', color: colors.navy, fontSize: 14},
   qty: {marginTop: 2, fontSize: 12, fontWeight: '600', color: colors.muted},
   line: {fontWeight: '900', color: colors.navy},
-  guideBtn: {
-    alignSelf: 'center',
-    backgroundColor: '#F3F4F6',
-    borderRadius: radii.pill,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-  },
-  guideBtnText: {fontWeight: '800', color: colors.navy, fontSize: 13},
-  steps: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 16,
-    padding: space.md,
-    gap: 6,
-  },
-  step: {fontWeight: '600', color: colors.ink, lineHeight: 20},
 });

@@ -1,10 +1,11 @@
 import React, {useEffect, useState} from 'react';
-import {StyleSheet, Text, View} from 'react-native';
+import {Pressable, StyleSheet, Text, View} from 'react-native';
 import {Store} from 'lucide-react-native';
 import {AppButton} from '@/ui/chrome';
 import {KeyboardSafeSheet} from '@/ui/keyboardSheet';
 import {StarPicker} from '@/ui/gamification';
 import {colors, radii, space} from '@/ui/theme';
+import {reviewTagsForStars} from '@/domain/marketReviewTags';
 
 const LABELS = ['', 'Ruim', 'Fraco', 'Ok', 'Bom', 'Excelente'];
 
@@ -19,13 +20,33 @@ export function MarketReviewSheet({
   marketName: string;
   busy?: boolean;
   onClose: () => void;
-  onSubmit: (stars: number) => void | Promise<void>;
+  onSubmit: (stars: number, tags: string[]) => void | Promise<void>;
 }) {
   const [stars, setStars] = useState(0);
+  const [tags, setTags] = useState<string[]>([]);
+  const groups = reviewTagsForStars(stars);
 
   useEffect(() => {
-    if (visible) setStars(0);
+    if (visible) {
+      setStars(0);
+      setTags([]);
+    }
   }, [visible, marketName]);
+
+  const pickStars = (value: number) => {
+    setStars(value);
+    const allowed = new Set([
+      ...reviewTagsForStars(value).positive,
+      ...reviewTagsForStars(value).negative,
+    ]);
+    setTags(current => current.filter(tag => allowed.has(tag)));
+  };
+
+  const toggle = (tag: string) => {
+    setTags(current =>
+      current.includes(tag) ? current.filter(item => item !== tag) : [...current, tag],
+    );
+  };
 
   return (
     <KeyboardSafeSheet visible={visible} onClose={onClose}>
@@ -34,7 +55,7 @@ export function MarketReviewSheet({
           <Store size={22} color={colors.navy} />
         </View>
         <View style={{flex: 1}}>
-          <Text style={styles.kicker}>Missão · Avaliar mercado</Text>
+          <Text style={styles.kicker}>Avaliar mercado</Text>
           <Text style={styles.title} numberOfLines={2}>
             {marketName}
           </Text>
@@ -45,7 +66,7 @@ export function MarketReviewSheet({
         Sua nota ajuda a comunidade a escolher onde comprar. Vale +5 pts.
       </Text>
 
-      <StarPicker value={stars} onChange={setStars} />
+      <StarPicker value={stars} onChange={pickStars} />
 
       <View style={styles.labelBox}>
         <Text style={styles.labelText}>
@@ -58,13 +79,61 @@ export function MarketReviewSheet({
         ) : null}
       </View>
 
+      {groups.positive.length > 0 ? (
+        <TagGroup
+          title="O que foi bom"
+          tags={groups.positive}
+          selected={tags}
+          onToggle={toggle}
+        />
+      ) : null}
+      {groups.negative.length > 0 ? (
+        <TagGroup
+          title="O que pode melhorar"
+          tags={groups.negative}
+          selected={tags}
+          onToggle={toggle}
+        />
+      ) : null}
+
       <AppButton
         label={busy ? 'Enviando…' : 'Enviar avaliação'}
         disabled={busy || stars < 1}
-        onPress={() => onSubmit(stars)}
+        onPress={() => onSubmit(stars, tags)}
       />
       <AppButton label="Agora não" outlined onPress={onClose} />
     </KeyboardSafeSheet>
+  );
+}
+
+function TagGroup({
+  title,
+  tags,
+  selected,
+  onToggle,
+}: {
+  title: string;
+  tags: readonly string[];
+  selected: string[];
+  onToggle: (tag: string) => void;
+}) {
+  return (
+    <View style={styles.group}>
+      <Text style={styles.groupTitle}>{title}</Text>
+      <View style={styles.pills}>
+        {tags.map(tag => {
+          const on = selected.includes(tag);
+          return (
+            <Pressable
+              key={tag}
+              onPress={() => onToggle(tag)}
+              style={[styles.pill, on && styles.pillOn]}>
+              <Text style={[styles.pillText, on && styles.pillTextOn]}>{tag}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
   );
 }
 
@@ -114,4 +183,16 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   ptsText: {fontWeight: '900', color: colors.navy, fontSize: 12},
+  group: {gap: 8},
+  groupTitle: {fontWeight: '800', color: colors.navy, fontSize: 13},
+  pills: {flexDirection: 'row', flexWrap: 'wrap', gap: 8},
+  pill: {
+    borderRadius: radii.pill,
+    backgroundColor: colors.bg,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  pillOn: {backgroundColor: colors.navy},
+  pillText: {fontWeight: '800', color: colors.ink, fontSize: 13},
+  pillTextOn: {color: colors.white},
 });

@@ -223,7 +223,7 @@ export function ImportPurchaseScreen() {
       <NfceReviewSheet
         draft={draft}
         saving={saving}
-        saveLabel={replacing ? 'Substituir lista' : 'Salvar no histórico'}
+        saveLabel={replacing ? 'Confirmar nota fiscal' : 'Salvar no histórico'}
         hint={
           replacing
             ? 'Os itens, os preços e o mercado da nota passam a ser esta lista.'

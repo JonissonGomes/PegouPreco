@@ -556,6 +556,7 @@ export class DataStore {
     userId: string;
     stars: number;
     comment?: string | null;
+    tags?: string[];
   }): Promise<Record<string, unknown>> {
     const allowed = await this._userHasNfce(args.userId, args.marketId);
     if (!allowed) {
@@ -588,6 +589,7 @@ export class DataStore {
       }
       existing.stars = args.stars;
       existing.comment = args.comment;
+      existing.tags = args.tags ?? [];
       existing.weight = weight;
       existing.createdAt = now.toISOString();
       if (this.mode === 'memory') {
@@ -601,6 +603,7 @@ export class DataStore {
         marketId: args.marketId,
         stars: args.stars,
         comment: args.comment,
+        tags: args.tags ?? [],
         voterHash,
         weight,
         createdAt: now.toISOString(),
