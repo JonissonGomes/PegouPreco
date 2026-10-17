@@ -10,6 +10,7 @@ export const PRODUCT_CATEGORIES = [
   'Padaria',
   'Congelados',
   'Biscoitos e doces',
+  'Salgadinhos',
   'Café e matinais',
   'Molhos e temperos',
   'Enlatados',

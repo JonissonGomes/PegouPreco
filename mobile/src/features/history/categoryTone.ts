@@ -13,6 +13,7 @@ const TONES: Record<string, {bg: string; fg: string}> = {
   Padaria: {bg: '#FFEDD5', fg: '#C2410C'},
   Congelados: {bg: '#E0F2FE', fg: colors.navy},
   'Biscoitos e doces': {bg: '#FEF3C7', fg: '#92400E'},
+  Salgadinhos: {bg: '#FEF9C3', fg: '#A16207'},
   'Café e matinais': {bg: '#F5E6D3', fg: '#7C2D12'},
   'Molhos e temperos': {bg: '#FFEDD5', fg: '#9A3412'},
   Enlatados: {bg: '#E5E7EB', fg: colors.navy},

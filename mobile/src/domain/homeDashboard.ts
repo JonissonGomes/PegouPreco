@@ -43,8 +43,7 @@ function rowsOf(list: ShoppingList): ListRow[] {
 }
 
 function rowCategory(row: ListRow, products: Product[]) {
-  const named = products.find(p => p.id === row.productId)?.category?.trim();
-  if (named && named !== 'Outros') return named;
+  const named = products.find(p => p.id === row.productId)?.category;
   return resolveCategory(named, row.productName || '');
 }
 
