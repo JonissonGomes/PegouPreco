@@ -105,6 +105,10 @@ export function HistoryScreen() {
   }, [withCats, query, market, category]);
 
   const filterCount = (market ? 1 : 0) + (category.length > 0 ? 1 : 0);
+  const readNote = (list: ShoppingList) => {
+    setOpenList(null);
+    nav.navigate('ImportPurchase', {replaceListId: list.id});
+  };
 
   return (
     <View style={styles.root}>
@@ -181,13 +185,18 @@ export function HistoryScreen() {
           />
         }
         renderItem={({item}) => (
-          <PurchaseCard row={item} onPress={() => setOpenList(item.list)} />
+          <PurchaseCard
+            row={item}
+            onPress={() => setOpenList(item.list)}
+            onReadNote={() => readNote(item.list)}
+          />
         )}
       />
       <HistoryDetailSheet
         list={openList}
         products={products}
         onClose={() => setOpenList(null)}
+        onReadNote={readNote}
         onDelete={list => {
           appAlert(
             'Remover esta compra?',
@@ -228,9 +237,11 @@ export function HistoryScreen() {
 function PurchaseCard({
   row,
   onPress,
+  onReadNote,
 }: {
   row: {list: ShoppingList; categories: string[]};
   onPress: () => void;
+  onReadNote: () => void;
 }) {
   const shown = row.categories.slice(0, 1);
   const extra = row.categories.length - shown.length;
@@ -262,6 +273,14 @@ function PurchaseCard({
             {extra > 0 ? <Text style={styles.extra}>+{extra}</Text> : null}
           </View>
         </View>
+        {!fiscal ? (
+          <Pressable
+            style={styles.rowNote}
+            accessibilityLabel="Cadastrar nota fiscal desta compra"
+            onPress={onReadNote}>
+            <QrCode size={16} color={colors.navy} />
+          </Pressable>
+        ) : null}
         <Text style={styles.price}>{formatBrl(row.list.subtotal)}</Text>
       </View>
     </SoftCard>
@@ -359,6 +378,14 @@ const styles = StyleSheet.create({
   name: {fontWeight: '900', color: colors.navy, fontSize: 14},
   metaRow: {flexDirection: 'row', alignItems: 'center', gap: 6},
   meta: {flexShrink: 1, color: colors.muted, fontWeight: '600', fontSize: 12},
+  rowNote: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#FFF6D8',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   price: {fontWeight: '900', color: colors.navy, fontSize: 14},
   extra: {color: colors.muted, fontWeight: '800', fontSize: 11},
 });

@@ -1,11 +1,12 @@
 import React, {useMemo, useState} from 'react';
 import {Pressable, ScrollView, StyleSheet, Text, View} from 'react-native';
 import {useNavigation} from '@react-navigation/native';
+import {Minus, TrendingDown, TrendingUp} from 'lucide-react-native';
 import {SoftCard, SoftHeader} from '@/ui/screenChrome';
 import {CategoryIcon} from '@/features/history/categoryIcon';
 import {colors, radii, space, spacing} from '@/ui/theme';
 import {formatBrl} from '@/domain/money';
-import {buildInsightBoard} from '@/domain/insightBoard';
+import {buildInsightBoard, type PriceTrend} from '@/domain/insightBoard';
 import type {InsightPeriod} from '@/domain/homeInsights';
 import {isFiscalList, isFiscalLog} from '@/domain/fiscal';
 import {priceLogRepo, useAppStore} from '@/store/appStore';
@@ -66,13 +67,13 @@ export function InsightsScreen() {
           </Text>
           <Text style={styles.heroHint}>
             {board.saved > 0
-              ? 'Você pagou abaixo da média dos outros preços do mesmo item.'
-              : 'Quando houver dois preços do mesmo item, a economia aparece aqui.'}
+              ? 'Pago abaixo de outros preços do mesmo item.'
+              : 'Aparece quando o mesmo item tiver dois preços.'}
           </Text>
         </SoftCard>
 
         <SoftCard>
-          <Text style={styles.section}>Onde você está mais econômico</Text>
+          <Text style={styles.section}>Onde você encontrou mais economia</Text>
           {board.bestMarket ? (
             <>
               <Text style={styles.place}>{board.bestMarket}</Text>
@@ -97,10 +98,16 @@ export function InsightsScreen() {
                   <Text style={styles.rowTitle} numberOfLines={1}>
                     {item.category}
                   </Text>
-                  <Text style={styles.hint} numberOfLines={2}>
-                    {item.marketName} · {item.when}
+                  <Text style={styles.hint} numberOfLines={1}>
+                    {item.marketName}
                   </Text>
+                  {item.weekday && item.dateLabel ? (
+                    <Text style={styles.when}>
+                      {item.weekday}, {item.dateLabel}
+                    </Text>
+                  ) : null}
                 </View>
+                <TrendMark trend={item.trend} />
               </View>
             ))
           )}
@@ -114,15 +121,19 @@ export function InsightsScreen() {
             board.averages.map(item => (
               <View key={item.category} style={styles.avgRow}>
                 <CategoryIcon name={item.category} />
-                <Text style={styles.rowTitle} numberOfLines={1}>
-                  {item.category}
-                </Text>
-                <View style={styles.avgValue}>
-                  <Text style={styles.price}>{formatBrl(item.avg)}</Text>
-                  <Text style={styles.hint} numberOfLines={1}>
-                    menor em {item.marketName}
+                <View style={styles.rowBody}>
+                  <Text style={styles.rowTitle} numberOfLines={1}>
+                    {item.category}
+                  </Text>
+                  <Text style={styles.hint} numberOfLines={2}>
+                    mais barato em: {item.marketName}
                   </Text>
                 </View>
+                <Text style={styles.price}>
+                  {item.low === item.high
+                    ? formatBrl(item.low)
+                    : `${formatBrl(item.low)} – ${formatBrl(item.high)}`}
+                </Text>
               </View>
             ))
           )}
@@ -131,9 +142,7 @@ export function InsightsScreen() {
         <SoftCard>
           <Text style={styles.section}>Itens que subiram</Text>
           {board.rising.length === 0 ? (
-            <Text style={styles.hint}>
-              Nenhum item subiu mais de 8% em relação ao preço anterior.
-            </Text>
+            <Text style={styles.hint}>Nenhum item subiu de preço.</Text>
           ) : (
             board.rising.map(item => (
               <Pressable
@@ -160,10 +169,32 @@ export function InsightsScreen() {
 
         {empty ? (
           <Text style={styles.footer}>
-            Os insights usam as notas fiscais. Uma nota já mostra a média; duas do mesmo item mostram economia e alta.
+            As notas fiscais alimentam estes números.
           </Text>
         ) : null}
       </ScrollView>
+    </View>
+  );
+}
+
+function TrendMark({trend}: {trend: PriceTrend}) {
+  if (trend === 'down') {
+    return (
+      <View style={[styles.mark, styles.markDown]}>
+        <TrendingDown size={16} color={colors.trustGreen} />
+      </View>
+    );
+  }
+  if (trend === 'up') {
+    return (
+      <View style={[styles.mark, styles.markUp]}>
+        <TrendingUp size={16} color={colors.danger} />
+      </View>
+    );
+  }
+  return (
+    <View style={[styles.mark, styles.markFlat]}>
+      <Minus size={16} color={colors.muted} />
     </View>
   );
 }
@@ -210,9 +241,19 @@ const styles = StyleSheet.create({
   row: {flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8},
   rowBody: {flex: 1, minWidth: 0},
   rowTitle: {flex: 1, fontWeight: '800', color: colors.navy, fontSize: 14},
+  when: {marginTop: 2, fontWeight: '800', color: colors.navy, fontSize: 13},
+  mark: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  markDown: {backgroundColor: '#DCFCE7'},
+  markUp: {backgroundColor: '#FEE2E2'},
+  markFlat: {backgroundColor: colors.bg},
   avgRow: {flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8},
-  avgValue: {alignItems: 'flex-end', maxWidth: 140},
-  price: {fontWeight: '900', color: colors.navy},
+  price: {fontWeight: '900', color: colors.navy, fontSize: 13, textAlign: 'right'},
   riseBadge: {
     minWidth: 52,
     borderRadius: radii.pill,

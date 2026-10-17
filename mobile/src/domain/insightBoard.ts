@@ -1,11 +1,15 @@
 import {resolveCategory} from '@/domain/productCategory';
 import type {InsightPeriod} from '@/domain/homeInsights';
 import {periodStart} from '@/domain/homeInsights';
+import {friendlyMarketTitle} from '@/domain/marketBrand';
 import type {Market, PriceLog, Product, ShoppingList} from '@/data/types';
+
+export type PriceTrend = 'down' | 'up' | 'flat';
 
 export type InsightAverage = {
   category: string;
-  avg: number;
+  low: number;
+  high: number;
   marketName: string;
 };
 
@@ -20,7 +24,9 @@ export type RisingItem = {
 export type WhereToBuy = {
   category: string;
   marketName: string;
-  when: string;
+  weekday: string | null;
+  dateLabel: string | null;
+  trend: PriceTrend;
 };
 
 export type InsightBoard = {
@@ -90,37 +96,50 @@ function inPeriod(at: number, start: Date | null) {
 
 function marketName(markets: Market[], id: number | null) {
   if (id == null) return 'Mercado';
-  return markets.find(m => m.id === id)?.name ?? 'Mercado';
+  const market = markets.find(item => item.id === id);
+  if (!market) return 'Mercado';
+  return friendlyMarketTitle(market, markets);
 }
 
-function weekdayHint(rows: Line[]): string {
-  const byDay = new Map<number, {sum: number; n: number}>();
-  for (const row of rows) {
-    if (!row.at) continue;
-    const day = new Date(row.at).getDay();
-    const bucket = byDay.get(day) ?? {sum: 0, n: 0};
-    bucket.sum += row.unit;
-    bucket.n += 1;
-    byDay.set(day, bucket);
+function shortDate(at: number) {
+  const date = new Date(at);
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  return `${day}/${month}`;
+}
+
+type Moment = {unit: number; at: number};
+
+function cheapestMoment(points: Moment[]): {
+  weekday: string | null;
+  dateLabel: string | null;
+  trend: PriceTrend;
+} {
+  const dated = points.filter(point => point.at > 0);
+  if (!dated.length) return {weekday: null, dateLabel: null, trend: 'flat'};
+  const best = dated.reduce((low, point) => (point.unit < low.unit ? point : low));
+  const date = new Date(best.at);
+  const weekday = WEEKDAYS[date.getDay()];
+  const label = weekday.charAt(0).toUpperCase() + weekday.slice(1);
+  return {
+    weekday: label,
+    dateLabel: shortDate(best.at),
+    trend: priceTrend(dated, best),
+  };
+}
+
+function priceTrend(points: Moment[], best: Moment): PriceTrend {
+  const later = points.filter(point => point.at > best.at);
+  const earlier = points.filter(point => point.at < best.at);
+  if (later.length) {
+    const avg = later.reduce((sum, point) => sum + point.unit, 0) / later.length;
+    if (avg > best.unit * 1.05) return 'up';
   }
-  if (byDay.size < 2) return 'ainda sem um dia mais barato';
-  let bestDay = -1;
-  let bestAvg = Infinity;
-  let total = 0;
-  let count = 0;
-  for (const [day, bucket] of byDay) {
-    const avg = bucket.sum / bucket.n;
-    total += bucket.sum;
-    count += bucket.n;
-    if (bucket.n >= 2 && avg < bestAvg) {
-      bestAvg = avg;
-      bestDay = day;
-    }
+  if (earlier.length) {
+    const avg = earlier.reduce((sum, point) => sum + point.unit, 0) / earlier.length;
+    if (best.unit < avg * 0.95) return 'down';
   }
-  if (bestDay < 0 || !(count > 0)) return 'ainda sem um dia mais barato';
-  const overall = total / count;
-  if (bestAvg >= overall * 0.95) return 'preço parecido na semana';
-  return `mais barato na ${WEEKDAYS[bestDay]}`;
+  return 'flat';
 }
 
 export function buildInsightBoard(args: {
@@ -141,7 +160,7 @@ export function buildInsightBoard(args: {
 
   const saved = savedAgainstPeers(bought, logs);
   const averages = categoryAverages(logs, args.products, args.markets);
-  const places = whereToBuy(bought, averages);
+  const places = whereToBuy(bought, logs, args.products, averages);
   const rising = risingItems(args.logs, args.products);
   const best = cheapestMarket(averages);
 
@@ -179,60 +198,65 @@ function categoryAverages(
   products: Product[],
   markets: Market[],
 ): InsightAverage[] {
-  const byCat = new Map<string, {sum: number; n: number}>();
-  const byCatMarket = new Map<string, Map<number, {sum: number; n: number}>>();
+  const byCat = new Map<string, {low: number; high: number; marketId: number | null}>();
   for (const log of logs) {
     const product = products.find(p => p.id === log.productId);
     const category = resolveCategory(product?.category, product?.name || '');
-    const bucket = byCat.get(category) ?? {sum: 0, n: 0};
-    bucket.sum += log.retailPrice;
-    bucket.n += 1;
+    const bucket = byCat.get(category) ?? {
+      low: log.retailPrice,
+      high: log.retailPrice,
+      marketId: log.marketId,
+    };
+    if (log.retailPrice < bucket.low) {
+      bucket.low = log.retailPrice;
+      bucket.marketId = log.marketId;
+    }
+    if (log.retailPrice > bucket.high) bucket.high = log.retailPrice;
     byCat.set(category, bucket);
-    if (log.marketId == null) continue;
-    const marketsOf = byCatMarket.get(category) ?? new Map();
-    const marketBucket = marketsOf.get(log.marketId) ?? {sum: 0, n: 0};
-    marketBucket.sum += log.retailPrice;
-    marketBucket.n += 1;
-    marketsOf.set(log.marketId, marketBucket);
-    byCatMarket.set(category, marketsOf);
   }
   return [...byCat.entries()]
-    .map(([category, bucket]) => {
-      let bestId: number | null = null;
-      let bestAvg = Infinity;
-      for (const [id, marketBucket] of byCatMarket.get(category) ?? []) {
-        const avg = marketBucket.sum / marketBucket.n;
-        if (avg < bestAvg) {
-          bestAvg = avg;
-          bestId = id;
-        }
-      }
-      return {
-        category,
-        avg: Number((bucket.sum / bucket.n).toFixed(2)),
-        marketName: marketName(markets, bestId),
-      };
-    })
-    .sort((a, b) => b.avg - a.avg);
+    .map(([category, bucket]) => ({
+      category,
+      low: Number(bucket.low.toFixed(2)),
+      high: Number(bucket.high.toFixed(2)),
+      marketName: marketName(markets, bucket.marketId),
+    }))
+    .sort((a, b) => b.high - a.high);
 }
 
-function whereToBuy(bought: Line[], averages: InsightAverage[]): WhereToBuy[] {
-  const byCat = new Map<string, Line[]>();
+function whereToBuy(
+  bought: Line[],
+  logs: PriceLog[],
+  products: Product[],
+  averages: InsightAverage[],
+): WhereToBuy[] {
+  const byCat = new Map<string, Moment[]>();
+  const add = (category: string, unit: number, at: number) => {
+    const list = byCat.get(category) ?? [];
+    list.push({unit, at});
+    byCat.set(category, list);
+  };
+  for (const log of logs) {
+    const product = products.find(item => item.id === log.productId);
+    const category = resolveCategory(product?.category, product?.name || '');
+    add(category, log.retailPrice, new Date(log.capturedAt).getTime());
+  }
   for (const row of bought) {
-    const list = byCat.get(row.category) ?? [];
-    list.push(row);
-    byCat.set(row.category, list);
+    if (byCat.has(row.category)) continue;
+    add(row.category, row.unit, row.at);
   }
   const categories = new Set([...byCat.keys(), ...averages.map(item => item.category)]);
   const out: WhereToBuy[] = [];
   for (const category of categories) {
     if (category === 'Outros') continue;
     const avg = averages.find(item => item.category === category);
-    const rows = byCat.get(category) ?? [];
+    const moment = cheapestMoment(byCat.get(category) ?? []);
     out.push({
       category,
-      marketName: avg?.marketName ?? 'Sem mercado comparado',
-      when: weekdayHint(rows),
+      marketName: avg?.marketName ?? 'Mercado',
+      weekday: moment.weekday,
+      dateLabel: moment.dateLabel,
+      trend: moment.trend,
     });
   }
   return out.sort(
@@ -253,12 +277,7 @@ function cheapestMarket(averages: InsightAverage[]) {
     .filter(item => item.marketName === top[0])
     .slice(0, 2)
     .map(item => item.category);
-  const detail =
-    ranked.length < 2
-      ? 'Só há preços deste mercado. Outra nota mostra a diferença.'
-      : cats.length
-        ? `Menor média em ${cats.join(' e ')}`
-        : '';
+  const detail = cats.length ? cats.join(' e ') : '';
   return {name: top[0], detail};
 }
 

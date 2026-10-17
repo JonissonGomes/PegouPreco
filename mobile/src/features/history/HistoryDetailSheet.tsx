@@ -5,6 +5,7 @@ import {KeyboardSafeSheet} from '@/ui/keyboardSheet';
 import {colors, radii, space} from '@/ui/theme';
 import {formatBrl, formatQty} from '@/domain/money';
 import {resolveCategory} from '@/domain/productCategory';
+import {isFiscalList} from '@/domain/fiscal';
 import {lineSavings, lineTotal} from '@/domain/pricing';
 import type {CartItem, Product, ShoppingList} from '@/data/types';
 import {categoryTone} from './categoryTone';
@@ -35,11 +36,13 @@ export function HistoryDetailSheet({
   products,
   onClose,
   onDelete,
+  onReadNote,
 }: {
   list: ShoppingList | null;
   products: Product[];
   onClose: () => void;
   onDelete: (list: ShoppingList) => void;
+  onReadNote: (list: ShoppingList) => void;
 }) {
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('Todas');
@@ -175,6 +178,11 @@ export function HistoryDetailSheet({
           {visible.length === 0 ? (
             <Text style={styles.empty}>Nenhum item neste filtro.</Text>
           ) : null}
+          {!isFiscalList(list) ? (
+            <Pressable style={styles.readNote} onPress={() => onReadNote(list)}>
+              <Text style={styles.readNoteText}>Cadastrar nota fiscal</Text>
+            </Pressable>
+          ) : null}
           <Pressable
             style={styles.remove}
             onPress={() => onDelete(list)}>
@@ -255,6 +263,14 @@ const styles = StyleSheet.create({
   pill: {borderRadius: radii.pill, paddingHorizontal: 8, paddingVertical: 2},
   pillText: {fontWeight: '800', fontSize: 11},
   empty: {color: colors.muted, fontWeight: '700', textAlign: 'center', marginTop: 8},
+  readNote: {
+    marginTop: 12,
+    borderRadius: radii.pill,
+    backgroundColor: colors.yellow,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  readNoteText: {fontWeight: '900', color: colors.navy},
   remove: {
     marginTop: 12,
     borderRadius: radii.md,

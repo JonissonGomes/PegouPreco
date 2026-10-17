@@ -20,7 +20,7 @@ import {
   Snowflake,
   Soup,
   SprayCan,
-  Sparkles,
+  Toilet,
   Wine,
 } from 'lucide-react-native';
 import {categoryTone} from './categoryTone';
@@ -40,7 +40,7 @@ const ICONS: Record<string, typeof Wine> = {
   'Molhos e temperos': Soup,
   Enlatados: Cylinder,
   Limpeza: SprayCan,
-  Higiene: Sparkles,
+  Higiene: Toilet,
   'Biscoitos e doces': Cookie,
   Salgadinhos: Popcorn,
   Bebê: Baby,
