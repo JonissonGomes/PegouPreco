@@ -1,6 +1,6 @@
-import React, {useCallback, useRef, useState} from 'react';
+import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {Pressable, StyleSheet, Text, View} from 'react-native';
-import {useNavigation} from '@react-navigation/native';
+import {useNavigation, useRoute} from '@react-navigation/native';
 import {Camera} from 'react-native-vision-camera';
 import {ArrowLeft} from 'lucide-react-native';
 import {AppButton, AppField} from '@/ui/chrome';
@@ -22,7 +22,21 @@ import {requestAutoSync} from '@/data/syncWorker';
 
 export function ImportPurchaseScreen() {
   const nav = useNavigation<any>();
+  const route = useRoute<any>();
   const refresh = useAppStore(s => s.refresh);
+  const lists = useAppStore(s => s.lists);
+  const [replaceListId, setReplaceListId] = useState<number | null>(
+    () => {
+      const id = Number(route.params?.replaceListId);
+      return Number.isFinite(id) && id > 0 ? id : null;
+    },
+  );
+  const replacing = lists.find(list => list.id === replaceListId) ?? null;
+
+  useEffect(() => {
+    const id = Number(route.params?.replaceListId);
+    setReplaceListId(Number.isFinite(id) && id > 0 ? id : null);
+  }, [route.params?.replaceListId]);
   const [url, setUrl] = useState('');
   const [busy, setBusy] = useState(false);
   const [pasteOpen, setPasteOpen] = useState(false);
@@ -83,13 +97,16 @@ export function ImportPurchaseScreen() {
         draft.parsed,
         draft.qrUrl,
         purchasedAt,
+        replaceListId,
       );
       if (!outcome.ok) {
         appAlert(
           'Nota fiscal',
           outcome.reason === 'duplicate'
             ? 'Essa nota já está no histórico.'
-            : 'A consulta não trouxe itens.',
+            : outcome.reason === 'missing'
+              ? 'A lista que seria substituída não está mais salva.'
+              : 'A consulta não trouxe itens.',
         );
         return;
       }
@@ -97,6 +114,8 @@ export function ImportPurchaseScreen() {
       requestAutoSync('nfce');
       setDraft(null);
       lock.current = null;
+      setReplaceListId(null);
+      nav.setParams({replaceListId: undefined});
       setRateMarket({
         id: outcome.marketId,
         name: outcome.marketName,
@@ -111,8 +130,12 @@ export function ImportPurchaseScreen() {
   return (
     <View style={styles.root}>
       <SoftHeader
-        title="Cadastrar nota"
-        subtitle="O QR da NFC-e alimenta o comparador"
+        title={replacing ? 'Ler nota da lista' : 'Cadastrar nota'}
+        subtitle={
+          replacing
+            ? `Substitui “${replacing.name}” pelos itens da nota`
+            : 'O QR da NFC-e alimenta o comparador'
+        }
         leading={
           <BackCircleButton onPress={() => nav.goBack()}>
             <ArrowLeft color={colors.navy} size={22} />
@@ -173,7 +196,9 @@ export function ImportPurchaseScreen() {
       </View>
       <View style={styles.footer}>
         <Text style={styles.hint}>
-          Aponte para o QR do rodapé. Você vê o resumo e decide se salva no histórico.
+          {replacing
+            ? 'Aponte para o QR do rodapé. A nota substitui os itens e os valores desta lista.'
+            : 'Aponte para o QR do rodapé. Você vê o resumo e decide se salva no histórico.'}
         </Text>
         <AppButton label="Colar link da consulta" outlined onPress={() => setPasteOpen(true)} />
       </View>
@@ -198,6 +223,12 @@ export function ImportPurchaseScreen() {
       <NfceReviewSheet
         draft={draft}
         saving={saving}
+        saveLabel={replacing ? 'Substituir lista' : 'Salvar no histórico'}
+        hint={
+          replacing
+            ? 'Os itens, os preços e o mercado da nota passam a ser esta lista.'
+            : 'Confira os itens antes de salvar no histórico.'
+        }
         onClose={() => {
           lock.current = null;
           setDraft(null);

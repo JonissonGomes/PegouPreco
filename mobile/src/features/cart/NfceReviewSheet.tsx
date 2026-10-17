@@ -51,11 +51,15 @@ export function NfceReviewSheet({
   saving,
   onClose,
   onSave,
+  saveLabel = 'Salvar no histórico',
+  hint = 'Confira os itens antes de salvar no histórico.',
 }: {
   draft: NfceDraft | null;
   saving: boolean;
   onClose: () => void;
   onSave: (purchasedAt: string) => void;
+  saveLabel?: string;
+  hint?: string;
 }) {
   const [guide, setGuide] = useState(false);
   const [dateText, setDateText] = useState('');
@@ -86,9 +90,7 @@ export function NfceReviewSheet({
             <Check size={22} color={colors.navy} />
           </View>
           <Text style={styles.title}>Nota lida</Text>
-          <Text style={styles.sub}>
-            Confira os itens antes de salvar no histórico.
-          </Text>
+          <Text style={styles.sub}>{hint}</Text>
           <View style={styles.dash} />
           <View style={styles.facts}>
             <View style={{flex: 1}}>
@@ -150,7 +152,7 @@ export function NfceReviewSheet({
           ) : null}
 
           <AppButton
-            label={saving ? 'Salvando…' : 'Salvar no histórico'}
+            label={saving ? 'Salvando…' : saveLabel}
             disabled={saving}
             onPress={save}
           />

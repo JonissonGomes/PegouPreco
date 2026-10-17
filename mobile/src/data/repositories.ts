@@ -682,6 +682,26 @@ export const shoppingListRepo = {
   byNfceKey(key: string): ShoppingList | null {
     return getState().shopping_lists.find(l => l.nfceKey === key) ?? null;
   },
+  replaceFromNote(
+    id: number,
+    data: Omit<ShoppingList, 'id' | 'remoteId' | 'synced'>,
+  ): boolean {
+    const list = getState().shopping_lists.find(item => item.id === id);
+    if (!list) return false;
+    list.name = data.name;
+    list.marketId = data.marketId;
+    list.marketName = data.marketName;
+    list.itemsJson = data.itemsJson;
+    list.subtotal = data.subtotal;
+    list.savings = data.savings;
+    list.itemCount = data.itemCount;
+    list.finishedAt = data.finishedAt;
+    list.nfceKey = data.nfceKey ?? null;
+    list.updatedAt = data.updatedAt;
+    list.synced = 0;
+    saveState();
+    return true;
+  },
   setNfceKey(id: number, key: string) {
     const list = getState().shopping_lists.find(l => l.id === id);
     if (!list) return;

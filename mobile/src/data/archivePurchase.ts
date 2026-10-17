@@ -29,7 +29,7 @@ export type ArchiveOutcome =
       placedOnMap: boolean;
       mapKnown: boolean;
     }
-  | {ok: false; reason: 'empty' | 'duplicate'};
+  | {ok: false; reason: 'empty' | 'duplicate' | 'missing'};
 
 export async function previewPastNfce(
   qrUrl: string,
@@ -145,10 +145,19 @@ export async function archiveNfcePurchase(
   parsed: NfceParseResult,
   qrUrl: string,
   purchasedAt?: string,
+  replaceListId?: number | null,
 ): Promise<ArchiveOutcome> {
   if (!parsed.items.length) return {ok: false, reason: 'empty'};
   const nfceKey = extractAccessKey(qrUrl);
-  if (nfceKey && shoppingListRepo.byNfceKey(nfceKey)) {
+  const replacing =
+    replaceListId != null
+      ? shoppingListRepo.all().find(list => list.id === replaceListId) ?? null
+      : null;
+  if (replaceListId != null && !replacing) {
+    return {ok: false, reason: 'missing'};
+  }
+  const sameNote = nfceKey ? shoppingListRepo.byNfceKey(nfceKey) : null;
+  if (sameNote && sameNote.id !== replacing?.id) {
     return {ok: false, reason: 'duplicate'};
   }
 
@@ -167,7 +176,7 @@ export async function archiveNfcePurchase(
   const marketId = placed.marketId;
   const finishedAt = purchasedAt ?? parsed.issuedAt ?? new Date().toISOString();
   const alreadyLogged = nfceKey ? priceLogRepo.forNfceKey(nfceKey) : [];
-  if (alreadyLogged.length) {
+  if (!replacing && alreadyLogged.length) {
     const capturedAt = alreadyLogged[0].capturedAt;
     const saved = shoppingListRepo
       .all()
@@ -222,8 +231,8 @@ export async function archiveNfcePurchase(
     0,
   );
   const marketName = placed.marketName;
-  shoppingListRepo.insert({
-    name: marketName,
+  const saved = {
+    name: replacing?.name || marketName,
     marketId,
     marketName,
     itemsJson: JSON.stringify(items),
@@ -232,10 +241,18 @@ export async function archiveNfcePurchase(
     itemCount: items.length,
     finishedAt,
     nfceKey,
-    remoteId: null,
     updatedAt: finishedAt,
-    synced: 0,
-  });
+  };
+  if (replacing) {
+    const replaced = shoppingListRepo.replaceFromNote(replacing.id, saved);
+    if (!replaced) return {ok: false, reason: 'missing'};
+  } else {
+    shoppingListRepo.insert({
+      ...saved,
+      remoteId: null,
+      synced: 0,
+    });
+  }
 
   return {
     ok: true,

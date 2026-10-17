@@ -28,8 +28,8 @@ const RULES: Array<[RegExp, string]> = [
   [/ração|racao|\bpet\b|areia sanit|antipulga/i, 'Pet'],
   [/papel toalha|guardanapo|filme pvc|papel alum|saco de lixo|copo descart/i, 'Descartáveis'],
   [/pão|pao|croissant|sonho\b|baguete|bolo\b|torta\b|rosca/i, 'Padaria'],
-  [/pizza|lasanh|sorvete|nugget|hambúrguer congel|hamburguer congel|congelad/i, 'Congelados'],
-  [/presunto|mortadela|salame|peito de peru|queijo prato|apresuntado/i, 'Frios'],
+  [/pizza|\bpiz\b|lasanh|lasagn|\blas\b|sorvete|nugget|hambúrguer congel|hamburguer congel|congelad/i, 'Congelados'],
+  [/presunto|mortadela|\bmort\b|salame|peito de peru|queijo prato|apresuntado/i, 'Frios'],
   [/peixe|camarão|camarao|tilápia|tilapia|salmão|salmao|bacalhau|atum fresco/i, 'Peixaria'],
   [/carne|frango|linguiç|linguic|bovin|picanha|costela|bacon|suín|suin|alcatra/i, 'Açougue'],
   [/banana|maçã|\bmaca\b|laranja|mamão|mamao|morango|uva|melancia|abacaxi|limão|limao|manga|\bpera\b|kiwi|melão|melao|goiaba|abacate|fruta/i, 'Frutas'],
@@ -40,7 +40,7 @@ const RULES: Array<[RegExp, string]> = [
   [/ketchup|maionese|mostarda|molho|tempero|extrato de tomate|shoyu|vinagre/i, 'Molhos e temperos'],
   [/sardinha|atum enlat|milho enlat|ervilha|seleta|milho verde/i, 'Enlatados'],
   [/cerveja|\bcerv\b|refrigerante|\brefri\b|suco|vinho|vodka|whisky|\benerg\b|energy|energético|energetico|\bbeb\b|\bh2o\b|\bh20\b|gatorade|powerade|isotônico|isotonico|água de coco|agua de coco|\bágua\b|\bagua\b|\bchá\b|\bcha\b/i, 'Bebidas'],
-  [/arroz|feij|macarr|farinha|açúcar|acucar|óleo|oleo|\bsal\b|azeite|macarrão|macarrao/i, 'Mercearia'],
+  [/arroz|feij|macarr|farinha|açúcar|acucar|óleo|oleo|\bsal\b|azeite|macarrão|macarrao|gr[aã]o de bico|gr[aã]o bico|lentilha/i, 'Mercearia'],
 ];
 
 export function guessCategory(name: string): string {

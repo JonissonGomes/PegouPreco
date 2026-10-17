@@ -86,6 +86,11 @@ export function ShoppingListsScreen() {
     () => (selected ? parseListItems(selected) : []),
     [selected],
   );
+  const readNote = (list: ShoppingList) => {
+    setSelected(null);
+    nav.navigate('ImportPurchase', {replaceListId: list.id});
+  };
+
   const redoList = (list: ShoppingList) => {
     const items = parseListItems(list);
     cartRepo.clear();
@@ -240,6 +245,14 @@ export function ShoppingListsScreen() {
                     </Text>
                   </View>
                 </View>
+                {!isFiscalList(item) ? (
+                  <Pressable
+                    style={styles.noteBtn}
+                    accessibilityLabel="Ler nota fiscal desta compra"
+                    onPress={() => readNote(item)}>
+                    <QrCode size={16} color={colors.navy} />
+                  </Pressable>
+                ) : null}
                 <Text style={styles.price}>{formatBrl(item.subtotal)}</Text>
               </View>
             </SoftCard>
@@ -309,6 +322,15 @@ export function ShoppingListsScreen() {
               ))}
             </ScrollView>
             <View style={styles.detailActions}>
+              {!isFiscalList(selected) ? (
+                <View style={{flexBasis: '100%'}}>
+                  <AppButton
+                    label="Ler nota fiscal"
+                    outlined
+                    onPress={() => readNote(selected)}
+                  />
+                </View>
+              ) : null}
               <View style={{flex: 1}}>
                 <AppButton
                   label="Usar essa lista"
@@ -477,7 +499,16 @@ const styles = StyleSheet.create({
   },
   detailActions: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 10,
     marginTop: space.md,
+  },
+  noteBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#FFF6D8',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
