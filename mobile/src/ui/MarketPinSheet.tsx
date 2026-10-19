@@ -1,4 +1,4 @@
-import React, {useEffect, useState} from 'react';
+import React, {useEffect, useMemo, useState} from 'react';
 import {Pressable, StyleSheet, Text, View} from 'react-native';
 import {useNavigation} from '@react-navigation/native';
 import {MapPin, Star, TrendingDown, TrendingUp, Minus, TriangleAlert} from 'lucide-react-native';
@@ -15,7 +15,7 @@ import {
   type PriceBand,
 } from '@/domain/marketUi';
 import type {Market} from '@/data/types';
-import {canContribute, marketRepo, prefs, useAppStore} from '@/store/appStore';
+import {canContribute, marketRepo, prefs, priceLogRepo, useAppStore} from '@/store/appStore';
 import {syncApi} from '@/data/remote/syncApi';
 import {apiErrorMessage} from '@/data/remote/apiError';
 import {reverseGeocode} from '@/data/remote/reverseGeocode';
@@ -23,6 +23,8 @@ import {MAPBOX_ACCESS_TOKEN} from '@/config/env';
 import {PIN_REPORTS, type PinReportId} from '@/domain/pinReports';
 import {friendlyMarketTitle, relatedMarketIds} from '@/domain/marketBrand';
 import {getState} from '@/data/db';
+import {marketShelf} from '@/domain/marketShelf';
+import {MarketShelfBlock} from '@/ui/MarketShelfBlock';
 
 function BandIcon({band}: {band: PriceBand}) {
   if (band === 'low') return <TrendingDown size={16} color={colors.trustGreen} />;
@@ -84,6 +86,8 @@ export function MarketPinSheet({
 }) {
   const nav = useNavigation<any>();
   const markets = useAppStore(s => s.markets);
+  const products = useAppStore(s => s.products);
+  const lists = useAppStore(s => s.lists);
   const auth = useAppStore(s => s.auth);
   const [cached, setCached] = useState<Market | null>(market);
   const [cachedDist, setCachedDist] = useState(distanceKm);
@@ -115,6 +119,13 @@ export function MarketPinSheet({
   const locationConfirmed = shown
     ? confirmedKeys.includes(marketKey(shown))
     : false;
+  const shelf = useMemo(
+    () =>
+      shown
+        ? marketShelf(shown, markets, products, priceLogRepo.all(), lists)
+        : [],
+    [shown, markets, products, lists],
+  );
 
   useEffect(() => {
     if (!shown?.lat || shown.lng == null) {
@@ -317,6 +328,7 @@ export function MarketPinSheet({
                 ? '1 pessoa passou neste mercado na semana'
                 : `${visitors} pessoas passaram neste mercado na semana`}
             </Text>
+            <MarketShelfBlock shelf={shelf} />
 
             {onUse ? (
               <AppButton
