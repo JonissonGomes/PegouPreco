@@ -34,11 +34,8 @@ import {MAPBOX_ACCESS_TOKEN} from '@/config/env';
 import {isInBrazil} from '@/data/remote/nearbyMarkets';
 import {ensureNearbyMarketsDiscovered} from '@/data/remote/ensureNearbyMarkets';
 import {PRODUCT_CATEGORIES} from '@/domain/productCategory';
-import {
-  buildHomeDash,
-  weekdayBuyCandidates,
-  type HomePeriodDays,
-} from '@/domain/homeDashboard';
+import {buildHomeDash, type HomePeriodDays} from '@/domain/homeDashboard';
+import {useWeekdayBuyTip} from '@/features/home/useWeekdayBuyTip';
 import {isFiscalList, isFiscalLog} from '@/domain/fiscal';
 import {HomeHowItWorks} from '@/features/home/HomeHowItWorks';
 import {HomeHub, homeShortcutIcons} from '@/features/home/HomeHub';
@@ -120,41 +117,7 @@ export function HomeScreen() {
     () => buildHomeDash(lists, products, period, null, [], priceLogs),
     [lists, products, period, priceLogs],
   );
-  const buyCandidates = useMemo(
-    () => weekdayBuyCandidates(lists, products),
-    [lists, products],
-  );
-  const [buyTip, setBuyTip] = useState<string | null>(
-    () => buyCandidates[0]?.category ?? null,
-  );
-  useEffect(() => {
-    const local = buyCandidates[0]?.category ?? null;
-    setBuyTip(local);
-    const token = auth?.token;
-    if (!token || buyCandidates.length === 0) return;
-    let cancelled = false;
-    const weekday = new Date().toLocaleDateString('pt-BR', {weekday: 'long'});
-    void syncApi
-      .weekdayBuy(token, {
-        weekday,
-        categories: buyCandidates.map(item => ({
-          name: item.category,
-          todayAvg: item.todayAvg,
-          usualAvg: item.usualAvg,
-        })),
-      })
-      .then(data => {
-        if (cancelled) return;
-        const picked = data.category;
-        if (picked && buyCandidates.some(item => item.category === picked)) {
-          setBuyTip(picked);
-        }
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [buyCandidates, auth?.token]);
+  const buyTip = useWeekdayBuyTip(lists, products, auth?.token);
   const cheaper = useMemo(() => {
     const receipts = lists.filter(isFiscalList);
     const fiscalLogs = priceLogs.filter(isFiscalLog);

@@ -10,6 +10,8 @@ import {buildInsightBoard, type PriceTrend} from '@/domain/insightBoard';
 import type {InsightPeriod} from '@/domain/homeInsights';
 import {isFiscalList, isFiscalLog} from '@/domain/fiscal';
 import {priceLogRepo, useAppStore} from '@/store/appStore';
+import {useWeekdayBuyTip} from '@/features/home/useWeekdayBuyTip';
+import {buyDayPhrase} from '@/domain/homeDashboard';
 
 const PERIODS: Array<{id: InsightPeriod; label: string}> = [
   {id: 'week', label: '7 dias'},
@@ -23,6 +25,8 @@ export function InsightsScreen() {
   const markets = useAppStore(s => s.markets);
   const products = useAppStore(s => s.products);
   const [period, setPeriod] = useState<InsightPeriod>('month');
+  const auth = useAppStore(s => s.auth);
+  const buyTip = useWeekdayBuyTip(lists, products, auth?.token);
 
   const board = useMemo(() => {
     const notes = lists.filter(isFiscalList);
@@ -71,6 +75,12 @@ export function InsightsScreen() {
               : 'Aparece quando o mesmo item tiver dois preços.'}
           </Text>
         </SoftCard>
+
+        {buyTip ? (
+          <View style={styles.tipPill}>
+            <Text style={styles.tipText}>{buyDayPhrase(buyTip)}</Text>
+          </View>
+        ) : null}
 
         <SoftCard>
           <Text style={styles.section}>Onde você encontrou mais economia</Text>
@@ -206,6 +216,14 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.bottomNavClearance,
     gap: 12,
   },
+  tipPill: {
+    alignSelf: 'stretch',
+    backgroundColor: '#FFF6D8',
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  tipText: {fontSize: 13, fontWeight: '800', color: colors.navy},
   periods: {flexDirection: 'row', gap: 8},
   period: {
     borderRadius: radii.pill,

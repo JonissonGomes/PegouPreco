@@ -2,7 +2,7 @@ import React from 'react';
 import {Pressable, StyleSheet, Text, View} from 'react-native';
 import Svg, {Circle, Path} from 'react-native-svg';
 import {formatBrl} from '@/domain/money';
-import type {HomeDash, HomePeriodDays} from '@/domain/homeDashboard';
+import {buyDayPhrase, type HomeDash, type HomePeriodDays} from '@/domain/homeDashboard';
 import {Reveal, useDraw} from '@/ui/reveal';
 import {palette} from '@/ui/primaryColors';
 import {heatColor} from '@/features/history/categoryTone';
@@ -43,18 +43,17 @@ export function HomeSpendBoard({
           onPress={onPress}
           disabled={!onPress}>
           <View style={styles.head}>
-            <Text style={styles.kicker}>Gastos</Text>
+            {buyTip ? (
+              <View style={styles.tipPill}>
+                <Text style={styles.tipText}>{buyDayPhrase(buyTip)}</Text>
+              </View>
+            ) : (
+              <View />
+            )}
             <View style={styles.periodPill}>
               <Text style={styles.periodText}>{PERIOD_LABEL[period]}</Text>
             </View>
           </View>
-          {buyTip ? (
-            <View style={styles.tipPill}>
-              <Text style={styles.tipText} numberOfLines={2}>
-                Ótimo dia para comprar {buyTip}
-              </Text>
-            </View>
-          ) : null}
           <View style={styles.heroRow}>
             <View style={styles.heroCopy}>
               <Text style={styles.big}>{formatBrl(dash.spent)}</Text>
@@ -343,8 +342,7 @@ const styles = StyleSheet.create({
     padding: space.lg,
     gap: 8,
   },
-  kicker: {fontSize: 16, fontWeight: '900', color: colors.navy},
-  head: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'},
+  head: {flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between'},
   periodPill: {
     backgroundColor: '#FFF6D8',
     borderRadius: 999,
@@ -353,12 +351,12 @@ const styles = StyleSheet.create({
   },
   periodText: {fontSize: 12, fontWeight: '800', color: colors.navy},
   tipPill: {
-    alignSelf: 'flex-start',
+    flex: 1,
+    marginRight: 8,
     backgroundColor: '#FFF6D8',
     borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 5,
-    maxWidth: '100%',
   },
   tipText: {fontSize: 12, fontWeight: '800', color: colors.navy},
   heroRow: {flexDirection: 'row', alignItems: 'center', gap: 12},

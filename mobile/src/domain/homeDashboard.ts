@@ -250,6 +250,37 @@ function spendTrend(
   });
 }
 
+const BUY_DAY_TAIL: Record<string, string> = {
+  Bebidas: 'bebidas',
+  Mercearia: 'itens de mercearia',
+  Laticínios: 'laticínios',
+  Açougue: 'itens do açougue',
+  Peixaria: 'itens da peixaria',
+  Frios: 'frios',
+  Frutas: 'frutas',
+  Verduras: 'verduras',
+  Padaria: 'itens de padaria',
+  Congelados: 'congelados',
+  'Biscoitos e doces': 'biscoitos e doces',
+  Salgadinhos: 'salgadinhos',
+  'Café e matinais': 'café e matinais',
+  'Molhos e temperos': 'molhos e temperos',
+  Enlatados: 'enlatados',
+  Limpeza: 'itens de limpeza',
+  Higiene: 'itens de higiene',
+  Bebê: 'itens de bebê',
+  Pet: 'itens de pet',
+  Descartáveis: 'descartáveis',
+};
+
+/** Frase da dica do dia, com a preposição da categoria. */
+export function buyDayPhrase(category: string): string {
+  const tail =
+    BUY_DAY_TAIL[category] ??
+    `itens de ${category.toLocaleLowerCase('pt-BR')}`;
+  return `Ótimo dia para comprar ${tail}`;
+}
+
 export type WeekdayCandidate = {
   category: string;
   todayAvg: number;
@@ -288,15 +319,21 @@ export function weekdayBuyCandidates(
   }
   const ranked: WeekdayCandidate[] = [];
   for (const [category, stat] of stats) {
-    if (stat.todayN < 1) continue;
+    if (stat.allN < 1) continue;
+    const onWeekday = stat.todayN >= 1;
     ranked.push({
       category,
-      todayAvg: Number((stat.today / stat.todayN).toFixed(2)),
+      todayAvg: Number(
+        ((onWeekday ? stat.today / stat.todayN : stat.all / stat.allN)).toFixed(2),
+      ),
       usualAvg: Number((stat.all / stat.allN).toFixed(2)),
     });
   }
-  ranked.sort(
-    (a, b) => a.todayAvg / a.usualAvg - b.todayAvg / b.usualAvg,
-  );
-  return ranked.slice(0, 6);
+  const seenToday = ranked.filter(item => item.todayAvg !== item.usualAvg);
+  const pool = seenToday.length > 0 ? seenToday : ranked;
+  pool.sort((a, b) => {
+    const ratio = a.todayAvg / a.usualAvg - b.todayAvg / b.usualAvg;
+    return ratio !== 0 ? ratio : a.usualAvg - b.usualAvg;
+  });
+  return pool.slice(0, 6);
 }
