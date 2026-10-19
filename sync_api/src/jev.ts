@@ -92,12 +92,20 @@ export class JevClient {
     return decided.action === 'highlight';
   }
 
+  private endpoint(): string {
+    // Chave do console TypeSafe (apikey_…) e chave hospedada (jv_live_…) não são o mesmo host.
+    if (this.apiKey.startsWith('apikey_')) {
+      return 'https://api.typesafe.ai/v1/systemone';
+    }
+    return 'https://jevtypesafeai.com/api/v1/decide';
+  }
+
   private async decide(
     state: Record<string, unknown>,
     questions: Record<string, unknown>,
   ): Promise<JevResult> {
     try {
-      const res = await fetch('https://jevtypesafeai.com/api/v1/decide', {
+      const res = await fetch(this.endpoint(), {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${this.apiKey}`,

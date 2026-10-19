@@ -3,8 +3,16 @@ import {Pressable, StyleSheet, Text, View} from 'react-native';
 import {formatBrl} from '@/domain/money';
 import type {CheaperCategory} from '@/domain/purchaseInsights';
 import {GrowBar, Reveal} from '@/ui/reveal';
-import {heatColor} from '@/features/history/categoryTone';
 import {colors, space} from '@/ui/theme';
+
+/** Verde mais forte na maior redução. Sem queda, cinza. Vermelho fica para alta de preço. */
+function dropColor(dropPct: number, max: number): string {
+  if (!(dropPct > 0)) return '#94A3B8';
+  const strength = Math.max(0, Math.min(1, dropPct / max));
+  if (strength >= 0.75) return '#15803D';
+  if (strength >= 0.45) return '#16A34A';
+  return '#4ADE80';
+}
 
 export function HomeCheaperChart({
   items,
@@ -26,7 +34,12 @@ export function HomeCheaperChart({
         </View>
       </Reveal>
       {items.map((item, index) => {
-        const width = Math.max(0.22, item.dropPct / max);
+        const dropped = item.dropPct > 0;
+        const tone = dropColor(item.dropPct, max);
+        const width = dropped ? Math.max(0.22, item.dropPct / max) : 0.08;
+        const pctLabel = dropped
+          ? `redução de ${Math.round(item.dropPct * 100)}%`
+          : 'sem redução';
         return (
           <Reveal key={item.category} delay={80 + index * 90} play={play}>
             <Pressable style={styles.row} onPress={() => onOpen?.(item.category)}>
@@ -34,13 +47,15 @@ export function HomeCheaperChart({
                 <Text style={styles.name} numberOfLines={1}>
                   {item.category}
                 </Text>
-                <Text style={styles.pct}>-{Math.round(item.dropPct * 100)}%</Text>
-                <Text style={styles.saved}>{formatBrl(item.saved)}</Text>
+                <Text style={[styles.pct, {color: tone}]}>{pctLabel}</Text>
+                <Text style={[styles.saved, {color: dropped ? '#15803D' : colors.muted}]}>
+                  {formatBrl(item.saved)}
+                </Text>
               </View>
               <View style={styles.track}>
                 <GrowBar
                   ratio={width}
-                  color={heatColor(index, items.length)}
+                  color={tone}
                   delay={160 + index * 90}
                   height={8}
                   play={play}
@@ -79,6 +94,6 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   name: {fontWeight: '900', color: colors.navy, fontSize: 15, flex: 1},
-  pct: {fontWeight: '800', color: colors.navy, fontSize: 12},
-  saved: {fontWeight: '900', color: colors.navy, fontSize: 14},
+  pct: {fontWeight: '800', fontSize: 12},
+  saved: {fontWeight: '900', fontSize: 14},
 });

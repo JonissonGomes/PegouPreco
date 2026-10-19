@@ -40,12 +40,12 @@ async function main() {
     const jev = config.jevApiKey;
     if (!jev) {
       console.log('JEV desligado: JEV_API_KEY vazia.');
-    } else if (!jev.startsWith('jv_live_') && !jev.startsWith('jv_test_')) {
-      console.log(
-        'JEV: a chave carregada não começa com jv_live_. O formato antigo apikey_ recebe HTTP 401.',
-      );
+    } else if (jev.startsWith('apikey_')) {
+      console.log('JEV: chave apikey_ da TypeSafe, host api.typesafe.ai.');
+    } else if (jev.startsWith('jv_live_') || jev.startsWith('jv_test_')) {
+      console.log('JEV: chave jv_live_, host jevtypesafeai.com.');
     } else {
-      console.log('JEV: chave jv_live_ carregada.');
+      console.log('JEV: prefixo de chave não reconhecido.');
     }
   });
 }

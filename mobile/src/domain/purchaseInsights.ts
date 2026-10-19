@@ -153,19 +153,24 @@ export function cheaperCategories(
     olderByCat.set(point.category, bucket);
   }
   const out: CheaperCategory[] = [];
+  const rest: CheaperCategory[] = [];
   for (const [category, recent] of recentByCat) {
-    const older = olderByCat.get(category);
-    if (!older?.count || !(recent.qty > 0)) continue;
+    if (!(recent.qty > 0)) continue;
     const recentAvg = recent.sum / recent.qty;
-    const olderAvg = older.sum / older.count;
-    if (!(recentAvg > 0) || recentAvg >= olderAvg) continue;
-    const dropPct = (olderAvg - recentAvg) / olderAvg;
-    out.push({
+    if (!(recentAvg > 0)) continue;
+    const older = olderByCat.get(category);
+    const olderAvg = older?.count ? older.sum / older.count : recentAvg;
+    const dropped = olderAvg > recentAvg;
+    const row: CheaperCategory = {
       category,
-      dropPct,
+      dropPct: dropped ? (olderAvg - recentAvg) / olderAvg : 0,
       saved: Number(((olderAvg - recentAvg) * recent.qty).toFixed(2)),
       recentAvg: Number(recentAvg.toFixed(2)),
-    });
+    };
+    if (dropped) out.push(row);
+    else rest.push(row);
   }
-  return out.sort((a, b) => b.dropPct - a.dropPct).slice(0, 5);
+  out.sort((a, b) => b.dropPct - a.dropPct);
+  rest.sort((a, b) => a.recentAvg - b.recentAvg);
+  return [...out, ...rest].slice(0, 5);
 }
