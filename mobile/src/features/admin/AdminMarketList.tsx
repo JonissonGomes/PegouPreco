@@ -10,10 +10,12 @@ export function AdminMarketList({
   markets,
   onEdit,
   onRemove,
+  onMap,
 }: {
   markets: AdminMarketRemote[];
   onEdit: (market: AdminMarketRemote) => void;
   onRemove: (market: AdminMarketRemote) => void;
+  onMap: (market: AdminMarketRemote) => void;
 }) {
   if (markets.length === 0) {
     return <Text style={styles.empty}>Nenhum mercado na nuvem ainda.</Text>;
@@ -27,7 +29,20 @@ export function AdminMarketList({
             {item.address || 'Endereço não informado'}
             {item.city ? ` · ${item.city}` : ''}
           </Text>
+          <Text style={styles.rowMeta}>
+            {Number.isFinite(Number(item.lat)) && Number.isFinite(Number(item.lng))
+              ? `${Number(item.lat).toFixed(5)}, ${Number(item.lng).toFixed(5)}`
+              : 'Sem coordenadas'}
+          </Text>
           <View style={styles.actions}>
+            <View style={styles.action}>
+              <AppButton
+                outlined
+                label="No mapa"
+                disabled={!Number.isFinite(Number(item.lat)) || !Number.isFinite(Number(item.lng))}
+                onPress={() => onMap(item)}
+              />
+            </View>
             <View style={styles.action}>
               <AppButton outlined label="Editar" onPress={() => onEdit(item)} />
             </View>

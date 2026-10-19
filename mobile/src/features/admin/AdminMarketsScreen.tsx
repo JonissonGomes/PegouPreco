@@ -324,6 +324,18 @@ export function AdminMarketsScreen() {
             markets={cloud}
             onEdit={askEdit}
             onRemove={removeCloud}
+            onMap={market =>
+              nav.navigate('Main', {
+                screen: 'Map',
+                params: {
+                  focusRemoteId: market.id,
+                  focusName: market.name,
+                  focusLat: market.lat,
+                  focusLng: market.lng,
+                  focusAddress: market.address,
+                },
+              })
+            }
           />
         ) : null}
         {tab === 'support' ? (

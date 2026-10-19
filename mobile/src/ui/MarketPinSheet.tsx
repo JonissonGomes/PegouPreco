@@ -1,5 +1,5 @@
 import React, {useEffect, useMemo, useState} from 'react';
-import {Pressable, StyleSheet, Text, View} from 'react-native';
+import {Pressable, StyleSheet, Text, TextInput, View} from 'react-native';
 import {useNavigation} from '@react-navigation/native';
 import {MapPin, Star, TrendingDown, TrendingUp, Minus, TriangleAlert} from 'lucide-react-native';
 import {AppButton} from '@/ui/chrome';
@@ -107,6 +107,10 @@ export function MarketPinSheet({
     ratingsCount: number;
     weeklyVisitors: number;
   } | null>(null);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [draftName, setDraftName] = useState('');
+  const [adminBusy, setAdminBusy] = useState(false);
+  const admin = auth?.role === 'admin';
 
   useEffect(() => {
     if (market) {
@@ -115,6 +119,8 @@ export function MarketPinSheet({
       setReviewOpen(false);
       setRemoteShelf([]);
       setRemoteStats(null);
+      setRenameOpen(false);
+      setDraftName(market.name);
     }
   }, [market, distanceKm]);
 
@@ -319,6 +325,81 @@ export function MarketPinSheet({
     }
   };
 
+  const saveAdminName = async () => {
+    if (!shown || !auth?.token || shown.lat == null || shown.lng == null) return;
+    const next = draftName.trim();
+    if (!next) {
+      appAlert('Nome', 'Informe o nome do mercado.');
+      return;
+    }
+    setAdminBusy(true);
+    try {
+      const remote = await syncApi.adminUpsertMarket(auth.token, {
+        id: shown.remoteId ?? undefined,
+        name: next,
+        lat: shown.lat,
+        lng: shown.lng,
+        address: shown.address,
+        cnpj: shown.cnpj,
+      });
+      if (shown.id > 0) {
+        const row = marketRepo.getById(shown.id);
+        if (row) {
+          row.name = remote.name ?? next;
+          row.remoteId = remote.id ?? shown.remoteId;
+          marketRepo.upsertGeo(row.id, {
+            lat: shown.lat,
+            lng: shown.lng,
+            address: shown.address,
+            remoteId: row.remoteId,
+            synced: 1,
+          });
+        }
+      }
+      setCached(prev => (prev ? {...prev, name: next, remoteId: remote.id ?? prev.remoteId} : prev));
+      useAppStore.getState().refresh();
+      setRenameOpen(false);
+      appAlert('Salvo', 'Nome atualizado na nuvem.', undefined, 'success');
+    } catch (e) {
+      appAlert('Erro', apiErrorMessage(e));
+    } finally {
+      setAdminBusy(false);
+    }
+  };
+
+  const removeAdminMarket = () => {
+    if (!shown?.remoteId || !auth?.token) {
+      appAlert('Remover', 'Este pin ainda não está na nuvem.');
+      return;
+    }
+    appAlert('Excluir mercado', `Remover ${shown.name} da nuvem?`, [
+      {label: 'Cancelar', style: 'cancel'},
+      {
+        label: 'Excluir',
+        style: 'destructive',
+        onPress: async () => {
+          setAdminBusy(true);
+          try {
+            await syncApi.adminDeleteMarket(auth.token, shown.remoteId!);
+            marketRepo.dropCloudCopy(
+              shown.remoteId!,
+              shown.name,
+              shown.lat ?? Number.NaN,
+              shown.lng ?? Number.NaN,
+            );
+            useAppStore.getState().refresh();
+            onClose();
+            appAlert('Removido', 'Mercado excluído na nuvem.', undefined, 'success');
+          } catch (e) {
+            appAlert('Erro', apiErrorMessage(e));
+          } finally {
+            setAdminBusy(false);
+          }
+        },
+      },
+    ]);
+  };
+
   const reportPin = () => {
     appAlert('Reportar erro', 'O que está errado neste pin?', [
       ...PIN_REPORTS.map(item => ({
@@ -343,12 +424,14 @@ export function MarketPinSheet({
                   <Text style={styles.title}>
                     {friendlyMarketTitle(shown, markets)}
                   </Text>
-                  <Pressable
-                    style={styles.alertBtn}
-                    onPress={reportPin}
-                    accessibilityLabel="Reportar erro neste pin">
-                    <TriangleAlert size={18} color={colors.danger} />
-                  </Pressable>
+                  {admin ? null : (
+                    <Pressable
+                      style={styles.alertBtn}
+                      onPress={reportPin}
+                      accessibilityLabel="Reportar erro neste pin">
+                      <TriangleAlert size={18} color={colors.danger} />
+                    </Pressable>
+                  )}
                 </View>
                 <Text style={styles.addr} numberOfLines={3}>
                   {addressLine || 'Buscando endereço…'}
@@ -356,6 +439,8 @@ export function MarketPinSheet({
               </View>
             </View>
 
+            {admin ? null : (
+            <>
             <View style={styles.stats}>
               <View style={styles.stat}>
                 <Text style={styles.statLabel}>Distância</Text>
@@ -393,27 +478,74 @@ export function MarketPinSheet({
                 : `${visitors} pessoas passaram neste mercado na semana`}
             </Text>
             <MarketShelfBlock shelf={shelf} />
+            </>
+            )}
 
-            {onUse ? (
-              <AppButton
-                label="Estou neste mercado"
-                onPress={() => onUse(shown)}
-              />
-            ) : null}
-            {userRegisteredReceipt(shown) ? (
-              <AppButton
-                accent
-                icon={<Star size={18} color={colors.navy} fill={colors.navy} />}
-                label="Avaliar mercado · +5 pts"
-                onPress={() => setReviewOpen(true)}
-              />
-            ) : null}
-            {locationConfirmed ? null : (
-              <AppButton
-                outlined
-                label="Confirmar localização"
-                onPress={() => void submitSuggestion('confirm')}
-              />
+            {admin ? (
+              <>
+                <Text style={styles.visits}>
+                  {shown.lat != null && shown.lng != null
+                    ? `${shown.lat.toFixed(5)}, ${shown.lng.toFixed(5)}`
+                    : 'Sem coordenadas'}
+                </Text>
+                {renameOpen ? (
+                  <TextInput
+                    value={draftName}
+                    onChangeText={setDraftName}
+                    placeholder="Nome do mercado"
+                    placeholderTextColor={colors.muted}
+                    style={styles.rename}
+                  />
+                ) : null}
+                <AppButton
+                  disabled={adminBusy}
+                  label={
+                    adminBusy
+                      ? 'Salvando…'
+                      : renameOpen
+                        ? 'Salvar nome'
+                        : 'Editar nome'
+                  }
+                  onPress={() => {
+                    if (!renameOpen) {
+                      setDraftName(shown.name);
+                      setRenameOpen(true);
+                      return;
+                    }
+                    void saveAdminName();
+                  }}
+                />
+                <AppButton
+                  outlined
+                  disabled={adminBusy}
+                  label="Remover mercado"
+                  onPress={removeAdminMarket}
+                />
+              </>
+            ) : (
+              <>
+                {onUse ? (
+                  <AppButton
+                    label="Estou neste mercado"
+                    onPress={() => onUse(shown)}
+                  />
+                ) : null}
+                {userRegisteredReceipt(shown) ? (
+                  <AppButton
+                    accent
+                    icon={<Star size={18} color={colors.navy} fill={colors.navy} />}
+                    label="Avaliar mercado · +5 pts"
+                    onPress={() => setReviewOpen(true)}
+                  />
+                ) : null}
+                {locationConfirmed ? null : (
+                  <AppButton
+                    outlined
+                    label="Confirmar localização"
+                    onPress={() => void submitSuggestion('confirm')}
+                  />
+                )}
+              </>
             )}
             <Pressable style={styles.secondary} onPress={onClose}>
               <Text style={styles.secondaryText}>Fechar</Text>
@@ -462,6 +594,18 @@ const styles = StyleSheet.create({
     lineHeight: 24,
   },
   addr: {marginTop: 1, color: colors.muted, fontWeight: '600', fontSize: 13, lineHeight: 16},
+  rename: {
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.ink,
+    backgroundColor: colors.white,
+  },
   visits: {
     marginTop: 8,
     color: colors.navy,

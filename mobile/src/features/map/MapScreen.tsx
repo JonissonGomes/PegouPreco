@@ -10,7 +10,7 @@ import {
   View,
 } from 'react-native';
 import {WebView, type WebViewMessageEvent} from 'react-native-webview';
-import {useNavigation} from '@react-navigation/native';
+import {useNavigation, useRoute} from '@react-navigation/native';
 import Geolocation from 'react-native-geolocation-service';
 import {LocateFixed, Plus, RefreshCw, Search, X} from 'lucide-react-native';
 import {MAPBOX_ACCESS_TOKEN} from '@/config/env';
@@ -292,6 +292,7 @@ function buildMapHtml(
 
 export function MapScreen() {
   const nav = useNavigation<any>();
+  const route = useRoute<any>();
   const markets = useAppStore(s => s.markets);
   const refresh = useAppStore(s => s.refresh);
   const locationGranted = useAppStore(s => s.permissions.location);
@@ -389,6 +390,35 @@ export function MapScreen() {
     setSearchOpen(false);
     setQuery('');
   };
+
+  const lastFocus = useRef('');
+  const focusRemoteId = route.params?.focusRemoteId as string | undefined;
+  const focusLat = Number(route.params?.focusLat);
+  const focusLng = Number(route.params?.focusLng);
+  useEffect(() => {
+    if (!mapReady || !focusRemoteId) return;
+    if (!Number.isFinite(focusLat) || !Number.isFinite(focusLng)) return;
+    const token = `${focusRemoteId}:${focusLat}:${focusLng}`;
+    if (lastFocus.current === token) return;
+    lastFocus.current = token;
+    const local = markets.find(item => item.remoteId === focusRemoteId);
+    const target: Market = local ?? {
+      id: -1,
+      name: String(route.params?.focusName ?? 'Mercado'),
+      cnpj: null,
+      uf: null,
+      lat: focusLat,
+      lng: focusLng,
+      address: (route.params?.focusAddress as string | null) ?? null,
+      avgRating: null,
+      ratingsCount: 0,
+      priceLevel: null,
+      remoteId: focusRemoteId,
+      updatedAt: new Date().toISOString(),
+      synced: 1,
+    };
+    flyToMarket(target);
+  }, [mapReady, focusRemoteId, focusLat, focusLng, markets]);
 
   useEffect(() => {
     if (!center || htmlLocked.current) return;
