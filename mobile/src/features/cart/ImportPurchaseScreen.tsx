@@ -16,10 +16,9 @@ import {
   type NfceDraft,
 } from '@/data/archivePurchase';
 import {NfceReviewSheet} from '@/features/cart/NfceReviewSheet';
-import {SavedMarketReview} from '@/features/cart/SavedMarketReview';
 import {useReceiptCamera} from '@/features/cart/useReceiptCamera';
 import {useAppStore} from '@/store/appStore';
-import {requestAutoSync} from '@/data/syncWorker';
+import {syncNow} from '@/data/syncWorker';
 
 export function ImportPurchaseScreen() {
   const nav = useNavigation<any>();
@@ -44,10 +43,6 @@ export function ImportPurchaseScreen() {
   const [busy, setBusy] = useState(false);
   const [pasteOpen, setPasteOpen] = useState(false);
   const [draft, setDraft] = useState<NfceDraft | null>(null);
-  const [rateMarket, setRateMarket] = useState<{
-    id: number | null;
-    name: string;
-  } | null>(null);
   const [saving, setSaving] = useState(false);
   const lock = useRef<string | null>(null);
 
@@ -114,14 +109,10 @@ export function ImportPurchaseScreen() {
         return;
       }
       refresh();
-      requestAutoSync('nfce');
-      setDraft(null);
-      lock.current = null;
-      setReplaceListId(null);
-      nav.setParams({replaceListId: undefined});
-      setRateMarket({
-        id: outcome.marketId,
-        name: outcome.marketName,
+      await syncNow();
+      nav.replace('MarketReview', {
+        marketId: outcome.marketId,
+        marketName: outcome.marketName,
       });
     } catch (e) {
       appAlert('SEFAZ', e instanceof Error ? e.message : String(e));
@@ -244,12 +235,6 @@ export function ImportPurchaseScreen() {
           setDraft(null);
         }}
         onSave={purchasedAt => void saveDraft(purchasedAt)}
-      />
-      <SavedMarketReview
-        visible={rateMarket != null}
-        marketId={rateMarket?.id ?? null}
-        marketName={rateMarket?.name ?? 'Mercado'}
-        onClose={() => setRateMarket(null)}
       />
     </View>
   );

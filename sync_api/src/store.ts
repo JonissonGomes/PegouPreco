@@ -801,20 +801,40 @@ export class DataStore {
 
   private async _userHasNfce(userId: string, marketId: string): Promise<boolean> {
     const marketIds = await this._placeMarketIds(marketId);
-    const match = (log: Record<string, unknown>) =>
+    const names = new Set(
+      (await this._allMarkets())
+        .filter(market => marketIds.includes(String(market.id ?? '')))
+        .map(market => String(market.name ?? '').trim().toLowerCase())
+        .filter(Boolean),
+    );
+    const keyOk = (value: unknown) => /^\d{44}$/.test(String(value ?? ''));
+    const logOk = (log: Record<string, unknown>) =>
       String(log.contributorId ?? '') === userId &&
       marketIds.includes(String(log.marketId ?? '')) &&
       String(log.source ?? '') === 'nfce' &&
-      /^\d{44}$/.test(String(log.nfceKey ?? ''));
+      keyOk(log.nfceKey);
+    const listOk = (list: Record<string, unknown>) =>
+      String(list.ownerId ?? '') === userId &&
+      keyOk(list.nfceKey) &&
+      (marketIds.includes(String(list.marketId ?? '')) ||
+        names.has(String(list.marketName ?? '').trim().toLowerCase()));
     if (this.mode === 'memory') {
-      return Object.values(this._memLogs).some(match);
+      return (
+        Object.values(this._memLogs).some(logOk) ||
+        Object.values(this._memShoppingLists).some(listOk)
+      );
     }
-    const found = await this.col('price_logs').findOne({
+    const foundLog = await this.col('price_logs').findOne({
       contributorId: userId,
       marketId: {$in: marketIds},
       source: 'nfce',
+      nfceKey: {$regex: '^\\d{44}$'},
     });
-    return found != null && /^\d{44}$/.test(String(found.nfceKey ?? ''));
+    if (foundLog) return true;
+    const lists = (await this.col('shopping_lists')
+      .find({ownerId: userId, nfceKey: {$regex: '^\\d{44}$'}})
+      .toArray()) as Record<string, unknown>[];
+    return lists.some(listOk);
   }
 
   /** O pin visto no mapa e o mercado gravado na nota podem ser cadastros irmãos. */
@@ -1238,6 +1258,9 @@ export class DataStore {
       } else if (/^\d{44}$/.test(listKey)) {
         s.updatedAt = new Date().toISOString();
       }
+      const listMarket =
+        (s.marketRemoteId != null ? String(s.marketRemoteId) : null) ??
+        (s.marketId != null ? marketIdMap[String(s.marketId)] ?? null : null);
       const remoteId = await this._upsertLww({
         collection: 'shopping_lists',
         mem: this._memShoppingLists,
@@ -1246,7 +1269,7 @@ export class DataStore {
           ownerId: userId,
           nfceKey: /^\d{44}$/.test(listKey) ? listKey : null,
           name: s.name,
-          marketId: s.marketId,
+          marketId: listMarket,
           marketName: s.marketName,
           itemsJson: s.itemsJson,
           subtotal: s.subtotal,
@@ -1261,9 +1284,6 @@ export class DataStore {
       if (/^\d{44}$/.test(listKey)) {
         await this._keepNfceKey(remoteId, userId, listKey);
       }
-      const listMarket =
-        (s.marketRemoteId != null ? String(s.marketRemoteId) : null) ??
-        (s.marketId != null ? marketIdMap[String(s.marketId)] ?? null : null);
       await this.stats.recordVisit(
         listMarket ?? null,
         userId,

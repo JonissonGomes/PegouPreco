@@ -48,6 +48,12 @@ function categoryRetryDue(product: {
   return true;
 }
 
+/** Espera um envio em andamento e só então sobe o estado atual. */
+export async function syncNow(): Promise<{ok: boolean; message: string}> {
+  if (syncInFlight) await syncInFlight;
+  return runFullSync(true);
+}
+
 export async function runFullSync(
   force = false,
 ): Promise<{ok: boolean; message: string}> {

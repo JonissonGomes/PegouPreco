@@ -23,6 +23,7 @@ import {HomeSpendScreen} from '@/features/home/HomeSpendScreen';
 import {CartScreen} from '@/features/cart/CartScreen';
 import {ShoppingListsScreen} from '@/features/cart/ShoppingListsScreen';
 import {ImportPurchaseScreen} from '@/features/cart/ImportPurchaseScreen';
+import {MarketReviewScreen} from '@/features/cart/MarketReviewScreen';
 import {MapScreen} from '@/features/map/MapScreen';
 import {CaptureScreen} from '@/features/capture/CaptureScreen';
 import {CommunityScreen} from '@/features/community/CommunityScreen';
@@ -195,6 +196,7 @@ export function RootNavigation() {
             <Stack.Screen name="HomeSpend" component={HomeSpendScreen} />
             <Stack.Screen name="ShoppingLists" component={ShoppingListsScreen} />
             <Stack.Screen name="ImportPurchase" component={ImportPurchaseScreen} />
+            <Stack.Screen name="MarketReview" component={MarketReviewScreen} />
             <Stack.Screen name="ProductDetail" component={ProductDetailScreen} />
             <Stack.Screen name="AdminMarkets" component={AdminMarketsScreen} />
           </>

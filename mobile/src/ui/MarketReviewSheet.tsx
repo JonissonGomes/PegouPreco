@@ -9,14 +9,12 @@ import {reviewTagsForStars} from '@/domain/marketReviewTags';
 
 const LABELS = ['', 'Ruim', 'Fraco', 'Ok', 'Bom', 'Excelente'];
 
-export function MarketReviewSheet({
-  visible,
+export function MarketReviewForm({
   marketName,
   busy,
   onClose,
   onSubmit,
 }: {
-  visible: boolean;
   marketName: string;
   busy?: boolean;
   onClose: () => void;
@@ -27,11 +25,9 @@ export function MarketReviewSheet({
   const groups = reviewTagsForStars(stars);
 
   useEffect(() => {
-    if (visible) {
-      setStars(0);
-      setTags([]);
-    }
-  }, [visible, marketName]);
+    setStars(0);
+    setTags([]);
+  }, [marketName]);
 
   const pickStars = (value: number) => {
     setStars(value);
@@ -49,7 +45,7 @@ export function MarketReviewSheet({
   };
 
   return (
-    <KeyboardSafeSheet visible={visible} onClose={onClose}>
+    <>
       <View style={styles.hero}>
         <View style={styles.icon}>
           <Store size={22} color={colors.navy} />
@@ -102,6 +98,33 @@ export function MarketReviewSheet({
         onPress={() => onSubmit(stars, tags)}
       />
       <AppButton label="Agora não" outlined onPress={onClose} />
+    </>
+  );
+}
+
+export function MarketReviewSheet({
+  visible,
+  marketName,
+  busy,
+  onClose,
+  onSubmit,
+}: {
+  visible: boolean;
+  marketName: string;
+  busy?: boolean;
+  onClose: () => void;
+  onSubmit: (stars: number, tags: string[]) => void | Promise<void>;
+}) {
+  return (
+    <KeyboardSafeSheet visible={visible} onClose={onClose}>
+      {visible ? (
+        <MarketReviewForm
+          marketName={marketName}
+          busy={busy}
+          onClose={onClose}
+          onSubmit={onSubmit}
+        />
+      ) : null}
     </KeyboardSafeSheet>
   );
 }
