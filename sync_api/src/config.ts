@@ -8,6 +8,14 @@ function flag(value: string | undefined): boolean {
   return v === 'true' || v === '1' || v === 'yes';
 }
 
+function jevKey(value: string | undefined): string {
+  return (value ?? '')
+    .trim()
+    .replace(/^['"]|['"]$/g, '')
+    .replace(/^bearer\s+/i, '')
+    .trim();
+}
+
 function emailList(value: string | undefined): string[] {
   if (!value) return [];
   return value
@@ -29,7 +37,7 @@ export const config = {
   twilioSid: process.env.TWILIO_ACCOUNT_SID ?? '',
   twilioToken: process.env.TWILIO_AUTH_TOKEN ?? '',
   twilioFrom: process.env.TWILIO_FROM_NUMBER ?? '',
-  jevApiKey: process.env.JEV_API_KEY ?? '',
+  jevApiKey: jevKey(process.env.JEV_API_KEY),
   /** E-mails com role admin (CRUD de mercados). Separados por vírgula. */
   adminEmails: emailList(process.env.ADMIN_EMAILS),
   /** Domínio do passkey (Digital Asset Links). */

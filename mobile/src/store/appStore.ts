@@ -137,8 +137,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     get().refresh();
   },
   setAuth: session => {
+    const previous = get().auth;
+    const sameUser =
+      !!session && !!previous && previous.userId === session.userId;
+    if (previous && !sameUser) prefs.forgetAccount();
     prefs.setAuthJson(session ? JSON.stringify(session) : null);
     set({auth: session});
+    get().refresh();
     if (session?.token) {
       // lazy — evita ciclo com syncWorker
       void import('@/data/syncWorker').then(m => m.requestAutoSync('login'));

@@ -44,6 +44,16 @@ describe('nfceParser', () => {
     expect(result.issuedAt).toBe(new Date('2026-10-10T15:32:29-03:00').toISOString());
   });
 
+  it('lê o endereço impresso na página da nota', () => {
+    const html = `
+      <div>Endereço: AV NORTE, 100, CENTRO, IGARASSU - PE, 53610-000</div>
+      <div>Consumidor</div>
+    `;
+    const result = parseNfceHtml(html);
+    expect(result.marketAddress).toContain('AV NORTE');
+    expect(result.marketAddress).toContain('IGARASSU');
+  });
+
   it('guarda a data de emissão', () => {
     const html = 'Data de autorização: 10/10/2026 15:32:29';
     const result = parseNfceHtml(html);

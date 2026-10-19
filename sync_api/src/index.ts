@@ -37,6 +37,16 @@ async function main() {
     console.log(
       `PegouPreço sync_api em http://0.0.0.0:${config.port} · store=${store.mode}`,
     );
+    const jev = config.jevApiKey;
+    if (!jev) {
+      console.log('JEV desligado: JEV_API_KEY vazia.');
+    } else if (!jev.startsWith('jv_live_') && !jev.startsWith('jv_test_')) {
+      console.log(
+        'JEV: a chave carregada não começa com jv_live_. O formato antigo apikey_ recebe HTTP 401.',
+      );
+    } else {
+      console.log('JEV: chave jv_live_ carregada.');
+    }
   });
 }
 

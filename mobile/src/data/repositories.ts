@@ -182,6 +182,32 @@ export const prefs = {
     next.add(key);
     metaSet('confirmedMarkets', JSON.stringify([...next]));
   },
+  /** Notas, listas e preferências da conta. Os pins do mapa permanecem. */
+  forgetAccount: () => {
+    const st = getState();
+    st.price_logs = [];
+    st.shopping_lists = [];
+    st.cart_items = [];
+    st.pending_receipts = [];
+    st.market_reviews = [];
+    st.user_reputation = [];
+    st.products = [];
+    metaSet('lastSyncAt', new Date(0).toISOString());
+    metaSet('activeListName', '');
+    metaSet('activeMarketId', '');
+    metaSet('spendLimit', '');
+    metaSet('currentMarketId', '');
+    metaSet('prefCity', '');
+    metaSet('prefNeighborhood', '');
+    metaSet('prefFavoriteMarketIds', '[]');
+    metaSet('votedPriceIds', '[]');
+    metaSet('deletedNfceKeys', '[]');
+    metaSet('deletedPriceLogIds', '[]');
+    metaSet('deletedListIds', '[]');
+    metaSet('confirmedMarkets', '[]');
+    metaSet('localUserId', '');
+    saveState();
+  },
 };
 
 /** Conta verificada por e-mail pode contribuir/votar. */

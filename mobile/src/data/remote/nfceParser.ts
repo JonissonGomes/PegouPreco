@@ -52,6 +52,21 @@ function xmlTag(block: string, name: string): string | null {
   return m ? decodeXml(m[1]) : null;
 }
 
+function addressFromText(html: string): string | null {
+  const text = html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/\s+/g, ' ');
+  const labeled = text.match(
+    /endere[cç]o\s*[:\-]?\s*([A-Za-zÀ-ÿ0-9][^|]{12,140})/i,
+  );
+  if (!labeled) return null;
+  const line = labeled[1].split(/consumidor|chave de acesso|protocolo/i)[0].trim();
+  if (!/\d/.test(line) || !/[A-Za-zÀ-ÿ]/.test(line)) return null;
+  return line.replace(/[,.\s]+$/, '').slice(0, 140);
+}
+
 function emitAddress(emit: string): string | null {
   const block =
     emit.match(/<(?:\w+:)?enderEmit[\s>][\s\S]*?<\/(?:\w+:)?enderEmit>/)?.[0] ??
@@ -151,7 +166,7 @@ export function parseNfceHtml(html: string): NfceParseResult {
   return {
     marketName: nameMatch?.[1]?.trim() ?? null,
     marketCnpj: cnpjMatch?.[1] ?? null,
-    marketAddress: null,
+    marketAddress: emitAddress(html) ?? addressFromText(html),
     issuedAt: issuedAtFromHtml(html),
     items,
   };

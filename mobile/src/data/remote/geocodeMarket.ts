@@ -84,21 +84,24 @@ export async function geocodeAddress(
   if (q.length < 8 || !token) return null;
   try {
     const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(q)}.json`;
-    const {data} = await axios.get(url, {
-      params: {
-        country: 'BR',
-        types: 'address',
-        limit: 1,
-        language: 'pt',
-        access_token: token,
-      },
-      timeout: 10000,
-    });
-    const feature = (data.features as Array<{
-      text?: string;
-      place_name?: string;
-      center?: [number, number];
-    }>)?.[0];
+    const read = async (types?: string) => {
+      const {data} = await axios.get(url, {
+        params: {
+          country: 'BR',
+          limit: 1,
+          language: 'pt',
+          access_token: token,
+          ...(types ? {types} : {}),
+        },
+        timeout: 10000,
+      });
+      return (data.features as Array<{
+        text?: string;
+        place_name?: string;
+        center?: [number, number];
+      }>)?.[0];
+    };
+    const feature = (await read('address')) ?? (await read());
     const center = feature?.center;
     if (!center) return null;
     return {

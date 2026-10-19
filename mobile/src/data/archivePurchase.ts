@@ -1,7 +1,9 @@
 import type {NfceParseResult} from './remote/nfceParser';
 import {fetchAndParseNfce} from './remote/sefazClient';
 import {geocodeAddress, geocodeMarketNear} from './remote/geocodeMarket';
-import {haversineKm} from './remote/nearbyMarkets';
+import {haversineKm, namesLikelySame} from './remote/nearbyMarkets';
+import {preferAddress} from '@/domain/marketUi';
+import type {Market} from '@/data/types';
 import {extractAccessKey} from '@/domain/nfceScan';
 import {guessCategory} from '@/domain/productCategory';
 import {MAPBOX_ACCESS_TOKEN} from '@/config/env';
@@ -50,6 +52,26 @@ export async function previewPastNfce(
   return {qrUrl, parsed, subtotal};
 }
 
+function existingPin(
+  name: string,
+  cnpj: string | null,
+  lat: number,
+  lng: number,
+): Market | null {
+  const digits = (cnpj ?? '').replace(/\D/g, '');
+  const near = marketRepo.all().filter(market => {
+    if (market.lat == null || market.lng == null) return false;
+    return haversineKm({lat: market.lat, lng: market.lng}, {lat, lng}) <= 0.45;
+  });
+  if (digits.length >= 8) {
+    const byDoc = near.find(
+      market => (market.cnpj ?? '').replace(/\D/g, '') === digits,
+    );
+    if (byDoc) return byDoc;
+  }
+  return near.find(market => namesLikelySame(market.name, name)) ?? null;
+}
+
 export async function ensureMarketOnMap(
   name: string,
   cnpj: string | null,
@@ -64,16 +86,16 @@ export async function ensureMarketOnMap(
   if (noteAddress) {
     const geo = await geocodeAddress(noteAddress, MAPBOX_ACCESS_TOKEN);
     if (geo) {
-      const market = marketRepo.resolveOrCreateNear(
-        name,
-        geo.lat,
-        geo.lng,
-        cnpj,
-      );
+      const pin = existingPin(name, cnpj, geo.lat, geo.lng);
+      const market =
+        pin ??
+        marketRepo.resolveOrCreateNear(name, geo.lat, geo.lng, cnpj);
+      const keepPinPoint = pin?.lat != null && pin.lng != null;
+      if (cnpj && !market.cnpj) market.cnpj = cnpj;
       marketRepo.upsertGeo(market.id, {
-        lat: geo.lat,
-        lng: geo.lng,
-        address: noteAddress,
+        lat: keepPinPoint ? pin!.lat! : geo.lat,
+        lng: keepPinPoint ? pin!.lng! : geo.lng,
+        address: preferAddress(market.address, noteAddress),
       });
       return {
         marketId: market.id,
