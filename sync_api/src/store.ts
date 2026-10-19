@@ -1785,13 +1785,13 @@ export class DataStore {
     const usable = (log: Record<string, unknown>) => {
       const trust = String(log.trustLevel ?? 'suspect');
       if (trust === 'hidden') return false;
-      if (trust === 'verified') return true;
-      if (log.source === 'nfce') {
-        const t = Date.parse(String(log.capturedAt ?? ''));
-        if (Number.isNaN(t)) return false;
-        return now - t <= 7 * 24 * 60 * 60 * 1000;
-      }
-      return false;
+      const nfce =
+        String(log.source ?? '') === 'nfce' &&
+        /^\d{44}$/.test(String(log.nfceKey ?? ''));
+      if (!nfce) return false;
+      const t = Date.parse(String(log.capturedAt ?? ''));
+      if (Number.isNaN(t)) return false;
+      return now - t <= 7 * 24 * 60 * 60 * 1000;
     };
 
     const community = logs.filter(usable);

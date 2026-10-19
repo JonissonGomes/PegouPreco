@@ -1,11 +1,13 @@
 import React from 'react';
 import {Pressable, StyleSheet, Text, View} from 'react-native';
 import {
+  Bell,
   History,
   Lightbulb,
   MapPin,
   QrCode,
   ShoppingCart,
+  Store,
   UsersRound,
 } from 'lucide-react-native';
 import {colors, space} from '@/ui/theme';
@@ -43,6 +45,8 @@ export const homeShortcutIcons = {
   insights: Lightbulb,
   history: History,
   community: UsersRound,
+  cheaper: Store,
+  alerts: Bell,
 };
 
 const styles = StyleSheet.create({

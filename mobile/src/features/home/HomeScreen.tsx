@@ -38,6 +38,7 @@ import {buildHomeDash, type HomePeriodDays} from '@/domain/homeDashboard';
 import {useWeekdayBuyTip} from '@/features/home/useWeekdayBuyTip';
 import {isFiscalList, isFiscalLog} from '@/domain/fiscal';
 import {HomeHowItWorks} from '@/features/home/HomeHowItWorks';
+import {PriceDropCard} from '@/features/home/PriceDropCard';
 import {HomeHub, homeShortcutIcons} from '@/features/home/HomeHub';
 import {HomeSpendBoard} from '@/features/home/HomeSpendBoard';
 import {HomeFilterSheet} from '@/features/home/HomeFilterSheet';
@@ -62,6 +63,8 @@ export function HomeScreen() {
   const [locSnapshot, setLocSnapshot] = useState(() => prefs.getLocationPrefs());
   const [geoAttempted, setGeoAttempted] = useState(false);
   const geoOnce = useRef(false);
+  const scrollRef = useRef<ScrollView>(null);
+  const alertY = useRef(0);
   const [refreshing, setRefreshing] = useState(false);
   const [remoteRanks, setRemoteRanks] = useState<MarketBasketRank[] | null>(
     null,
@@ -324,6 +327,7 @@ export function HomeScreen() {
   return (
     <Screen>
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={[styles.body, {paddingTop: insets.top + 8}]}
         refreshControl={
           <RefreshControl
@@ -399,8 +403,30 @@ export function HomeScreen() {
                 Icon: homeShortcutIcons.community,
                 onPress: () => nav.navigate('Community'),
               },
+              {
+                label: 'Onde comprar',
+                Icon: homeShortcutIcons.cheaper,
+                onPress: goLists,
+              },
+              {
+                label: 'Alertas',
+                Icon: homeShortcutIcons.alerts,
+                onPress: () =>
+                  scrollRef.current?.scrollTo({
+                    y: Math.max(alertY.current - 12, 0),
+                    animated: true,
+                  }),
+              },
             ]}
           />
+          <View onLayout={e => { alertY.current = e.nativeEvent.layout.y; }}>
+          <PriceDropCard
+            lists={lists}
+            logs={priceLogs}
+            products={products}
+            markets={markets}
+          />
+          </View>
           <HomeCheaperChart
             play={play}
             items={cheaper}
@@ -474,7 +500,7 @@ export function HomeScreen() {
           {cart.length > 0 && !hasBasket ? (
             <EmptyState
               title="Poucos dados na região"
-              message="Ainda não há preços verificados o bastante. Capture etiquetas ou valide preços na Comunidade."
+              message="Ainda não há notas dos últimos 7 dias para comparar esta lista."
               actionLabel="Capturar"
               onAction={goCapture}
             />

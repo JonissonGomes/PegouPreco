@@ -63,6 +63,7 @@ import {ensureNearbyMarketsDiscovered} from '@/data/remote/ensureNearbyMarkets';
 import {haversineKm} from '@/data/remote/nearbyMarkets';
 import {MAPBOX_ACCESS_TOKEN} from '@/config/env';
 import {CartEmptyGuide} from '@/features/cart/CartEmptyGuide';
+import {BasketWhereCard} from '@/features/cart/BasketWhereCard';
 
 function qtyPhrase(qty: number) {
   const n = formatQty(qty);
@@ -81,6 +82,7 @@ export function CartScreen() {
   const activeMarketId = useAppStore(s => s.activeMarketId);
   const spendLimit = useAppStore(s => s.spendLimit);
   const markets = useAppStore(s => s.markets);
+  const auth = useAppStore(s => s.auth);
   const marketName = useMarketName(activeMarketId);
   const [editItem, setEditItem] = useState<CartItem | null>(null);
   const [startOpen, setStartOpen] = useState(false);
@@ -418,6 +420,14 @@ export function CartScreen() {
                 <SpendLimitBar spent={totals.subtotal} limit={spendLimit} />
               ) : null}
             </SoftCard>
+            <BasketWhereCard
+              cart={cart}
+              markets={markets}
+              token={auth?.token}
+              city={prefs.getLocationPrefs().city}
+              neighborhood={prefs.getLocationPrefs().neighborhood}
+              favoriteMarketIds={prefs.getLocationPrefs().favoriteMarketIds}
+            />
             {cart.length === 0 ? (
               <Text style={styles.emptyList}>
                 Lista vazia. Toque em + no topo para escrever um item.

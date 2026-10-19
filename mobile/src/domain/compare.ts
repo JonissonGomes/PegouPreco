@@ -1,4 +1,5 @@
 import type {CartItem, Market, PriceLog, TrustLevel} from '@/data/types';
+import {isFiscalLog} from '@/domain/fiscal';
 import {effectiveUnitPrice} from '@/domain/pricing';
 
 export type BasketCompareItem = {
@@ -23,15 +24,10 @@ const COMMUNITY_TRUST: TrustLevel[] = ['verified'];
 export function isCommunityPrice(log: PriceLog, now = new Date()): boolean {
   // Logs internos seed_* ficam fora; demo usa contributorId demo_community
   if ((log.contributorId ?? '').startsWith('seed')) return false;
-  if (log.trustLevel === 'hidden') return false;
-  if (log.trustLevel === 'verified') return true;
-  // NFC-e recente com boa trilha (≤7 dias) — alinhado ao plano
-  if (log.source === 'nfce') {
-    const t = new Date(log.capturedAt).getTime();
-    const days = (now.getTime() - t) / 86400000;
-    return days <= 7 && log.trustLevel !== 'hidden';
-  }
-  return false;
+  if (log.trustLevel === 'hidden' || !isFiscalLog(log)) return false;
+  const t = new Date(log.capturedAt).getTime();
+  if (!Number.isFinite(t)) return false;
+  return (now.getTime() - t) / 86400000 <= 7;
 }
 
 export function cartToBasket(cart: CartItem[]): BasketCompareItem[] {
