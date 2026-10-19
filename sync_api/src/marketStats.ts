@@ -43,7 +43,7 @@ export class MarketStats {
     );
   }
 
-  async weeklyCounts(): Promise<Map<string, number>> {
+  async weeklyVisitorSets(): Promise<Map<string, Set<string>>> {
     const since = new Date(Date.now() - WEEK_MS).toISOString();
     const rows =
       this.mode === 'memory'
@@ -57,6 +57,11 @@ export class MarketStats {
       set.add(row.userId);
       sets.set(row.marketId, set);
     }
+    return sets;
+  }
+
+  async weeklyCounts(): Promise<Map<string, number>> {
+    const sets = await this.weeklyVisitorSets();
     const counts = new Map<string, number>();
     for (const [id, set] of sets) counts.set(id, set.size);
     return counts;

@@ -186,6 +186,8 @@ async function doFullSync(): Promise<{ok: boolean; message: string}> {
         remoteId: s.remoteId,
         name: s.name,
         marketId: s.marketId,
+        marketRemoteId:
+          st.markets.find(m => m.id === s.marketId)?.remoteId ?? null,
         marketName: s.marketName,
         itemsJson: s.itemsJson,
         subtotal: s.subtotal,
@@ -266,18 +268,24 @@ function applyPull(pull: Record<string, unknown>) {
   for (const r of markets) {
     const name = String(r.name ?? '');
     if (!name) continue;
-    let m = st.markets.find(
-      x =>
-        (r.id && x.remoteId === r.id) ||
-        x.name.toLowerCase() === name.toLowerCase(),
-    );
+    const remoteId = String(r.id ?? '');
+    let m = remoteId
+      ? st.markets.find(x => x.remoteId === remoteId)
+      : undefined;
     if (!m) {
-      m = marketRepo.resolveOrCreate(name, (r.cnpj as string) ?? null);
+      const byName = st.markets.find(
+        x => x.name.toLowerCase() === name.toLowerCase() && !x.remoteId,
+      );
+      m = byName ?? marketRepo.create(name, (r.cnpj as string) ?? null);
     }
-    m.remoteId = String(r.id ?? m.remoteId);
+    if (remoteId) m.remoteId = remoteId;
     m.lat = r.lat != null ? Number(r.lat) : m.lat;
     m.lng = r.lng != null ? Number(r.lng) : m.lng;
     m.address = (r.address as string) ?? m.address;
+    if (r.avgRating != null) m.avgRating = Number(r.avgRating);
+    if (r.ratingsCount != null) m.ratingsCount = Number(r.ratingsCount);
+    if (r.weeklyVisitors != null) m.weeklyVisitors = Number(r.weeklyVisitors);
+    if (r.priceLevel != null) m.priceLevel = String(r.priceLevel);
     m.synced = 1;
     m.updatedAt = String(r.updatedAt ?? m.updatedAt);
   }
@@ -330,7 +338,7 @@ function applyPull(pull: Record<string, unknown>) {
     }
     const product = st.products.find(p => p.remoteId === r.productId);
     const market = st.markets.find(m => m.remoteId === r.marketId);
-    if (!product) continue;
+    if (!product || !market) continue;
     priceLogRepo.insert({
       productId: product.id,
       marketId: market?.id ?? null,
@@ -434,7 +442,8 @@ async function ingestCommunityPrices(token: string) {
         trustLevel:
           (row.trustLevel as 'verified' | 'suspect' | 'hidden') ?? 'verified',
         lastConfirmedAt: null,
-        contributorId: null,
+        contributorId:
+          row.contributorId != null ? String(row.contributorId) : null,
         updatedAt: String(row.capturedAt ?? nowIso()),
         synced: 1,
       });

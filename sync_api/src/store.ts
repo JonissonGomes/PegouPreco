@@ -2,7 +2,12 @@ import {Db, Collection, MongoClient, ObjectId} from 'mongodb';
 import {v4 as uuidv4} from 'uuid';
 import {config} from './config.js';
 import {JevClient} from './jev.js';
-import {collapseMapPins, namesLikelySame} from './marketMatch.js';
+import {
+  collapseMapPins,
+  namesLikelySame,
+  rollupPlaceStats,
+  sameStorefront,
+} from './marketMatch.js';
 import {MarketStats, SUGGESTION_KEEP_MS} from './marketStats.js';
 import {haversineKm, nextTokenExpiry, resolveRole, sha256, tokenStillValid} from './util.js';
 
@@ -341,7 +346,8 @@ export class DataStore {
       radiusKm > 0;
 
     await this.stats.backfillFromLogs(() => this._logsSinceWeek());
-    const weekly = await this.stats.weeklyCounts();
+    const weekly = await this.stats.weeklyVisitorSets();
+    await this._mergeNoteVisitors(weekly);
     const out: Record<string, unknown>[] = [];
     for (const m of markets) {
       const id = m.id as string | undefined;
@@ -362,9 +368,10 @@ export class DataStore {
         avgRating: agg.avg,
         ratingsCount: agg.count,
         priceLevel: m.priceLevel ?? (await this._computePriceLevel(id)),
-        weeklyVisitors: weekly.get(id) ?? 0,
+        weeklyVisitors: weekly.get(id)?.size ?? 0,
       });
     }
+    rollupPlaceStats(out, weekly);
     await this._applyHighlights(out);
     return collapseMapPins(out);
   }
@@ -418,6 +425,33 @@ export class DataStore {
       localSame: false,
     });
     return same ? {id: closest.id, name: closest.name} : null;
+  }
+
+  /** Quem cadastrou nota entra na contagem do pin, mesmo se a visita antiga usou id local. */
+  private async _mergeNoteVisitors(weekly: Map<string, Set<string>>): Promise<void> {
+    const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const logs = await this._logsSinceWeek();
+    const marketsWithNotes = new Set<string>();
+    for (const log of logs) {
+      const marketId = log.marketId != null ? String(log.marketId) : '';
+      const userId = log.contributorId != null ? String(log.contributorId) : '';
+      const captured = Date.parse(String(log.capturedAt ?? ''));
+      if (!marketId || !userId || Number.isNaN(captured) || captured < weekAgo) {
+        continue;
+      }
+      if (String(log.source ?? '') !== 'nfce') continue;
+      const users = weekly.get(marketId) ?? new Set<string>();
+      users.add(userId);
+      weekly.set(marketId, users);
+      marketsWithNotes.add(marketId);
+    }
+    for (const marketId of marketsWithNotes) {
+      const users = weekly.get(marketId);
+      if (!users) continue;
+      for (const userId of users) {
+        if (userId.startsWith('local_')) users.delete(userId);
+      }
+    }
   }
 
   private async _logsSinceWeek(): Promise<Record<string, unknown>[]> {
@@ -620,9 +654,10 @@ export class DataStore {
   }
 
   private async _userHasNfce(userId: string, marketId: string): Promise<boolean> {
+    const marketIds = await this._placeMarketIds(marketId);
     const match = (log: Record<string, unknown>) =>
       String(log.contributorId ?? '') === userId &&
-      String(log.marketId ?? '') === marketId &&
+      marketIds.includes(String(log.marketId ?? '')) &&
       String(log.source ?? '') === 'nfce' &&
       /^\d{44}$/.test(String(log.nfceKey ?? ''));
     if (this.mode === 'memory') {
@@ -630,10 +665,32 @@ export class DataStore {
     }
     const found = await this.col('price_logs').findOne({
       contributorId: userId,
-      marketId,
+      marketId: {$in: marketIds},
       source: 'nfce',
     });
     return found != null && /^\d{44}$/.test(String(found.nfceKey ?? ''));
+  }
+
+  /** O pin visto no mapa e o mercado gravado na nota podem ser cadastros irmãos. */
+  private async _placeMarketIds(marketId: string): Promise<string[]> {
+    const markets = await this._allMarkets();
+    const mine = markets.find(market => String(market.id ?? '') === marketId);
+    if (!mine) return [marketId];
+    const ids = [marketId];
+    for (const other of markets) {
+      const id = String(other.id ?? '');
+      if (!id || id === marketId) continue;
+      if (sameStorefront(mine, other)) ids.push(id);
+    }
+    return ids;
+  }
+
+  private async _allMarkets(): Promise<Record<string, unknown>[]> {
+    if (this.mode === 'memory') return Object.values(this._memMarkets);
+    return (await this.col('markets').find().toArray()) as Record<
+      string,
+      unknown
+    >[];
   }
 
   private async _writeMarketRating(
@@ -1007,7 +1064,7 @@ export class DataStore {
       priceLogIdMap[String(l.localId)] = remoteId;
       await this.stats.recordVisit(
         marketRemote,
-        String(l.contributorId ?? userId),
+        userId,
         l.capturedAt != null ? String(l.capturedAt) : null,
       );
       await this._awardContributionBadges({userId, source});
@@ -1035,7 +1092,8 @@ export class DataStore {
       });
       shoppingListIdMap[String(s.localId)] = remoteId;
       const listMarket =
-        s.marketId != null ? marketIdMap[String(s.marketId)] : null;
+        (s.marketRemoteId != null ? String(s.marketRemoteId) : null) ??
+        (s.marketId != null ? marketIdMap[String(s.marketId)] ?? null : null);
       await this.stats.recordVisit(
         listMarket ?? null,
         userId,
@@ -1180,28 +1238,101 @@ export class DataStore {
   }
 
   async pull(userId: string, since: Date): Promise<Record<string, unknown>> {
+    const sinceMs = since.getTime();
+    const after = (d: Record<string, unknown>) => {
+      const u = Date.parse(String(d.updatedAt ?? ''));
+      return !Number.isNaN(u) && u > sinceMs;
+    };
+    let products: Record<string, unknown>[];
+    let markets: Record<string, unknown>[];
+    let logs: Record<string, unknown>[];
+    let shoppingLists: Record<string, unknown>[];
     if (this.mode === 'memory') {
-      const after = (d: Record<string, unknown>) => {
-        const u = Date.parse(String(d.updatedAt ?? ''));
-        return !Number.isNaN(u) && u > since.getTime();
-      };
-      return {
-        products: Object.values(this._memProducts).filter(after),
-        markets: Object.values(this._memMarkets).filter(after),
-        priceLogs: Object.values(this._memLogs).filter(after),
-        shoppingLists: Object.values(this._memShoppingLists).filter(
-          (d) => d.ownerId === userId && after(d),
-        ),
-      };
+      logs = Object.values(this._memLogs).filter(after);
+      shoppingLists = Object.values(this._memShoppingLists).filter(
+        (d) => d.ownerId === userId && after(d),
+      );
+      const productIds = new Set(
+        logs.map(log => String(log.productId ?? '')).filter(Boolean),
+      );
+      const marketIds = new Set(
+        logs.map(log => String(log.marketId ?? '')).filter(Boolean),
+      );
+      products = Object.values(this._memProducts).filter(
+        product => after(product) || productIds.has(String(product.id ?? '')),
+      );
+      markets = Object.values(this._memMarkets).filter(
+        market => after(market) || marketIds.has(String(market.id ?? '')),
+      );
+    } else {
+      const iso = since.toISOString();
+      logs = (await this.col('price_logs')
+        .find({updatedAt: {$gt: iso}})
+        .toArray()) as Record<string, unknown>[];
+      shoppingLists = (await this.col('shopping_lists')
+        .find({ownerId: userId, updatedAt: {$gt: iso}})
+        .toArray()) as Record<string, unknown>[];
+      const productIds = [
+        ...new Set(logs.map(log => String(log.productId ?? '')).filter(Boolean)),
+      ];
+      const marketIds = [
+        ...new Set(logs.map(log => String(log.marketId ?? '')).filter(Boolean)),
+      ];
+      products = (await this.col('products')
+        .find({
+          $or: [
+            {updatedAt: {$gt: iso}},
+            ...(productIds.length ? [{id: {$in: productIds}}] : []),
+          ],
+        })
+        .toArray()) as Record<string, unknown>[];
+      markets = (await this.col('markets')
+        .find({
+          $or: [
+            {updatedAt: {$gt: iso}},
+            ...(marketIds.length ? [{id: {$in: marketIds}}] : []),
+          ],
+        })
+        .toArray()) as Record<string, unknown>[];
     }
-    const iso = since.toISOString();
-    const products = await this.col('products').find({updatedAt: {$gt: iso}}).toArray();
-    const markets = await this.col('markets').find({updatedAt: {$gt: iso}}).toArray();
-    const logs = await this.col('price_logs').find({updatedAt: {$gt: iso}}).toArray();
-    const shoppingLists = await this.col('shopping_lists')
-      .find({ownerId: userId, updatedAt: {$gt: iso}})
-      .toArray();
+    markets = await this._withPlaceMates(markets);
+    await this._attachSharedMarketStats(markets);
     return {products, markets, priceLogs: logs, shoppingLists};
+  }
+
+  private async _withPlaceMates(
+    markets: Record<string, unknown>[],
+  ): Promise<Record<string, unknown>[]> {
+    if (!markets.length) return markets;
+    const all = await this._allMarkets();
+    const seen = new Set(markets.map(market => String(market.id ?? '')));
+    const extra: Record<string, unknown>[] = [];
+    for (const market of markets) {
+      for (const other of all) {
+        const id = String(other.id ?? '');
+        if (!id || seen.has(id)) continue;
+        if (!sameStorefront(market, other)) continue;
+        seen.add(id);
+        extra.push(other);
+      }
+    }
+    return extra.length ? [...markets, ...extra] : markets;
+  }
+
+  private async _attachSharedMarketStats(
+    markets: Record<string, unknown>[],
+  ): Promise<void> {
+    if (!markets.length) return;
+    const weekly = await this.stats.weeklyVisitorSets();
+    await this._mergeNoteVisitors(weekly);
+    for (const market of markets) {
+      const id = String(market.id ?? '');
+      const agg = await this._aggregateReviews(id);
+      market.avgRating = agg.avg;
+      market.ratingsCount = agg.count;
+      market.weeklyVisitors = weekly.get(id)?.size ?? 0;
+    }
+    rollupPlaceStats(markets, weekly);
   }
 
   private async _findLog(id: string): Promise<Record<string, unknown> | null> {
@@ -1572,6 +1703,7 @@ export class DataStore {
         source: l.source ?? 'nfce',
         nfceKey: l.nfceKey ?? null,
         capturedAt: l.capturedAt,
+        contributorId: l.contributorId ?? null,
         city: args.city,
       });
     }

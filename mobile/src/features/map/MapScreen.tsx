@@ -499,6 +499,7 @@ export function MapScreen() {
               : m.weeklyVisitors,
           featured: r.featured === true,
           remoteId: (r.id as string) ?? m.remoteId,
+          synced: 1,
         });
         // Mercados curados na API entram como pins mesmo sem discovery local
         pinSet.add(m.id);

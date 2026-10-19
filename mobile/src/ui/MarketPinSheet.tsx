@@ -193,6 +193,7 @@ export function MarketPinSheet({
         marketRepo.upsertGeo(shown.id, {
           avgRating: Number(data.avgRating),
           ratingsCount: Number(data.ratingsCount ?? shown.ratingsCount),
+          synced: 1,
         });
         useAppStore.getState().refresh();
       }

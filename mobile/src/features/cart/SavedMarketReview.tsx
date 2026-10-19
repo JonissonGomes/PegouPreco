@@ -44,10 +44,17 @@ export function SavedMarketReview({
         onClose();
         return;
       }
-      await syncApi.submitMarketReview(auth!.token, remoteId, stars, tags);
-      if (market) {
+      const data = (await syncApi.submitMarketReview(
+        auth!.token,
+        remoteId,
+        stars,
+        tags,
+      )) as {avgRating?: number; ratingsCount?: number};
+      if (market && data?.avgRating != null) {
         marketRepo.upsertGeo(market.id, {
-          ratingsCount: (market.ratingsCount ?? 0) + 1,
+          avgRating: Number(data.avgRating),
+          ratingsCount: Number(data.ratingsCount ?? market.ratingsCount),
+          synced: 1,
         });
         refresh();
       }

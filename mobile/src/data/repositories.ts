@@ -322,12 +322,14 @@ export const marketRepo = {
         | 'weeklyVisitors'
         | 'featured'
         | 'remoteId'
+        | 'synced'
       >
     >,
   ) {
     const m = marketRepo.getById(id);
     if (!m) return;
-    Object.assign(m, data, {updatedAt: nowIso(), synced: 0});
+    const synced = data.synced ?? 0;
+    Object.assign(m, data, {updatedAt: nowIso(), synced});
     saveState();
   },
 };
