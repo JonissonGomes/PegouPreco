@@ -22,6 +22,7 @@ import {KeyboardSafeSheet} from '@/ui/keyboardSheet';
 import {MarketPinSheet} from '@/ui/MarketPinSheet';
 import {colors, space, spacing} from '@/ui/theme';
 import {formatDistanceKm, preferAddress} from '@/domain/marketUi';
+import {friendlyMarketTitle} from '@/domain/marketBrand';
 import {
   canContribute,
   marketRepo,
@@ -108,6 +109,7 @@ function buildMapHtml(
     .mkt-pin, .user-dot {
       background: transparent !important;
       border: none !important;
+      overflow: visible !important;
     }
     .mkt-pin svg {
       display: block;
@@ -115,6 +117,25 @@ function buildMapHtml(
       height: 36px;
       filter: drop-shadow(0 2px 3px rgba(0,0,0,0.28));
     }
+    .pin-label {
+      display: none;
+      position: absolute;
+      left: 14px;
+      bottom: 40px;
+      transform: translateX(-50%);
+      max-width: 148px;
+      padding: 3px 8px;
+      border-radius: 8px;
+      background: #fff;
+      color: #0B2A6B;
+      font: 800 11px/1.2 sans-serif;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      box-shadow: 0 1px 4px rgba(11,42,107,0.18);
+      pointer-events: none;
+    }
+    .map-named .pin-label { display: block; }
     .dot-user {
       width: 14px; height: 14px; border-radius: 50%;
       background: #00C2FF; border: 2px solid #fff;
@@ -145,6 +166,14 @@ function buildMapHtml(
       });
     }
 
+    function escapeHtml(value) {
+      return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
     function makeMarketIcon(name, featured) {
       const brand = !!featured || brandRe.test(name || '');
       const fill = brand ? '#FFD400' : '#0B2A6B';
@@ -157,20 +186,28 @@ function buildMapHtml(
         + ring
         + '<circle cx="14" cy="13" r="4.5" fill="' + (brand ? '#0B2A6B' : '#fff') + '"/>'
         + '</svg>';
+      const label = '<div class="pin-label">' + escapeHtml(name) + '</div>';
       // Sem margin CSS: o iconAnchor já posiciona a ponta do pin na lat/lng.
       return L.divIcon({
         className: 'mkt-pin',
-        html: svg,
+        html: label + svg,
         iconSize: [28, 36],
         iconAnchor: [14, 36],
         popupAnchor: [0, -36],
       });
     }
 
+    function syncPinLabels() {
+      const named = map.getZoom() >= 15;
+      map.getContainer().classList.toggle('map-named', named);
+    }
+
     const user = L.marker(center, { icon: makeUserIcon(), interactive: false }).addTo(map);
     const layer = L.layerGroup().addTo(map);
     let userMoved = false;
     let fitted = false;
+    map.on('zoomend', syncPinLabels);
+    syncPinLabels();
     map.on('zoomstart', function (e) {
       if (e && e.originalEvent) userMoved = true;
     });
@@ -301,7 +338,7 @@ export function MapScreen() {
     () =>
       nearby.map(m => ({
         id: String(m.id),
-        name: m.name,
+        name: friendlyMarketTitle(m, markets),
         lat: m.lat!,
         lng: m.lng!,
         rating: m.avgRating ?? 0,

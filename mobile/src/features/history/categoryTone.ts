@@ -28,3 +28,33 @@ const TONES: Record<string, {bg: string; fg: string}> = {
 export function categoryTone(name: string): {bg: string; fg: string} {
   return TONES[name] ?? TONES.Outros;
 }
+
+/** Cor cheia do gráfico. Uma por categoria, afastadas no círculo de matiz. */
+const SLICE: Record<string, string> = {
+  Bebidas: '#0284C7',
+  Mercearia: '#CA8A04',
+  Laticínios: '#2563EB',
+  Açougue: '#DC2626',
+  Frutas: '#16A34A',
+  Verduras: '#059669',
+  Peixaria: '#0891B2',
+  Frios: '#D97706',
+  Hortifruti: '#65A30D',
+  Padaria: '#EA580C',
+  Congelados: '#4F46E5',
+  'Café e matinais': '#78350F',
+  'Molhos e temperos': '#B45309',
+  Enlatados: '#475569',
+  Limpeza: '#0F766E',
+  Higiene: '#7C3AED',
+  'Biscoitos e doces': '#DB2777',
+  Salgadinhos: '#EAB308',
+  Bebê: '#E11D48',
+  Pet: '#9A3412',
+  Descartáveis: '#6B7280',
+  Outros: '#94A3B8',
+};
+
+export function categorySliceColor(name: string): string {
+  return SLICE[name] ?? SLICE.Outros;
+}

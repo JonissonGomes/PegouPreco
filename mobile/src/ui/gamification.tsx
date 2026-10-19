@@ -85,7 +85,12 @@ export function VoteButtons({
   return (
     <View style={styles.voteRow}>
       <Pressable
-        style={[styles.voteBtn, styles.voteOk, busy && styles.voteBusy]}
+        style={({pressed}) => [
+          styles.voteBtn,
+          styles.voteOk,
+          busy && styles.voteBusy,
+          pressed && styles.votePressed,
+        ]}
         onPress={onConfirm}
         disabled={busy}
         accessibilityLabel="Confere">
@@ -94,7 +99,12 @@ export function VoteButtons({
       </Pressable>
       {onSkip ? (
         <Pressable
-          style={[styles.voteBtn, styles.voteSkip, busy && styles.voteBusy]}
+          style={({pressed}) => [
+            styles.voteBtn,
+            styles.voteSkip,
+            busy && styles.voteBusy,
+            pressed && styles.votePressed,
+          ]}
           onPress={onSkip}
           disabled={busy}
           accessibilityLabel="Não sei">
@@ -103,7 +113,12 @@ export function VoteButtons({
         </Pressable>
       ) : null}
       <Pressable
-        style={[styles.voteBtn, styles.voteNo, busy && styles.voteBusy]}
+        style={({pressed}) => [
+          styles.voteBtn,
+          styles.voteNo,
+          busy && styles.voteBusy,
+          pressed && styles.votePressed,
+        ]}
         onPress={onReject}
         disabled={busy}
         accessibilityLabel="Está errado">
@@ -263,6 +278,7 @@ const styles = StyleSheet.create({
     borderColor: colors.navy,
   },
   voteBusy: {opacity: 0.55},
+  votePressed: {transform: [{scale: 0.94}]},
   voteLabel: {color: '#fff', fontWeight: '800', fontSize: 12},
   voteSkipLabel: {color: colors.muted, fontWeight: '800', fontSize: 11},
   voteLabelDark: {color: colors.navy, fontWeight: '800', fontSize: 12},

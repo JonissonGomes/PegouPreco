@@ -240,6 +240,12 @@ export function CommunityScreen() {
       if (!dismiss(item.log.id)) return;
       setBusyId(item.log.id);
       const pts = TrustEngine.pointsForVote(voteType, false);
+      applyLocalVote(item.log.id, voteType);
+      refresh();
+      celebrate(
+        pts,
+        voteType === 'confirm' ? 'Preço confirmado!' : 'Preço rejeitado!',
+      );
       try {
         let remoteId = item.log.remoteId;
 
@@ -273,13 +279,6 @@ export function CommunityScreen() {
         }
 
         if (already) return;
-
-        applyLocalVote(item.log.id, voteType);
-        refresh();
-        celebrate(
-          pts,
-          voteType === 'confirm' ? 'Preço confirmado!' : 'Preço rejeitado!',
-        );
       } catch (e) {
         appAlert('Voto', apiErrorMessage(e));
       } finally {

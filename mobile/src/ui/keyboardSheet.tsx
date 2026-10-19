@@ -3,7 +3,6 @@ import {
   Animated,
   Dimensions,
   Keyboard,
-  KeyboardAvoidingView,
   Modal,
   PanResponder,
   Platform,
@@ -11,10 +10,31 @@ import {
   ScrollView,
   StyleSheet,
   View,
+  type KeyboardEvent,
 } from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {colors} from './theme';
 import {useAnimatedSheet} from './useAnimatedSheet';
+
+/**
+ * Quanto a folha precisa subir para encostar no teclado.
+ * `screenY` no Android às vezes vem pequeno demais e empurrava o formulário
+ * até o topo, cortando os botões. A altura reportada limita esse salto.
+ * Se a janela já encolheu, a sobreposição fica ~0 e não somamos de novo.
+ */
+function keyboardOverlap(e: KeyboardEvent): number {
+  const windowH = Dimensions.get('window').height;
+  const {height, screenY} = e.endCoordinates;
+  const reported = Number.isFinite(height) ? Math.max(0, height) : 0;
+  const cap = Math.round(windowH * 0.55);
+  if (!Number.isFinite(screenY) || screenY <= 0) {
+    return Math.min(reported, cap);
+  }
+  const overlap = Math.round(windowH - screenY);
+  if (overlap <= 0) return 0;
+  const bounded = reported > 0 ? Math.min(overlap, reported) : overlap;
+  return Math.min(bounded, cap);
+}
 
 /** Bottom sheet que sobe com o teclado e permite scroll dos campos. */
 export function KeyboardSafeSheet({
@@ -63,24 +83,15 @@ export function KeyboardSafeSheet({
       setKeyboardLift(0);
       return;
     }
-    const overlap = (e: {endCoordinates: {screenY: number; height: number}}) => {
-      const windowH = Dimensions.get('window').height;
-      const screenY = e.endCoordinates.screenY;
-      const height = e.endCoordinates.height;
-      if (!Number.isFinite(windowH)) return 0;
-      if (!Number.isFinite(screenY) || screenY < 40) {
-        return Math.min(Math.max(0, height), Math.round(windowH * 0.5));
-      }
-      return Math.max(0, Math.round(windowH - screenY));
-    };
-    const show = Keyboard.addListener('keyboardDidShow', e => {
-      setKeyboardLift(overlap(e));
-      setTimeout(() => setKeyboardLift(overlap(e)), 80);
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const show = Keyboard.addListener(showEvent, e => {
+      setKeyboardLift(keyboardOverlap(e));
     });
     const frame = Keyboard.addListener('keyboardDidChangeFrame', e => {
-      setKeyboardLift(overlap(e));
+      setKeyboardLift(keyboardOverlap(e));
     });
-    const hide = Keyboard.addListener('keyboardDidHide', () => setKeyboardLift(0));
+    const hide = Keyboard.addListener(hideEvent, () => setKeyboardLift(0));
     return () => {
       show.remove();
       frame.remove();
@@ -97,11 +108,7 @@ export function KeyboardSafeSheet({
       animationType="none"
       onRequestClose={onClose}
       statusBarTranslucent>
-      <KeyboardAvoidingView
-        style={styles.root}
-        // Em Android, `height` faz o sheet piscar ao mudar a lista de sugestões
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}>
+      <View style={styles.root}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose}>
           <Animated.View style={[styles.backdrop, backdropStyle]} />
         </Pressable>
@@ -110,10 +117,12 @@ export function KeyboardSafeSheet({
             styles.sheet,
             sheetStyle,
             {
-              marginBottom: keyboardLift,
-              paddingBottom: Math.max(insets.bottom, 12),
-              maxHeight:
-                Dimensions.get('window').height - keyboardLift - insets.top - 24,
+              bottom: keyboardLift,
+              paddingBottom: keyboardLift > 0 ? 12 : Math.max(insets.bottom, 12),
+              maxHeight: Math.max(
+                180,
+                Dimensions.get('window').height - keyboardLift - insets.top - 16,
+              ),
             },
           ]}>
           <Animated.View style={{transform: [{translateY: dragY}]}}>
@@ -130,18 +139,22 @@ export function KeyboardSafeSheet({
           </ScrollView>
           </Animated.View>
         </Animated.View>
-      </KeyboardAvoidingView>
+      </View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  root: {flex: 1, justifyContent: 'flex-end'},
+  root: {flex: 1},
   backdrop: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: '#000',
   },
   sheet: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
     maxHeight: '88%',
     backgroundColor: '#fff',
     borderTopLeftRadius: 20,

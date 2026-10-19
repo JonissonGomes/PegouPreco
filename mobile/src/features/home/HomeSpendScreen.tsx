@@ -1,6 +1,6 @@
-import React, {useEffect, useMemo, useState} from 'react';
+import React, {useCallback, useEffect, useMemo, useState} from 'react';
 import {Pressable, ScrollView, StyleSheet, Text, View} from 'react-native';
-import {useNavigation, useRoute} from '@react-navigation/native';
+import {useFocusEffect, useNavigation, useRoute} from '@react-navigation/native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {ArrowLeft, SlidersHorizontal} from 'lucide-react-native';
 import {formatBrl, formatQty} from '@/domain/money';
@@ -81,6 +81,7 @@ export function HomeSpendScreen() {
     params.categories ?? (params.category ? [params.category] : []),
   );
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [play, setPlay] = useState(0);
   const lists = useAppStore(s => s.lists);
   const products = useAppStore(s => s.products);
   const markets = useAppStore(s => s.markets);
@@ -92,6 +93,11 @@ export function HomeSpendScreen() {
     setMarketId(params.marketId ?? null);
     setCategories(params.categories ?? (params.category ? [params.category] : []));
   }, [params.period, params.marketId, params.category, params.categories]);
+  useFocusEffect(
+    useCallback(() => {
+      setPlay(value => value + 1);
+    }, [month, span]),
+  );
   const range = useMemo(() => calendarRange(month, span), [month, span]);
   const dash = useMemo(
     () =>
@@ -180,6 +186,7 @@ export function HomeSpendScreen() {
               current.length === 1 && current[0] === category ? [] : [category],
             )
           }
+          play={play}
         />
         <Text style={styles.section}>
           {categories.length ? categories.join(' · ') : 'Compras do filtro'}

@@ -3,7 +3,9 @@ import {Pressable, StyleSheet, Text, View} from 'react-native';
 import Svg, {Circle} from 'react-native-svg';
 import {formatBrl} from '@/domain/money';
 import type {HomeDash, SpendSpan} from '@/domain/homeDashboard';
-import {categoryTone} from '@/features/history/categoryTone';
+import {CategoryIcon} from '@/features/history/categoryIcon';
+import {categorySliceColor} from '@/features/history/categoryTone';
+import {useDraw} from '@/ui/reveal';
 import {colors, space} from '@/ui/theme';
 
 const SPANS: {id: SpendSpan; label: string}[] = [
@@ -35,6 +37,7 @@ export function SpendOverview({
   onPrevious,
   onNext,
   onOpenCategory,
+  play = 0,
 }: {
   dash: HomeDash;
   span: SpendSpan;
@@ -48,6 +51,7 @@ export function SpendOverview({
   onPrevious: () => void;
   onNext: () => void;
   onOpenCategory?: (category: string) => void;
+  play?: number;
 }) {
   const slices = dash.categories;
   return (
@@ -93,9 +97,10 @@ export function SpendOverview({
         <>
           <View style={styles.donutWrap}>
             <Donut
+              play={play}
               slices={slices.map(item => ({
                 total: item.total,
-                color: categoryTone(item.category).fg,
+                color: categorySliceColor(item.category),
               }))}
               center={compactBrl(dash.spent)}
             />
@@ -106,12 +111,7 @@ export function SpendOverview({
                 key={item.category}
                 style={styles.legendItem}
                 onPress={() => onOpenCategory?.(item.category)}>
-                <View
-                  style={[
-                    styles.dot,
-                    {backgroundColor: categoryTone(item.category).fg},
-                  ]}
-                />
+                <CategoryIcon name={item.category} size={14} />
                 <Text style={styles.legendName} numberOfLines={1}>
                   {item.category}
                 </Text>
@@ -128,16 +128,19 @@ export function SpendOverview({
 function Donut({
   slices,
   center,
+  play,
 }: {
   slices: {total: number; color: string}[];
   center: string;
+  play: number;
 }) {
   const size = 210;
   const stroke = 22;
   const radius = (size - stroke) / 2;
   const length = 2 * Math.PI * radius;
+  const progress = useDraw(120, 900, play);
   const sum = slices.reduce((acc, item) => acc + item.total, 0) || 1;
-  const gap = slices.length > 1 ? 10 : 0;
+  const gap = slices.length > 1 ? 1 : 0;
   const usable = Math.max(length - gap * slices.length, 1);
   const arcs: {color: string; start: number; part: number}[] = [];
   let cursor = 0;
@@ -166,9 +169,9 @@ function Donut({
             stroke={arc.color}
             strokeWidth={stroke}
             fill="none"
-            strokeDasharray={`${arc.part} ${length - arc.part}`}
+            strokeDasharray={`${arc.part * progress} ${length - arc.part * progress}`}
             strokeDashoffset={-arc.start}
-            strokeLinecap="round"
+            strokeLinecap="butt"
             originX={size / 2}
             originY={size / 2}
             rotation={-90}
@@ -216,10 +219,9 @@ const styles = StyleSheet.create({
     width: '50%',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingRight: 8,
+    gap: 8,
+    paddingRight: 10,
   },
-  dot: {width: 8, height: 8, borderRadius: 4},
   legendName: {flex: 1, fontWeight: '700', color: colors.ink, fontSize: 13},
   legendValue: {fontWeight: '800', color: colors.navy, fontSize: 12},
   center: {
