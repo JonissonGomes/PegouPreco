@@ -8,7 +8,7 @@ import {colors, radii, space, spacing} from '@/ui/theme';
 import {formatBrl} from '@/domain/money';
 import {buildInsightBoard, type PriceTrend} from '@/domain/insightBoard';
 import type {InsightPeriod} from '@/domain/homeInsights';
-import {isFiscalList, isFiscalLog} from '@/domain/fiscal';
+import {hasSpend, isFiscalLog} from '@/domain/fiscal';
 import {priceLogRepo, useAppStore} from '@/store/appStore';
 import {useWeekdayBuyTip} from '@/features/home/useWeekdayBuyTip';
 import {buyDayPhrase} from '@/domain/homeDashboard';
@@ -31,7 +31,7 @@ export function InsightsScreen() {
   useClearOnBlur(() => setPeriod('month'));
 
   const board = useMemo(() => {
-    const notes = lists.filter(isFiscalList);
+    const notes = lists.filter(hasSpend);
     const logs = priceLogRepo.all().filter(isFiscalLog);
     return buildInsightBoard({lists: notes, logs, products, markets, period});
   }, [lists, markets, products, period]);
