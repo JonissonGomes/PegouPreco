@@ -1225,12 +1225,16 @@ export class DataStore {
     for (const raw of (body.shoppingLists as unknown[] | undefined) ?? []) {
       const s = {...(raw as Record<string, unknown>)};
       const listKey = String(s.nfceKey ?? '');
-      if (/^\d{44}$/.test(listKey)) {
-        const saved = await this._findNfceList(userId, listKey);
-        if (saved) {
-          shoppingListIdMap[String(s.localId)] = String(saved.id ?? '');
-          continue;
-        }
+      const saved = /^\d{44}$/.test(listKey)
+        ? await this._findNfceList(userId, listKey)
+        : null;
+      const twin = saved ?? (s.remoteId ? null : await this._findTwinList(userId, s));
+      if (twin && /^\d{44}$/.test(listKey) && !twin.nfceKey) {
+        s.remoteId = twin.id;
+        s.updatedAt = new Date().toISOString();
+      } else if (twin) {
+        shoppingListIdMap[String(s.localId)] = String(twin.id ?? '');
+        continue;
       }
       const remoteId = await this._upsertLww({
         collection: 'shopping_lists',
@@ -1512,6 +1516,28 @@ export class DataStore {
       nfceKey,
       productId,
     })) as Record<string, unknown> | null;
+  }
+
+  private async _findTwinList(
+    userId: string,
+    incoming: Record<string, unknown>,
+  ): Promise<Record<string, unknown> | null> {
+    const marketName = String(incoming.marketName ?? '');
+    const itemCount = Number(incoming.itemCount ?? 0);
+    const subtotal = Number(incoming.subtotal ?? 0);
+    const rows = this.mode === 'memory'
+      ? Object.values(this._memShoppingLists).filter(list => list.ownerId === userId)
+      : ((await this.col('shopping_lists')
+          .find({ownerId: userId, itemCount})
+          .limit(40)
+          .toArray()) as Record<string, unknown>[]);
+    return (
+      rows.find(list => {
+        if (String(list.marketName ?? '') !== marketName) return false;
+        if (Number(list.itemCount ?? 0) !== itemCount) return false;
+        return Math.abs(Number(list.subtotal ?? 0) - subtotal) < 0.05;
+      }) ?? null
+    );
   }
 
   private async _findNfceList(

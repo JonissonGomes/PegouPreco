@@ -9,6 +9,7 @@ import {
   productRepo,
   shoppingListRepo,
 } from './repositories';
+import {collapseLocalReceipts} from './collapseReceipts';
 import {syncGeneration} from './syncGate';
 import {syncApi} from './remote/syncApi';
 import {apiErrorMessage} from './remote/apiError';
@@ -123,6 +124,7 @@ async function doFullSync(
     const pull = await syncApi.pullSince(session.token, since);
     if (stale()) return {ok: false, message: 'Conta trocada'};
     applyPull(pull);
+    if (collapseLocalReceipts()) useAppStore.getState().refresh();
     await applySharedPrefs(session.token);
     if (stale()) return {ok: false, message: 'Conta trocada'};
     await ingestCommunityPrices(session.token);
@@ -259,7 +261,8 @@ export function requestAutoSync(_reason?: string) {
     now - lastAutoAttempt < AUTO_MIN_MS &&
     _reason !== 'login' &&
     _reason !== 'vote' &&
-    _reason !== 'nfce'
+    _reason !== 'nfce' &&
+    _reason !== 'repair'
   ) {
     return;
   }
@@ -272,7 +275,9 @@ export function requestAutoSync(_reason?: string) {
 export function startAutoSync() {
   if (autoStarted) return;
   autoStarted = true;
-  requestAutoSync('boot');
+  const repair = collapseLocalReceipts();
+  if (repair) useAppStore.getState().refresh();
+  requestAutoSync(repair ? 'repair' : 'boot');
   AppState.addEventListener('change', (state: AppStateStatus) => {
     if (state === 'active') requestAutoSync('foreground');
   });
@@ -354,8 +359,8 @@ function applyPull(pull: Record<string, unknown>) {
       continue;
     }
     const product = st.products.find(p => p.remoteId === r.productId);
+    if (!product) continue;
     const market = st.markets.find(m => m.remoteId === r.marketId);
-    if (!product || !market) continue;
     if (
       nfceKey &&
       st.price_logs.some(
