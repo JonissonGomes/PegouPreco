@@ -49,11 +49,15 @@ let seq: Record<string, number> = {
 };
 let hydrated = false;
 
-async function persist() {
-  await AsyncStorage.setItem(
-    STORAGE_KEY,
-    JSON.stringify({state, seq}),
-  );
+let writeTail: Promise<void> = Promise.resolve();
+
+/** Uma gravação por vez. Sem isso, o logout vazio podia terminar depois do pull e apagar a conta. */
+function enqueuePersist() {
+  writeTail = writeTail
+    .then(async () => {
+      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({state, seq}));
+    })
+    .catch(() => undefined);
 }
 
 function migrateCartItems() {
@@ -93,12 +97,12 @@ export function getState() {
 
 export function nextId(table: keyof typeof seq) {
   const id = seq[table]++;
-  void persist();
+  enqueuePersist();
   return id;
 }
 
 export function saveState() {
-  void persist();
+  enqueuePersist();
 }
 
 export function clearAllTables() {
@@ -113,7 +117,7 @@ export function clearAllTables() {
     market_reviews: 1,
     user_reputation: 1,
   };
-  void persist();
+  enqueuePersist();
 }
 
 export function metaGet(key: string): string | null {
@@ -122,7 +126,7 @@ export function metaGet(key: string): string | null {
 
 export function metaSet(key: string, value: string) {
   state.app_meta[key] = value;
-  void persist();
+  enqueuePersist();
 }
 
 /** Compat: garante init síncrono após bootstrap async. */

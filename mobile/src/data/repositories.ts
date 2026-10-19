@@ -725,7 +725,7 @@ export const shoppingListRepo = {
     list.itemCount = data.itemCount;
     list.finishedAt = data.finishedAt;
     list.nfceKey = data.nfceKey ?? null;
-    list.updatedAt = data.updatedAt;
+    list.updatedAt = nowIso();
     list.synced = 0;
     saveState();
     return true;

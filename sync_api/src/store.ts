@@ -1235,6 +1235,8 @@ export class DataStore {
       } else if (twin) {
         shoppingListIdMap[String(s.localId)] = String(twin.id ?? '');
         continue;
+      } else if (/^\d{44}$/.test(listKey)) {
+        s.updatedAt = new Date().toISOString();
       }
       const remoteId = await this._upsertLww({
         collection: 'shopping_lists',
