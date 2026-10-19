@@ -19,7 +19,7 @@ import {SpendOverview} from '@/features/home/SpendOverview';
 import {priceLogRepo, useAppStore} from '@/store/appStore';
 import {colors, space} from '@/ui/theme';
 import {useClearOnBlur} from '@/ui/useClearOnBlur';
-import type {CartItem, ShoppingList} from '@/data/types';
+import type {CartItem, Product, ShoppingList} from '@/data/types';
 
 type Params = {
   period: HomePeriodDays;
@@ -62,6 +62,23 @@ function monthName(date: Date, length: 'long' | 'short') {
     .toLocaleDateString('pt-BR', {month: length})
     .replace('.', '');
   return raw.charAt(0).toUpperCase() + raw.slice(1);
+}
+
+function purchaseSlice(
+  list: ShoppingList,
+  products: Product[],
+  categories: string[],
+) {
+  const items = parseItems(list);
+  if (!categories.length) {
+    return {items, total: list.subtotal, count: list.itemCount};
+  }
+  const picked = items.filter(item => {
+    const stored = products.find(p => p.id === item.productId)?.category?.trim();
+    return categories.includes(resolveCategory(stored, item.productName));
+  });
+  const total = picked.reduce((sum, item) => sum + lineTotal(item), 0);
+  return {items: picked, total, count: picked.length};
 }
 
 function formatWhen(iso: string) {
@@ -208,6 +225,8 @@ export function HomeSpendScreen() {
           <Text style={styles.empty}>Nenhuma compra neste filtro.</Text>
         ) : (
           dash.purchases.map(list => {
+            const slice = purchaseSlice(list, products, categories);
+            if (!slice.items.length) return null;
             const open = openPurchaseId === list.id;
             return (
             <View key={list.id} style={styles.purchase}>
@@ -221,20 +240,19 @@ export function HomeSpendScreen() {
                     {list.marketName || list.name}
                   </Text>
                   <Text style={styles.meta}>
-                    {formatWhen(list.finishedAt)} · {list.itemCount} itens
+                    {formatWhen(list.finishedAt)} · {slice.count} itens
                   </Text>
                 </View>
-                <Text style={styles.total}>{formatBrl(list.subtotal)}</Text>
+                <Text style={styles.total}>{formatBrl(slice.total)}</Text>
                 <ChevronDown
                   size={18}
                   color={colors.navy}
                   style={{transform: [{rotate: open ? '180deg' : '0deg'}]}}
                 />
               </Pressable>
-              {open ? parseItems(list).map((item, index) => {
+              {open ? slice.items.map((item, index) => {
                 const stored = products.find(p => p.id === item.productId)?.category?.trim();
                 const cat = resolveCategory(stored, item.productName);
-                if (categories.length > 0 && !categories.includes(cat)) return null;
                 return (
                   <View key={`${item.productId}-${index}`} style={styles.line}>
                     <CategoryIcon name={cat} />

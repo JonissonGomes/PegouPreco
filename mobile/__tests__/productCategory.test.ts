@@ -36,5 +36,10 @@ describe('guessCategory', () => {
     expect(guessCategory('FRALDA PAMPERS PANTS M')).toBe('Bebê');
     expect(guessCategory('PAPEL TOALHA SNOB C/2')).toBe('Descartáveis');
     expect(guessCategory('MACA XAGUACU KG')).toBe('Frutas');
+    expect(guessCategory('ENERG MONSTER 473ML')).toBe('Águas e sucos');
+    expect(guessCategory('BEB SCHWEPPES')).toBe('Bebidas');
+    expect(guessCategory('H2O LIMONETO 500ML')).toBe('Bebidas');
+    expect(guessCategory('SAC ASSA C/10')).toBe('Descartáveis');
+    expect(guessCategory('BEB LACTEA TODDYNHO')).toBe('Laticínios');
   });
 });

@@ -49,8 +49,8 @@ export const CATEGORY_RULES: CategoryRule[] = [
   },
   {
     category: 'Descartáveis',
-    phrases: ['PAPEL TOALHA', 'SACO DE LIXO', 'SACO LIXO', 'FILME PVC', 'PAPEL ALUM', 'COPO DESCART'],
-    words: ['GUARDANAPO'],
+    phrases: ['PAPEL TOALHA', 'SACO DE LIXO', 'SACO LIXO', 'SAC ASSA', 'FILME PVC', 'PAPEL ALUM', 'COPO DESCART'],
+    words: ['GUARDANAPO', 'SACOLA', 'SAC'],
     prefixes: ['GUARDAN'],
   },
   {
@@ -98,6 +98,7 @@ export const CATEGORY_RULES: CategoryRule[] = [
       'CR LEITE',
       'LEITE UHT',
       'BEB LACT',
+      'BEB LACTEA',
       'BEBIDA LACTEA',
     ],
     words: [
@@ -246,8 +247,13 @@ export const CATEGORY_RULES: CategoryRule[] = [
   {
     category: 'Águas e sucos',
     phrases: ['AGUA MIN', 'AGUA DE COCO', 'SUCO INTEGRAL', 'RED BULL'],
-    words: ['AGUA', 'SUCO', 'ENERGETICO', 'ENERGY', 'GATORADE', 'POWERADE', 'ISOTONICO', 'CHA'],
+    words: ['AGUA', 'SUCO', 'ENERGETICO', 'ENERG', 'ENERGY', 'GATORADE', 'POWERADE', 'ISOTONICO', 'CHA'],
     prefixes: ['ENERGET', 'ISOTON'],
+  },
+  {
+    category: 'Bebidas',
+    words: ['BEB', 'H2O'],
+    prefixes: ['BEBIDA'],
   },
   {
     category: 'Massas',

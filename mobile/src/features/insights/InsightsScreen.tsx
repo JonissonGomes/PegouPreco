@@ -88,9 +88,9 @@ export function InsightsScreen() {
           <Text style={styles.section}>Onde você encontrou mais economia</Text>
           {board.bestMarket ? (
             <>
-              <Text style={styles.place}>{board.bestMarket}</Text>
+              <Text style={[styles.place, styles.center]}>{board.bestMarket}</Text>
               {board.bestDetail ? (
-                <Text style={styles.hint}>{board.bestDetail}</Text>
+                <Text style={[styles.hint, styles.center]}>{board.bestDetail}</Text>
               ) : null}
             </>
           ) : (
@@ -225,7 +225,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 10,
   },
-  tipText: {fontSize: 13, fontWeight: '800', color: colors.navy},
+  tipText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: colors.navy,
+    textAlign: 'center',
+  },
   periods: {flexDirection: 'row', gap: 8},
   period: {
     borderRadius: radii.pill,
@@ -257,6 +262,7 @@ const styles = StyleSheet.create({
   },
   section: {fontWeight: '900', color: colors.navy, fontSize: 16, marginBottom: 8},
   place: {fontWeight: '900', color: colors.ink, fontSize: 18},
+  center: {textAlign: 'center'},
   hint: {color: colors.muted, fontWeight: '600', fontSize: 13, lineHeight: 18},
   row: {flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8},
   rowBody: {flex: 1, minWidth: 0},
