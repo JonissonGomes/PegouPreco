@@ -7,7 +7,9 @@ import {
   prefs,
   priceLogRepo,
   productRepo,
+  shoppingListRepo,
 } from './repositories';
+import {syncGeneration} from './syncGate';
 import {syncApi} from './remote/syncApi';
 import {apiErrorMessage} from './remote/apiError';
 import {useAppStore} from '@/store/appStore';
@@ -45,15 +47,22 @@ function categoryRetryDue(product: {
   return true;
 }
 
-export async function runFullSync(): Promise<{ok: boolean; message: string}> {
-  if (syncInFlight) return syncInFlight;
-  syncInFlight = doFullSync().finally(() => {
-    syncInFlight = null;
+export async function runFullSync(
+  force = false,
+): Promise<{ok: boolean; message: string}> {
+  if (syncInFlight && !force) return syncInFlight;
+  const gen = syncGeneration();
+  const job = doFullSync(gen).finally(() => {
+    if (syncInFlight === job) syncInFlight = null;
   });
-  return syncInFlight;
+  syncInFlight = job;
+  return job;
 }
 
-async function doFullSync(): Promise<{ok: boolean; message: string}> {
+async function doFullSync(
+  gen: number,
+): Promise<{ok: boolean; message: string}> {
+  const stale = () => gen !== syncGeneration();
   const raw = prefs.getAuthJson();
   if (!raw) {
     return {ok: false, message: 'Faça login para sincronizar'};
@@ -109,13 +118,18 @@ async function doFullSync(): Promise<{ok: boolean; message: string}> {
       }
     }
 
+    if (stale()) return {ok: false, message: 'Conta trocada'};
     const since = prefs.getLastSyncAt();
     const pull = await syncApi.pullSince(session.token, since);
+    if (stale()) return {ok: false, message: 'Conta trocada'};
     applyPull(pull);
     await applySharedPrefs(session.token);
+    if (stale()) return {ok: false, message: 'Conta trocada'};
     await ingestCommunityPrices(session.token);
+    if (stale()) return {ok: false, message: 'Conta trocada'};
 
     if (!sessionVerified(session)) {
+      if (stale()) return {ok: false, message: 'Conta trocada'};
       prefs.setLastSyncAt(nowIso());
       saveState();
       return {
@@ -198,6 +212,7 @@ async function doFullSync(): Promise<{ok: boolean; message: string}> {
         updatedAt: s.updatedAt,
       }));
 
+    if (stale()) return {ok: false, message: 'Conta trocada'};
     const pushed = (await syncApi.pushBatch(session.token, {
       products,
       markets,
@@ -223,6 +238,7 @@ async function doFullSync(): Promise<{ok: boolean; message: string}> {
         .filter(Boolean) as string[],
     });
 
+    if (stale()) return {ok: false, message: 'Conta trocada'};
     prefs.setLastSyncAt(nowIso());
     saveState();
     return {ok: true, message: 'Sincronização concluída'};
@@ -248,7 +264,7 @@ export function requestAutoSync(_reason?: string) {
     return;
   }
   lastAutoAttempt = now;
-  void runFullSync().then(r => {
+  void runFullSync(_reason === 'login').then(r => {
     if (r.ok) useAppStore.getState().refresh();
   });
 }
@@ -366,6 +382,47 @@ function applyPull(pull: Record<string, unknown>) {
         (r.trustLevel as 'verified' | 'suspect' | 'hidden') ?? 'suspect',
       lastConfirmedAt: (r.lastConfirmedAt as string) ?? null,
       contributorId: (r.contributorId as string) ?? null,
+      updatedAt: String(r.updatedAt ?? nowIso()),
+      synced: 1,
+    });
+  }
+
+  const lists = (pull.shoppingLists as Array<Record<string, unknown>>) ?? [];
+  for (const r of lists) {
+    const remoteId = String(r.id ?? '');
+    if (!remoteId) continue;
+    if (prefs.getDeletedListIds().includes(remoteId)) continue;
+    const nfceKey = r.nfceKey != null ? String(r.nfceKey) : '';
+    if (nfceKey && prefs.getDeletedNfceKeys().includes(nfceKey)) continue;
+    const existing = st.shopping_lists.find(
+      list =>
+        list.remoteId === remoteId ||
+        (nfceKey.length >= 40 && list.nfceKey === nfceKey),
+    );
+    if (existing) {
+      existing.remoteId = remoteId;
+      existing.synced = 1;
+      continue;
+    }
+    const marketRemote = r.marketId != null ? String(r.marketId) : '';
+    const market = marketRemote
+      ? st.markets.find(m => m.remoteId === marketRemote)
+      : undefined;
+    const itemsJson =
+      typeof r.itemsJson === 'string'
+        ? r.itemsJson
+        : JSON.stringify(r.itemsJson ?? []);
+    shoppingListRepo.insert({
+      name: String(r.name ?? 'Compra'),
+      marketId: market?.id ?? null,
+      marketName: (r.marketName as string) ?? market?.name ?? null,
+      itemsJson,
+      subtotal: Number(r.subtotal ?? 0),
+      savings: Number(r.savings ?? 0),
+      itemCount: Number(r.itemCount ?? 0),
+      finishedAt: String(r.finishedAt ?? nowIso()),
+      nfceKey: nfceKey || null,
+      remoteId,
       updatedAt: String(r.updatedAt ?? nowIso()),
       synced: 1,
     });

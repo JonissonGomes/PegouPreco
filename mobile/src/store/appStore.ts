@@ -19,6 +19,7 @@ import {
 } from '@/app/permissions';
 import {sessionIsLive} from '@/domain/session';
 import {bindSessionRejected} from '@/data/remote/sessionGate';
+import {bumpSyncGeneration} from '@/data/syncGate';
 
 type AuthSession = {
   token: string;
@@ -140,11 +141,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     const previous = get().auth;
     const sameUser =
       !!session && !!previous && previous.userId === session.userId;
+    if (!sameUser && (previous || session)) bumpSyncGeneration();
     if (previous && !sameUser) prefs.forgetAccount();
     prefs.setAuthJson(session ? JSON.stringify(session) : null);
     set({auth: session});
     get().refresh();
-    if (session?.token) {
+    if (session?.token && !sameUser) {
+      prefs.setLastSyncAt(new Date(0).toISOString());
       // lazy — evita ciclo com syncWorker
       void import('@/data/syncWorker').then(m => m.requestAutoSync('login'));
     }
