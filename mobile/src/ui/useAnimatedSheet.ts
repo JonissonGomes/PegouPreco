@@ -1,5 +1,6 @@
 import {useEffect, useMemo, useRef, useState} from 'react';
 import {Animated} from 'react-native';
+import {easeOut, motion} from '@/ui/motion';
 
 type Options = {
   /** Deslocamento inicial do sheet (px). Default 48. */
@@ -13,9 +14,9 @@ type Options = {
  * Use com Modal transparente (animationType="none").
  */
 export function useAnimatedSheet(visible: boolean, opts: Options = {}) {
-  const fromY = opts.fromY ?? 48;
-  const openDuration = opts.openDuration ?? 180;
-  const closeDuration = opts.closeDuration ?? 160;
+  const fromY = opts.fromY ?? 64;
+  const openDuration = opts.openDuration ?? motion.open;
+  const closeDuration = opts.closeDuration ?? motion.close;
 
   const backdrop = useRef(new Animated.Value(0)).current;
   const sheetY = useRef(new Animated.Value(fromY)).current;
@@ -38,12 +39,13 @@ export function useAnimatedSheet(visible: boolean, opts: Options = {}) {
         Animated.timing(backdrop, {
           toValue: 1,
           duration: openDuration,
+          easing: easeOut,
           useNativeDriver: true,
         }),
-        Animated.spring(sheetY, {
+        Animated.timing(sheetY, {
           toValue: 0,
-          friction: 9,
-          tension: 80,
+          duration: openDuration,
+          easing: easeOut,
           useNativeDriver: true,
         }),
       ]).start();
@@ -54,11 +56,13 @@ export function useAnimatedSheet(visible: boolean, opts: Options = {}) {
       Animated.timing(backdrop, {
         toValue: 0,
         duration: closeDuration,
+        easing: easeOut,
         useNativeDriver: true,
       }),
       Animated.timing(sheetY, {
         toValue: fromY,
         duration: closeDuration,
+        easing: easeOut,
         useNativeDriver: true,
       }),
     ]).start(({finished}) => {

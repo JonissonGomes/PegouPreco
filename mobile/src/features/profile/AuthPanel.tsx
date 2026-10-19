@@ -4,7 +4,6 @@ import {
   Easing,
   Keyboard,
   KeyboardAvoidingView,
-  LayoutAnimation,
   Platform,
   Pressable,
   ScrollView,
@@ -24,6 +23,7 @@ import {useAppStore} from '@/store/appStore';
 import {syncApi, type AuthResponse} from '@/data/remote/syncApi';
 import {apiErrorMessage} from '@/data/remote/apiError';
 import {appAlert} from '@/ui/appDialog';
+import {animateLayout, easeOut, motion} from '@/ui/motion';
 import {loginWithPasskey} from '@/data/remote/passkeyAuth';
 import {sessionExpiresAt} from '@/domain/session';
 import {
@@ -62,21 +62,6 @@ function sessionFrom(
     role: data.role,
     expiresAt: sessionExpiresAt(data.tokenExpiresAt),
   };
-}
-
-function animateLayout() {
-  LayoutAnimation.configureNext({
-    duration: 280,
-    update: {type: LayoutAnimation.Types.easeInEaseOut},
-    create: {
-      type: LayoutAnimation.Types.easeInEaseOut,
-      property: LayoutAnimation.Properties.opacity,
-    },
-    delete: {
-      type: LayoutAnimation.Types.easeInEaseOut,
-      property: LayoutAnimation.Properties.opacity,
-    },
-  });
 }
 
 function AuthInput({
@@ -148,17 +133,19 @@ function PulseCta({
     <Pressable
       disabled={disabled}
       onPressIn={() =>
-        Animated.spring(scale, {
+        Animated.timing(scale, {
           toValue: 0.97,
+          duration: 140,
+          easing: easeOut,
           useNativeDriver: true,
-          friction: 6,
         }).start()
       }
       onPressOut={() =>
-        Animated.spring(scale, {
+        Animated.timing(scale, {
           toValue: 1,
+          duration: 180,
+          easing: easeOut,
           useNativeDriver: true,
-          friction: 6,
         }).start()
       }
       onPress={onPress}>
@@ -190,10 +177,10 @@ function ModeTabs({
   const [width, setWidth] = useState(0);
 
   useEffect(() => {
-    Animated.spring(slide, {
+    Animated.timing(slide, {
       toValue: mode === 'register' ? 1 : 0,
-      friction: 8,
-      tension: 90,
+      duration: motion.open,
+      easing: easeOut,
       useNativeDriver: true,
     }).start();
   }, [mode, slide]);
@@ -266,10 +253,10 @@ export function AuthPanel() {
         easing: Easing.out(Easing.cubic),
         useNativeDriver: true,
       }),
-      Animated.spring(sheetY, {
+      Animated.timing(sheetY, {
         toValue: 0,
-        friction: 8,
-        tension: 70,
+        duration: motion.open,
+        easing: easeOut,
         useNativeDriver: true,
       }),
       Animated.timing(sheetOpacity, {

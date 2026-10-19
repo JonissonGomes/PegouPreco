@@ -1,6 +1,5 @@
 import React, {useMemo, useState} from 'react';
 import {
-  LayoutAnimation,
   Platform,
   Pressable,
   StyleSheet,
@@ -22,6 +21,7 @@ import {
   SoftCard,
   SoftHeader,
 } from '@/ui/screenChrome';
+import {animateLayout} from '@/ui/motion';
 import {colors, radii, space, spacing} from '@/ui/theme';
 import {formatBrl, formatQty} from '@/domain/money';
 import {dateSearchText} from '@/domain/dateSearch';
@@ -218,9 +218,7 @@ export function ShoppingListsScreen() {
                     label: 'Excluir',
                     style: 'destructive',
                     onPress: () => {
-                      LayoutAnimation.configureNext(
-                        LayoutAnimation.Presets.easeInEaseOut,
-                      );
+                      animateLayout();
                       shoppingListRepo.remove(item.id);
                       refresh();
                       requestAutoSync('nfce');

@@ -14,6 +14,7 @@ import {
   ThumbsUp,
   Zap,
 } from 'lucide-react-native';
+import {easeOut} from './motion';
 import {colors, radii, space} from './theme';
 
 /** Seletor interativo de 1–5 estrelas (avaliação de mercado). */
@@ -150,10 +151,10 @@ export function XpBurst({
     opacity.setValue(0);
     Animated.sequence([
       Animated.parallel([
-        Animated.spring(scale, {
+        Animated.timing(scale, {
           toValue: 1,
-          friction: 6,
-          tension: 120,
+          duration: 320,
+          easing: easeOut,
           useNativeDriver: true,
         }),
         Animated.timing(opacity, {

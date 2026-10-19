@@ -1,5 +1,6 @@
 import React, {useEffect, useRef, useState} from 'react';
-import {Animated, Easing, View, type DimensionValue, type StyleProp, type ViewStyle} from 'react-native';
+import {Animated, View, type DimensionValue, type StyleProp, type ViewStyle} from 'react-native';
+import {easeOut, motion} from '@/ui/motion';
 
 /** Entrada: sobe, cresce e aparece. */
 export function Reveal({
@@ -14,33 +15,33 @@ export function Reveal({
   style?: StyleProp<ViewStyle>;
 }) {
   const opacity = useRef(new Animated.Value(0)).current;
-  const translateY = useRef(new Animated.Value(28)).current;
-  const scale = useRef(new Animated.Value(0.92)).current;
+  const translateY = useRef(new Animated.Value(16)).current;
+  const scale = useRef(new Animated.Value(0.98)).current;
 
   useEffect(() => {
     opacity.setValue(0);
-    translateY.setValue(28);
-    scale.setValue(0.92);
+    translateY.setValue(16);
+    scale.setValue(0.98);
     Animated.parallel([
       Animated.timing(opacity, {
         toValue: 1,
-        duration: 480,
+        duration: motion.enter,
         delay,
-        easing: Easing.out(Easing.cubic),
+        easing: easeOut,
         useNativeDriver: true,
       }),
-      Animated.spring(translateY, {
+      Animated.timing(translateY, {
         toValue: 0,
+        duration: motion.enter,
         delay,
-        friction: 7,
-        tension: 70,
+        easing: easeOut,
         useNativeDriver: true,
       }),
-      Animated.spring(scale, {
+      Animated.timing(scale, {
         toValue: 1,
+        duration: motion.enter,
         delay,
-        friction: 7,
-        tension: 70,
+        easing: easeOut,
         useNativeDriver: true,
       }),
     ]).start();
@@ -65,7 +66,7 @@ export function useDraw(delay = 0, duration = 900, play = 0) {
       toValue: 1,
       duration,
       delay,
-      easing: Easing.out(Easing.cubic),
+      easing: easeOut,
       useNativeDriver: false,
     }).start();
     return () => value.removeListener(sub);

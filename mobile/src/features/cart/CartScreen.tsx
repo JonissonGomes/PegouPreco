@@ -2,7 +2,6 @@ import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
   ActivityIndicator,
   Keyboard,
-  LayoutAnimation,
   Modal,
   Platform,
   Pressable,
@@ -34,6 +33,7 @@ import {appAlert} from '@/ui/appDialog';
 import {KeyboardSafeSheet} from '@/ui/keyboardSheet';
 import {MarketSuggestRow} from '@/ui/MarketSuggestRow';
 import {SwipeableActions} from '@/ui/SwipeableActions';
+import {animateLayout} from '@/ui/motion';
 import {colors, radii, space, spacing} from '@/ui/theme';
 
 if (
@@ -443,9 +443,7 @@ export function CartScreen() {
                             label: 'Excluir',
                             style: 'destructive',
                             onPress: () => {
-                              LayoutAnimation.configureNext(
-                                LayoutAnimation.Presets.easeInEaseOut,
-                              );
+                              animateLayout();
                               cartRepo.remove(item.id);
                               refresh();
                             },
@@ -484,9 +482,7 @@ export function CartScreen() {
                             label: 'Excluir',
                             style: 'destructive',
                             onPress: () => {
-                              LayoutAnimation.configureNext(
-                                LayoutAnimation.Presets.easeInEaseOut,
-                              );
+                              animateLayout();
                               cartRepo.remove(item.id);
                               refresh();
                             },

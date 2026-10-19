@@ -18,6 +18,7 @@ import {ChevronRight, FileText, QrCode, ScanLine, X} from 'lucide-react-native';
 import {AppButton, AppField, AppScreenHeader} from '@/ui/chrome';
 import {appAlert} from '@/ui/appDialog';
 import {KeyboardSafeSheet} from '@/ui/keyboardSheet';
+import {easeOut, motion} from '@/ui/motion';
 import {colors} from '@/ui/theme';
 import {parseLabel, type LabelFields} from '@/domain/labelParser';
 import {
@@ -74,10 +75,10 @@ function LabelHitPreview({
 
   useEffect(() => {
     enter.setValue(0);
-    Animated.spring(enter, {
+    Animated.timing(enter, {
       toValue: 1,
-      friction: 7,
-      tension: 90,
+      duration: motion.open,
+      easing: easeOut,
       useNativeDriver: true,
     }).start();
     const loop = Animated.loop(

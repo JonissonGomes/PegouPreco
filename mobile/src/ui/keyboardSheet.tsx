@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {colors} from './theme';
+import {easeOut} from './motion';
 import {useAnimatedSheet} from './useAnimatedSheet';
 
 /**
@@ -49,10 +50,11 @@ export function KeyboardSafeSheet({
           dragY.setValue(0);
           return;
         }
-        Animated.spring(dragY, {
+        Animated.timing(dragY, {
           toValue: 0,
+          duration: 280,
+          easing: easeOut,
           useNativeDriver: true,
-          friction: 8,
         }).start();
       },
     }),

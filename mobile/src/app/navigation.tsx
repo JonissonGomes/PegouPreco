@@ -1,7 +1,6 @@
 import React, {useEffect} from 'react';
 import {
   ActivityIndicator,
-  LayoutAnimation,
   Platform,
   StyleSheet,
   Text,
@@ -34,6 +33,7 @@ import {AdminMarketsScreen} from '@/features/admin/AdminMarketsScreen';
 import {HistoryScreen} from '@/features/history/HistoryScreen';
 import {OnboardingScreen} from '@/features/onboarding/OnboardingScreen';
 import {BrandLogo} from '@/ui/chrome';
+import {animateLayout, motion} from '@/ui/motion';
 import {colors} from '@/ui/theme';
 import {useAppStore} from '@/store/appStore';
 
@@ -54,7 +54,7 @@ function Tabs() {
   const bottom = visible ? floatBottom : -180;
 
   useEffect(() => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    animateLayout();
   }, [visible]);
 
   return (
@@ -184,7 +184,7 @@ export function RootNavigation() {
         screenOptions={{
           headerShown: false,
           animation: 'slide_from_right',
-          animationDuration: 220,
+          animationDuration: motion.open,
           contentStyle: {backgroundColor: colors.bg},
         }}>
         {!onboardingDone ? (
