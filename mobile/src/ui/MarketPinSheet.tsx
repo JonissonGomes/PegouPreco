@@ -10,7 +10,6 @@ import {XpBurst} from '@/ui/gamification';
 import {colors} from '@/ui/theme';
 import {
   formatDistanceKm,
-  priceBandLabel,
   resolvePriceBand,
   type PriceBand,
 } from '@/domain/marketUi';
@@ -340,9 +339,17 @@ export function MarketPinSheet({
                 <MapPin size={22} color={colors.navy} />
               </View>
               <View style={{flex: 1}}>
-                <Text style={styles.title}>
-                  {friendlyMarketTitle(shown, markets)}
-                </Text>
+                <View style={styles.titleRow}>
+                  <Text style={styles.title}>
+                    {friendlyMarketTitle(shown, markets)}
+                  </Text>
+                  <Pressable
+                    style={styles.alertBtn}
+                    onPress={reportPin}
+                    accessibilityLabel="Reportar erro neste pin">
+                    <TriangleAlert size={18} color={colors.danger} />
+                  </Pressable>
+                </View>
                 <Text style={styles.addr} numberOfLines={3}>
                   {addressLine || 'Buscando endereço…'}
                 </Text>
@@ -376,7 +383,6 @@ export function MarketPinSheet({
                 <Text style={styles.statLabel}>Tendência</Text>
                 <View style={styles.ratingRow}>
                   <BandIcon band={band} />
-                  <Text style={styles.statValue}>{priceBandLabel(band)}</Text>
                 </View>
                 <Text style={styles.statHint}>pela comunidade</Text>
               </View>
@@ -412,12 +418,6 @@ export function MarketPinSheet({
             <Pressable style={styles.secondary} onPress={onClose}>
               <Text style={styles.secondaryText}>Fechar</Text>
             </Pressable>
-            <Pressable
-              style={styles.alertBtn}
-              onPress={reportPin}
-              accessibilityLabel="Reportar erro neste pin">
-              <TriangleAlert size={18} color={colors.danger} />
-            </Pressable>
           </>
         ) : (
           <View />
@@ -443,7 +443,7 @@ export function MarketPinSheet({
 }
 
 const styles = StyleSheet.create({
-  hero: {flexDirection: 'row', gap: 12, alignItems: 'flex-start'},
+  hero: {flexDirection: 'row', gap: 12, alignItems: 'center'},
   pinBadge: {
     width: 48,
     height: 48,
@@ -452,25 +452,31 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  titleRow: {flexDirection: 'row', alignItems: 'center', gap: 8},
   title: {
+    flex: 1,
     fontSize: 20,
     fontWeight: '800',
     color: colors.navy,
     letterSpacing: -0.3,
+    lineHeight: 24,
   },
-  addr: {marginTop: 4, color: colors.muted, fontWeight: '600', fontSize: 13},
+  addr: {marginTop: 1, color: colors.muted, fontWeight: '600', fontSize: 13, lineHeight: 16},
   visits: {
-    marginTop: 10,
+    marginTop: 8,
     color: colors.navy,
     fontWeight: '700',
     fontSize: 13,
+    textAlign: 'center',
   },
-  stats: {flexDirection: 'row', gap: 8, marginTop: 16, marginBottom: 8},
+  stats: {flexDirection: 'row', gap: 8, marginTop: 14, marginBottom: 4},
   stat: {
     flex: 1,
+    alignItems: 'center',
     backgroundColor: colors.bg,
     borderRadius: 14,
-    padding: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 6,
     borderWidth: 1,
     borderColor: colors.border,
   },
@@ -484,15 +490,29 @@ const styles = StyleSheet.create({
     color: colors.muted,
     textTransform: 'uppercase',
     letterSpacing: 0.4,
+    textAlign: 'center',
   },
   statValue: {
     marginTop: 4,
     fontSize: 14,
     fontWeight: '800',
     color: colors.navy,
+    textAlign: 'center',
   },
-  statHint: {marginTop: 2, fontSize: 10, color: colors.muted, fontWeight: '600'},
-  ratingRow: {flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4},
+  statHint: {
+    marginTop: 2,
+    fontSize: 10,
+    color: colors.muted,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  ratingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    marginTop: 4,
+  },
   secondary: {
     marginTop: 4,
     height: 44,
@@ -501,10 +521,9 @@ const styles = StyleSheet.create({
   },
   secondaryText: {color: colors.navy, fontWeight: '700'},
   alertBtn: {
-    alignSelf: 'center',
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#FEF2F2',

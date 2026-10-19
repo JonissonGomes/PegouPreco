@@ -35,6 +35,7 @@ import {
   prefs,
   priceLogRepo,
   productRepo,
+  shoppingListRepo,
   useAppStore,
   useMarketName,
 } from '@/store/appStore';
@@ -468,6 +469,13 @@ export function CaptureScreen() {
     const target = (explicit ?? qrUrl).trim();
     if (!ensureList() || !target) return false;
     const nfceKey = extractAccessKey(target);
+    if (
+      nfceKey &&
+      (shoppingListRepo.byNfceKey(nfceKey) || priceLogRepo.forNfceKey(nfceKey).length > 0)
+    ) {
+      appAlert('NFC-e', 'Essa nota já está cadastrada.');
+      return false;
+    }
     try {
       const parsed = await fetchAndParseNfce(target);
       let marketNotice: string | null = null;
@@ -565,7 +573,12 @@ export function CaptureScreen() {
         purchasedAt,
       );
       if (!outcome.ok) {
-        appAlert('Cadastrar nota', 'Não foi possível salvar esta nota.');
+        appAlert(
+          'Cadastrar nota',
+          outcome.reason === 'duplicate'
+            ? 'Essa nota já está cadastrada.'
+            : 'Não foi possível salvar esta nota.',
+        );
         return;
       }
       refresh();

@@ -27,15 +27,15 @@ export function MarketShelfBlock({shelf}: {shelf: ShelfCategory[]}) {
       {popular.length > 0 ? (
         <>
           <Text style={styles.title}>Mais compradas aqui</Text>
-          {popular.map(item => (
-            <View key={item.category} style={styles.rank}>
-              <CategoryIcon name={item.category} size={14} />
-              <Text style={styles.rankName}>{item.category}</Text>
-              <Text style={styles.rankCount}>
-                {item.purchases} {item.purchases === 1 ? 'compra' : 'compras'}
-              </Text>
-            </View>
-          ))}
+          <View style={styles.chips}>
+            {popular.map(item => (
+              <View key={item.category} style={styles.chip}>
+                <CategoryIcon name={item.category} size={12} pad={6} />
+                <Text style={styles.chipText}>{item.category}</Text>
+                <Text style={styles.rankCount}>{item.purchases}</Text>
+              </View>
+            ))}
+          </View>
         </>
       ) : null}
     </View>
@@ -58,7 +58,5 @@ const styles = StyleSheet.create({
     paddingLeft: 4,
   },
   chipText: {fontSize: 12, fontWeight: '700', color: colors.ink},
-  rank: {flexDirection: 'row', alignItems: 'center', gap: 8},
-  rankName: {flex: 1, fontWeight: '700', color: colors.ink, fontSize: 14},
   rankCount: {fontWeight: '800', color: colors.navy, fontSize: 12},
 });

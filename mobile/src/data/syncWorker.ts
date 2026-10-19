@@ -194,6 +194,7 @@ async function doFullSync(): Promise<{ok: boolean; message: string}> {
         savings: s.savings,
         itemCount: s.itemCount,
         finishedAt: s.finishedAt,
+        nfceKey: s.nfceKey ?? null,
         updatedAt: s.updatedAt,
       }));
 
@@ -339,6 +340,14 @@ function applyPull(pull: Record<string, unknown>) {
     const product = st.products.find(p => p.remoteId === r.productId);
     const market = st.markets.find(m => m.remoteId === r.marketId);
     if (!product || !market) continue;
+    if (
+      nfceKey &&
+      st.price_logs.some(
+        log => log.nfceKey === nfceKey && log.productId === product.id,
+      )
+    ) {
+      continue;
+    }
     priceLogRepo.insert({
       productId: product.id,
       marketId: market?.id ?? null,

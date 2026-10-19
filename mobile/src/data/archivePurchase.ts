@@ -37,7 +37,10 @@ export async function previewPastNfce(
   const parsed = await fetchAndParseNfce(qrUrl);
   if (!parsed.items.length) return {ok: false, reason: 'empty'};
   const nfceKey = extractAccessKey(qrUrl);
-  if (nfceKey && shoppingListRepo.byNfceKey(nfceKey)) {
+  if (
+    nfceKey &&
+    (shoppingListRepo.byNfceKey(nfceKey) || priceLogRepo.forNfceKey(nfceKey).length > 0)
+  ) {
     return {ok: false, reason: 'duplicate'};
   }
   const subtotal = parsed.items.reduce(
@@ -181,10 +184,8 @@ export async function archiveNfcePurchase(
     const saved = shoppingListRepo
       .all()
       .find(l => !l.nfceKey && l.finishedAt === capturedAt);
-    if (saved && nfceKey) {
-      shoppingListRepo.setNfceKey(saved.id, nfceKey);
-      return {ok: false, reason: 'duplicate'};
-    }
+    if (saved && nfceKey) shoppingListRepo.setNfceKey(saved.id, nfceKey);
+    return {ok: false, reason: 'duplicate'};
   }
   const contributorId = prefs.getLocalUserId();
   const items = parsed.items.map((it, index) => {
