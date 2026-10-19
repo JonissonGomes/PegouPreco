@@ -56,7 +56,7 @@ test('nota sem coordenada entra no pin de mesmo nome', () => {
     ),
     false,
   );
-  const pins = [
+  const pins: Record<string, unknown>[] = [
     {
       id: 'geo',
       name: 'Novo Atacarejo - Igarassu',

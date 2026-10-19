@@ -1183,6 +1183,12 @@ export class DataStore {
         trustLevel = 'suspect';
       }
 
+      const already = await this._findNfceLog(nfceKey, productRemote);
+      if (already) {
+        priceLogIdMap[String(l.localId)] = String(already.id ?? '');
+        continue;
+      }
+
       const remoteId = await this._upsertLww({
         collection: 'price_logs',
         mem: this._memLogs,
@@ -1218,12 +1224,21 @@ export class DataStore {
 
     for (const raw of (body.shoppingLists as unknown[] | undefined) ?? []) {
       const s = {...(raw as Record<string, unknown>)};
+      const listKey = String(s.nfceKey ?? '');
+      if (/^\d{44}$/.test(listKey)) {
+        const saved = await this._findNfceList(userId, listKey);
+        if (saved) {
+          shoppingListIdMap[String(s.localId)] = String(saved.id ?? '');
+          continue;
+        }
+      }
       const remoteId = await this._upsertLww({
         collection: 'shopping_lists',
         mem: this._memShoppingLists,
         incoming: {
           id: s.remoteId ?? uuidv4(),
           ownerId: userId,
+          nfceKey: /^\d{44}$/.test(listKey) ? listKey : null,
           name: s.name,
           marketId: s.marketId,
           marketName: s.marketName,
@@ -1479,6 +1494,41 @@ export class DataStore {
       market.weeklyVisitors = weekly.get(id)?.size ?? 0;
     }
     rollupPlaceStats(markets, weekly);
+  }
+
+  private async _findNfceLog(
+    nfceKey: string,
+    productId: string | null,
+  ): Promise<Record<string, unknown> | null> {
+    if (!/^\d{44}$/.test(nfceKey) || !productId) return null;
+    if (this.mode === 'memory') {
+      return (
+        Object.values(this._memLogs).find(
+          log => log.nfceKey === nfceKey && String(log.productId ?? '') === productId,
+        ) ?? null
+      );
+    }
+    return (await this.col('price_logs').findOne({
+      nfceKey,
+      productId,
+    })) as Record<string, unknown> | null;
+  }
+
+  private async _findNfceList(
+    ownerId: string,
+    nfceKey: string,
+  ): Promise<Record<string, unknown> | null> {
+    if (this.mode === 'memory') {
+      return (
+        Object.values(this._memShoppingLists).find(
+          list => list.ownerId === ownerId && list.nfceKey === nfceKey,
+        ) ?? null
+      );
+    }
+    return (await this.col('shopping_lists').findOne({
+      ownerId,
+      nfceKey,
+    })) as Record<string, unknown> | null;
   }
 
   private async _findLog(id: string): Promise<Record<string, unknown> | null> {
