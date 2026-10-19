@@ -7,6 +7,7 @@ import type {Market} from '@/data/types';
 import {extractAccessKey} from '@/domain/nfceScan';
 import {guessCategory} from '@/domain/productCategory';
 import {MAPBOX_ACCESS_TOKEN} from '@/config/env';
+import {getState, saveState} from '@/data/db';
 import {
   marketRepo,
   prefs,
@@ -33,16 +34,24 @@ export type ArchiveOutcome =
     }
   | {ok: false; reason: 'empty' | 'duplicate' | 'missing'};
 
+/** A nota só está no histórico se a lista ainda existe. Preço órfão não bloqueia nova leitura. */
+export function nfceBlocksRescan(nfceKey: string): boolean {
+  if (shoppingListRepo.byNfceKey(nfceKey)) return true;
+  const logs = priceLogRepo.forNfceKey(nfceKey);
+  if (!logs.length) return false;
+  const st = getState();
+  st.price_logs = st.price_logs.filter(log => log.nfceKey !== nfceKey);
+  saveState();
+  return false;
+}
+
 export async function previewPastNfce(
   qrUrl: string,
 ): Promise<NfceDraft | {ok: false; reason: 'empty' | 'duplicate'}> {
   const parsed = await fetchAndParseNfce(qrUrl);
   if (!parsed.items.length) return {ok: false, reason: 'empty'};
   const nfceKey = extractAccessKey(qrUrl);
-  if (
-    nfceKey &&
-    (shoppingListRepo.byNfceKey(nfceKey) || priceLogRepo.forNfceKey(nfceKey).length > 0)
-  ) {
+  if (nfceKey && nfceBlocksRescan(nfceKey)) {
     return {ok: false, reason: 'duplicate'};
   }
   const subtotal = parsed.items.reduce(
@@ -185,6 +194,7 @@ export async function archiveNfcePurchase(
   if (sameNote && sameNote.id !== replacing?.id) {
     return {ok: false, reason: 'duplicate'};
   }
+  if (nfceKey) prefs.releaseDeletedNfce(nfceKey);
 
   const placed = parsed.marketName
     ? await ensureMarketOnMap(
@@ -200,7 +210,8 @@ export async function archiveNfcePurchase(
       };
   const marketId = placed.marketId;
   const finishedAt = purchasedAt ?? parsed.issuedAt ?? new Date().toISOString();
-  const alreadyLogged = nfceKey ? priceLogRepo.forNfceKey(nfceKey) : [];
+  const alreadyLogged =
+    nfceKey && !nfceBlocksRescan(nfceKey) ? [] : nfceKey ? priceLogRepo.forNfceKey(nfceKey) : [];
   if (!replacing && alreadyLogged.length) {
     const capturedAt = alreadyLogged[0].capturedAt;
     const saved = shoppingListRepo

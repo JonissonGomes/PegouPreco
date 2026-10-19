@@ -36,7 +36,6 @@ import {
   prefs,
   priceLogRepo,
   productRepo,
-  shoppingListRepo,
   useAppStore,
   useMarketName,
 } from '@/store/appStore';
@@ -44,6 +43,7 @@ import {fetchAndParseNfce} from '@/data/remote/sefazClient';
 import {requestAutoSync} from '@/data/syncWorker';
 import {
   archiveNfcePurchase,
+  nfceBlocksRescan,
   previewPastNfce,
   type NfceDraft,
 } from '@/data/archivePurchase';
@@ -470,10 +470,7 @@ export function CaptureScreen() {
     const target = (explicit ?? qrUrl).trim();
     if (!ensureList() || !target) return false;
     const nfceKey = extractAccessKey(target);
-    if (
-      nfceKey &&
-      (shoppingListRepo.byNfceKey(nfceKey) || priceLogRepo.forNfceKey(nfceKey).length > 0)
-    ) {
+    if (nfceKey && nfceBlocksRescan(nfceKey)) {
       appAlert('NFC-e', 'Essa nota já está cadastrada.');
       return false;
     }

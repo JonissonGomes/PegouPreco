@@ -39,6 +39,12 @@ function rememberId(key: string, id: string, limit: number) {
   metaSet(key, JSON.stringify(next.slice(-limit)));
 }
 
+function forgetId(key: string, id: string) {
+  const trimmed = id.trim();
+  if (!trimmed) return;
+  metaSet(key, JSON.stringify(readIdList(key).filter(item => item !== trimmed)));
+}
+
 export const prefs = {
   getOnboardingDone: () => metaGet('onboardingDone') === '1',
   setOnboardingDone: (v: boolean) => metaSet('onboardingDone', v ? '1' : '0'),
@@ -122,6 +128,7 @@ export const prefs = {
   },
   getDeletedNfceKeys: (): string[] => readIdList('deletedNfceKeys'),
   rememberDeletedNfce: (key: string) => rememberId('deletedNfceKeys', key, 200),
+  releaseDeletedNfce: (key: string) => forgetId('deletedNfceKeys', key),
   getDeletedPriceLogIds: (): string[] => readIdList('deletedPriceLogIds'),
   rememberDeletedPriceLog: (id: string) =>
     rememberId('deletedPriceLogIds', id, 400),
@@ -746,16 +753,24 @@ export function forgetPurchase(list: ShoppingList) {
     typeof list.nfceKey === 'string' && list.nfceKey.length >= 40
       ? list.nfceKey
       : null;
+  const samePurchase = (log: (typeof st.price_logs)[number]) => {
+    if (key && log.nfceKey === key) return true;
+    return (
+      log.capturedAt === list.finishedAt &&
+      log.marketId != null &&
+      log.marketId === list.marketId
+    );
+  };
+  const doomed = st.price_logs.filter(samePurchase);
+  for (const log of doomed) {
+    if (log.nfceKey && log.nfceKey.length >= 40) {
+      prefs.rememberDeletedNfce(log.nfceKey);
+    }
+    if (log.remoteId) prefs.rememberDeletedPriceLog(log.remoteId);
+  }
   if (key) prefs.rememberDeletedNfce(key);
   if (list.remoteId) prefs.rememberDeletedList(list.remoteId);
-  for (const log of st.price_logs) {
-    if (key && log.nfceKey === key && log.remoteId) {
-      prefs.rememberDeletedPriceLog(log.remoteId);
-    }
-  }
-  if (key) {
-    st.price_logs = st.price_logs.filter(log => log.nfceKey !== key);
-  }
+  st.price_logs = st.price_logs.filter(log => !samePurchase(log));
   st.shopping_lists = st.shopping_lists.filter(item => item.id !== list.id);
   saveState();
 }
