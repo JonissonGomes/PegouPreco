@@ -140,8 +140,8 @@ function Donut({
   caption: string;
   play: number;
 }) {
-  const size = 210;
-  const stroke = 22;
+  const size = 252;
+  const stroke = 28;
   const radius = (size - stroke) / 2;
   const length = 2 * Math.PI * radius;
   const progress = useDraw(120, 900, play);
@@ -155,7 +155,6 @@ function Donut({
     arcs.push({color: slice.color, start: cursor, part, category: slice.category});
     cursor += part + gap;
   }
-  const iconBox = 28;
   return (
     <View style={{width: size, height: size}}>
       <Svg width={size} height={size}>
@@ -186,14 +185,16 @@ function Donut({
         ))}
       </Svg>
       {arcs.map(arc => {
-        if (arc.part < length * 0.07) return null;
+        const glyph = arc.part < 22 ? 8 : 11;
+        const pad = 4;
+        const iconBox = glyph + pad;
         const mid = arc.start + arc.part / 2;
         const theta = (mid / length) * Math.PI * 2 - Math.PI / 2;
         const left = size / 2 + Math.cos(theta) * radius - iconBox / 2;
         const top = size / 2 + Math.sin(theta) * radius - iconBox / 2;
         return (
           <View key={arc.category} style={[styles.arcIcon, {left, top}]}>
-            <CategoryIcon name={arc.category} size={14} />
+            <CategoryIcon name={arc.category} size={glyph} pad={pad} />
           </View>
         );
       })}

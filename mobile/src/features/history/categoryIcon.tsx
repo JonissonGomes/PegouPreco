@@ -52,13 +52,15 @@ const ICONS: Record<string, typeof Wine> = {
 export function CategoryIcon({
   name,
   size = 14,
+  pad = 10,
 }: {
   name: string;
   size?: number;
+  pad?: number;
 }) {
   const Icon = ICONS[name] ?? Package;
   const tone = categoryTone(name);
-  const box = size + 10;
+  const box = size + pad;
   return (
     <View
       accessibilityLabel={name}
