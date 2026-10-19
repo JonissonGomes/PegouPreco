@@ -18,6 +18,7 @@ import {HomeFilterSheet} from '@/features/home/HomeFilterSheet';
 import {SpendOverview} from '@/features/home/SpendOverview';
 import {priceLogRepo, useAppStore} from '@/store/appStore';
 import {colors, space} from '@/ui/theme';
+import {useClearOnBlur} from '@/ui/useClearOnBlur';
 import type {CartItem, ShoppingList} from '@/data/types';
 
 type Params = {
@@ -100,6 +101,15 @@ export function HomeSpendScreen() {
       setPlay(value => value + 1);
     }, [month, span]),
   );
+  useClearOnBlur(() => {
+    setPeriod(30);
+    setSpan('month');
+    setMonth(monthStart(new Date()));
+    setMarketId(null);
+    setCategories([]);
+    setFiltersOpen(false);
+    setOpenPurchaseId(null);
+  });
   const range = useMemo(() => calendarRange(month, span), [month, span]);
   const dash = useMemo(
     () =>

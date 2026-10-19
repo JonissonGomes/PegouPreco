@@ -10,6 +10,7 @@ import {marketRepo, useAppStore} from '@/store/appStore';
 import {syncApi, type AdminMarketRemote} from '@/data/remote/syncApi';
 import {apiErrorMessage} from '@/data/remote/apiError';
 import {refreshPermissionFlags} from '@/app/permissions';
+import {useClearOnBlur} from '@/ui/useClearOnBlur';
 import {AdminMarketForm} from './AdminMarketForm';
 import {AdminMarketList} from './AdminMarketList';
 import {
@@ -33,6 +34,10 @@ export function AdminMarketsScreen() {
   );
   const [filter, setFilter] = useState('all');
   const [query, setQuery] = useState('');
+  useClearOnBlur(() => {
+    setFilter('all');
+    setQuery('');
+  });
   const [editLocalId, setEditLocalId] = useState<number | null>(null);
   const [remoteId, setRemoteId] = useState<string | undefined>();
   const [name, setName] = useState('');

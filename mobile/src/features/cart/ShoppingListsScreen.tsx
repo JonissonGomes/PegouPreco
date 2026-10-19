@@ -36,6 +36,7 @@ import {
   useAppStore,
 } from '@/store/appStore';
 import type {CartItem, ShoppingList} from '@/data/types';
+import {useClearOnBlur} from '@/ui/useClearOnBlur';
 
 if (
   Platform.OS === 'android' &&
@@ -68,6 +69,12 @@ export function ShoppingListsScreen() {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<'all' | 'nfce' | 'list'>('all');
   const [filtersOpen, setFiltersOpen] = useState(false);
+  useClearOnBlur(() => {
+    setQuery('');
+    setFilter('all');
+    setFiltersOpen(false);
+    setSelected(null);
+  });
   const totalSpent = lists.reduce((s, l) => s + l.subtotal, 0);
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();

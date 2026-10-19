@@ -12,6 +12,7 @@ import {isFiscalList, isFiscalLog} from '@/domain/fiscal';
 import {priceLogRepo, useAppStore} from '@/store/appStore';
 import {useWeekdayBuyTip} from '@/features/home/useWeekdayBuyTip';
 import {buyDayPhrase} from '@/domain/homeDashboard';
+import {useClearOnBlur} from '@/ui/useClearOnBlur';
 
 const PERIODS: Array<{id: InsightPeriod; label: string}> = [
   {id: 'week', label: '7 dias'},
@@ -27,6 +28,7 @@ export function InsightsScreen() {
   const [period, setPeriod] = useState<InsightPeriod>('month');
   const auth = useAppStore(s => s.auth);
   const buyTip = useWeekdayBuyTip(lists, products, auth?.token);
+  useClearOnBlur(() => setPeriod('month'));
 
   const board = useMemo(() => {
     const notes = lists.filter(isFiscalList);

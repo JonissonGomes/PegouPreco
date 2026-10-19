@@ -1,8 +1,8 @@
 import React, {useEffect, useRef, useState} from 'react';
 import {
   Animated,
-  Dimensions,
   Keyboard,
+  KeyboardAvoidingView,
   Modal,
   PanResponder,
   Platform,
@@ -10,33 +10,17 @@ import {
   ScrollView,
   StyleSheet,
   View,
-  type KeyboardEvent,
 } from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {colors} from './theme';
 import {useAnimatedSheet} from './useAnimatedSheet';
 
 /**
- * Quanto a folha precisa subir para encostar no teclado.
- * `screenY` no Android às vezes vem pequeno demais e empurrava o formulário
- * até o topo, cortando os botões. A altura reportada limita esse salto.
- * Se a janela já encolheu, a sobreposição fica ~0 e não somamos de novo.
+ * Bottom sheet de formulário.
+ * O deslocamento segue a tela de login: KeyboardAvoidingView com
+ * behavior "padding" e offset 0 no Android. Não somamos a altura do
+ * teclado de novo — isso empurrava a folha até o topo.
  */
-function keyboardOverlap(e: KeyboardEvent): number {
-  const windowH = Dimensions.get('window').height;
-  const {height, screenY} = e.endCoordinates;
-  const reported = Number.isFinite(height) ? Math.max(0, height) : 0;
-  const cap = Math.round(windowH * 0.55);
-  if (!Number.isFinite(screenY) || screenY <= 0) {
-    return Math.min(reported, cap);
-  }
-  const overlap = Math.round(windowH - screenY);
-  if (overlap <= 0) return 0;
-  const bounded = reported > 0 ? Math.min(overlap, reported) : overlap;
-  return Math.min(bounded, cap);
-}
-
-/** Bottom sheet que sobe com o teclado e permite scroll dos campos. */
 export function KeyboardSafeSheet({
   visible,
   onClose,
@@ -51,6 +35,7 @@ export function KeyboardSafeSheet({
   const dragY = useRef(new Animated.Value(0)).current;
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
   const pan = useRef(
     PanResponder.create({
       onMoveShouldSetPanResponder: (_, gesture) =>
@@ -76,42 +61,19 @@ export function KeyboardSafeSheet({
   useEffect(() => {
     if (visible) dragY.setValue(0);
   }, [visible, dragY]);
-  const [keyboardLift, setKeyboardLift] = useState(0);
 
   useEffect(() => {
     if (!visible) {
-      setKeyboardLift(0);
+      setKeyboardOpen(false);
       return;
     }
-    let last: KeyboardEvent | null = null;
-    let timers: ReturnType<typeof setTimeout>[] = [];
-    const apply = () => {
-      if (!last) return;
-      setKeyboardLift(keyboardOverlap(last));
-    };
-    const schedule = (e: KeyboardEvent) => {
-      last = e;
-      apply();
-      // O Android encolhe a janela depois do evento. Medir de novo evita subir duas vezes.
-      timers.forEach(clearTimeout);
-      timers = [setTimeout(apply, 80), setTimeout(apply, 280)];
-    };
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const show = Keyboard.addListener(showEvent, schedule);
-    const frame = Keyboard.addListener('keyboardDidChangeFrame', schedule);
-    const hide = Keyboard.addListener(hideEvent, () => {
-      last = null;
-      timers.forEach(clearTimeout);
-      setKeyboardLift(0);
-    });
-    const dims = Dimensions.addEventListener('change', apply);
+    const show = Keyboard.addListener(showEvent, () => setKeyboardOpen(true));
+    const hide = Keyboard.addListener(hideEvent, () => setKeyboardOpen(false));
     return () => {
-      timers.forEach(clearTimeout);
       show.remove();
-      frame.remove();
       hide.remove();
-      dims.remove();
     };
   }, [visible]);
 
@@ -124,7 +86,10 @@ export function KeyboardSafeSheet({
       animationType="none"
       onRequestClose={onClose}
       statusBarTranslucent>
-      <View style={styles.root}>
+      <KeyboardAvoidingView
+        style={styles.root}
+        behavior="padding"
+        keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top : 0}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose}>
           <Animated.View style={[styles.backdrop, backdropStyle]} />
         </Pressable>
@@ -132,46 +97,40 @@ export function KeyboardSafeSheet({
           style={[
             styles.sheet,
             sheetStyle,
-            {
-              bottom: keyboardLift,
-              paddingBottom: keyboardLift > 0 ? 12 : Math.max(insets.bottom, 12),
-              maxHeight: Math.max(
-                180,
-                Dimensions.get('window').height - keyboardLift - insets.top - 16,
-              ),
-            },
+            {paddingBottom: keyboardOpen ? 12 : Math.max(insets.bottom, 12)},
           ]}>
           <Animated.View style={{transform: [{translateY: dragY}]}}>
-          <View style={styles.handleHit} {...pan.panHandlers}>
-            <View style={styles.handle} />
-          </View>
-          <ScrollView
-            style={styles.scroll}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-            bounces={false}
-            contentContainerStyle={styles.content}>
-            {children}
-          </ScrollView>
+            <View style={styles.handleHit} {...pan.panHandlers}>
+              <View style={styles.handle} />
+            </View>
+            <ScrollView
+              style={styles.scroll}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+              bounces={false}
+              contentContainerStyle={[
+                styles.content,
+                keyboardOpen ? styles.contentOpen : null,
+              ]}>
+              {children}
+            </ScrollView>
           </Animated.View>
         </Animated.View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  root: {flex: 1},
+  root: {flex: 1, justifyContent: 'flex-end'},
   backdrop: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: '#000',
   },
   sheet: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
+    width: '100%',
     maxHeight: '88%',
+    flexShrink: 1,
     backgroundColor: '#fff',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
@@ -191,6 +150,7 @@ const styles = StyleSheet.create({
     borderRadius: 2,
     backgroundColor: colors.border,
   },
-  scroll: {flexGrow: 0},
+  scroll: {flexGrow: 0, flexShrink: 1},
   content: {padding: 16, gap: 8, paddingBottom: 8, flexGrow: 0},
+  contentOpen: {paddingBottom: 24},
 });

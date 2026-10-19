@@ -42,6 +42,7 @@ import {HomeHub, homeShortcutIcons} from '@/features/home/HomeHub';
 import {HomeSpendBoard} from '@/features/home/HomeSpendBoard';
 import {HomeFilterSheet} from '@/features/home/HomeFilterSheet';
 import {HomeCheaperChart} from '@/features/home/HomeCheaperChart';
+import {useClearOnBlur} from '@/ui/useClearOnBlur';
 import {
   cheaperCategories,
   pointsFromLists,
@@ -233,6 +234,13 @@ export function HomeScreen() {
       setGeoAttempted(true);
     }
   }, [permissions.location, discoverNearHome]);
+
+  useClearOnBlur(() => {
+    setPeriod(30);
+    setDashMarket(null);
+    setDashCategory([]);
+    setFiltersOpen(false);
+  });
 
   useFocusEffect(
     useCallback(() => {

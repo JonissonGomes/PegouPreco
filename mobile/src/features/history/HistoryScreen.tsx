@@ -23,6 +23,7 @@ import type {CartItem, ShoppingList} from '@/data/types';
 import {CategoryIcon} from './categoryIcon';
 import {HistoryDetailSheet} from './HistoryDetailSheet';
 import {HistoryFilterSheet} from './HistoryFilterSheet';
+import {useClearOnBlur} from '@/ui/useClearOnBlur';
 
 function parseItems(list: ShoppingList): CartItem[] {
   try {
@@ -58,6 +59,13 @@ export function HistoryScreen() {
   const [category, setCategory] = useState<string[]>([]);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [openList, setOpenList] = useState<ShoppingList | null>(null);
+  useClearOnBlur(() => {
+    setQuery('');
+    setMarket(null);
+    setCategory([]);
+    setFiltersOpen(false);
+    setOpenList(null);
+  });
 
   const catalog = useMemo(
     () =>

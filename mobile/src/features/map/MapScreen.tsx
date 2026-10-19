@@ -21,6 +21,7 @@ import {apiErrorMessage} from '@/data/remote/apiError';
 import {KeyboardSafeSheet} from '@/ui/keyboardSheet';
 import {MarketPinSheet} from '@/ui/MarketPinSheet';
 import {colors, space, spacing} from '@/ui/theme';
+import {useClearOnBlur} from '@/ui/useClearOnBlur';
 import {formatDistanceKm, preferAddress} from '@/domain/marketUi';
 import {friendlyMarketTitle} from '@/domain/marketBrand';
 import {
@@ -308,6 +309,10 @@ export function MapScreen() {
   const [pinIds, setPinIds] = useState<number[] | null>(null);
   const [query, setQuery] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
+  useClearOnBlur(() => {
+    setQuery('');
+    setSearchOpen(false);
+  });
   const [addOpen, setAddOpen] = useState(false);
   const [addName, setAddName] = useState('');
   const [addPoint, setAddPoint] = useState<{lat: number; lng: number} | null>(
@@ -725,7 +730,7 @@ export function MapScreen() {
         }}
         accessibilityLabel="Adicionar mercado aqui">
         <Plus size={20} color={colors.navy} />
-        <Text style={styles.addFabText}>Adicionar aqui</Text>
+        <Text style={styles.addFabText}>Adicionar mercado onde estou</Text>
       </Pressable>
 
       <MarketPinSheet
