@@ -76,7 +76,7 @@ describe('homeInsights', () => {
       },
     ];
     const rows = categorySpendFromCart(cart, products);
-    expect(rows[0].category).toBe('Mercearia');
+    expect(rows[0].category).toBe('Grãos');
     expect(rows[0].total).toBe(40);
   });
 

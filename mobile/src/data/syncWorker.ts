@@ -130,10 +130,9 @@ async function doFullSync(
     const pull = await syncApi.pullSince(session.token, since);
     if (stale()) return {ok: false, message: 'Conta trocada'};
     applyPull(pull);
-    if (collapseLocalReceipts()) useAppStore.getState().refresh();
+    collapseLocalReceipts();
+    useAppStore.getState().refresh();
     await applySharedPrefs(session.token);
-    if (stale()) return {ok: false, message: 'Conta trocada'};
-    await ingestCommunityPrices(session.token);
     if (stale()) return {ok: false, message: 'Conta trocada'};
 
     if (!sessionVerified(session)) {
@@ -458,78 +457,6 @@ async function applySharedPrefs(token: string) {
     });
   } catch {
     /* preferências locais seguem válidas se a rede falhar */
-  }
-}
-
-async function ingestCommunityPrices(token: string) {
-  try {
-    const city = prefs.getLocationPrefs().city.trim();
-    const data = (await syncApi.communityPrices(
-      token,
-      city ? {city} : undefined,
-    )) as {prices?: Record<string, unknown>[]};
-    const rows = data.prices ?? [];
-    const known = new Set(
-      getState()
-        .price_logs.map(l => l.remoteId)
-        .filter((id): id is string => !!id),
-    );
-    for (const row of rows) {
-      const remoteId = String(row.priceLogId ?? '');
-      const productName = String(row.productName ?? '').trim();
-      const nfceKey = row.nfceKey != null ? String(row.nfceKey) : '';
-      if (
-        !remoteId ||
-        known.has(remoteId) ||
-        !productName ||
-        nfceKey.length < 40 ||
-        prefs.getDeletedNfceKeys().includes(nfceKey) ||
-        prefs.getDeletedPriceLogIds().includes(remoteId)
-      ) {
-        continue;
-      }
-      const market = getState().markets.find(
-        m => row.marketId != null && m.remoteId === String(row.marketId),
-      );
-      let marketId = market?.id ?? null;
-      if (marketId == null) {
-        const name = String(row.marketName ?? '').trim();
-        if (name) {
-          const created = marketRepo.resolveOrCreate(name);
-          if (row.marketId != null && !created.remoteId) {
-            created.remoteId = String(row.marketId);
-            created.synced = 1;
-            saveState();
-          }
-          marketId = created.id;
-        }
-      }
-      if (marketId == null) continue;
-      const product = productRepo.resolveOrCreate(productName);
-      priceLogRepo.insert({
-        productId: product.id,
-        marketId,
-        retailPrice: Number(row.retailPrice ?? 0),
-        wholesalePrice: null,
-        minWholesaleQty: null,
-        source: 'nfce',
-        capturedAt: String(row.capturedAt ?? nowIso()),
-        remoteId,
-        nfceKey,
-        confirmScore: 0,
-        rejectScore: 0,
-        trustLevel:
-          (row.trustLevel as 'verified' | 'suspect' | 'hidden') ?? 'verified',
-        lastConfirmedAt: null,
-        contributorId:
-          row.contributorId != null ? String(row.contributorId) : null,
-        updatedAt: String(row.capturedAt ?? nowIso()),
-        synced: 1,
-      });
-      known.add(remoteId);
-    }
-  } catch {
-    /* o feed local continua com o que o pull já trouxe */
   }
 }
 

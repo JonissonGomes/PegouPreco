@@ -21,13 +21,26 @@ import {
   Soup,
   SprayCan,
   Toilet,
+  Wheat,
+  Beer,
+  Droplets,
+  GlassWater,
+  Martini,
   Wine,
 } from 'lucide-react-native';
 import {categoryTone} from './categoryTone';
 
-const ICONS: Record<string, typeof Wine> = {
+const ICONS: Record<string, typeof Beer> = {
   Bebidas: Wine,
   Mercearia: ShoppingBasket,
+  Grãos: Wheat,
+  'Farinhas e açúcar': Wheat,
+  Massas: Soup,
+  'Óleos e azeites': Droplets,
+  Refrigerantes: GlassWater,
+  'Águas e sucos': GlassWater,
+  Cervejas: Beer,
+  Destilados: Martini,
   Laticínios: Milk,
   Açougue: Beef,
   Frutas: Apple,

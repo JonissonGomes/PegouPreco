@@ -110,6 +110,8 @@ export const prefs = {
     return v && v.length ? v : null;
   },
   setAuthJson: (json: string | null) => metaSet('authSession', json ?? ''),
+  getAccountUserId: () => metaGet('accountUserId') || '',
+  setAccountUserId: (userId: string) => metaSet('accountUserId', userId),
   getVotedPriceIds: (): number[] => {
     try {
       const raw = metaGet('votedPriceIds');

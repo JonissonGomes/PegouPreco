@@ -88,6 +88,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const parsed = raw ? (JSON.parse(raw) as AuthSession) : null;
     const auth = parsed && sessionIsLive(parsed.expiresAt) ? parsed : null;
     if (parsed && !auth) prefs.setAuthJson(null);
+    if (auth && !prefs.getAccountUserId()) prefs.setAccountUserId(auth.userId);
     prefs.ensureActiveListConsistency();
     set({
       ready: true,
@@ -139,15 +140,21 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   setAuth: session => {
     const previous = get().auth;
-    const sameUser =
-      !!session && !!previous && previous.userId === session.userId;
-    if (!sameUser && (previous || session)) bumpSyncGeneration();
-    if (previous && !sameUser) prefs.forgetAccount();
+    const storedUser = prefs.getAccountUserId();
+    const switching =
+      !!session && !!storedUser && storedUser !== session.userId;
+    if (switching || (!!previous && previous.userId !== session?.userId)) {
+      bumpSyncGeneration();
+    }
+    if (switching) prefs.forgetAccount();
+    if (session) prefs.setAccountUserId(session.userId);
     prefs.setAuthJson(session ? JSON.stringify(session) : null);
     set({auth: session});
     get().refresh();
-    if (session?.token && !sameUser) {
-      prefs.setLastSyncAt(new Date(0).toISOString());
+    if (session?.token) {
+      if (!storedUser || switching) {
+        prefs.setLastSyncAt(new Date(0).toISOString());
+      }
       // lazy — evita ciclo com syncWorker
       void import('@/data/syncWorker').then(m => m.requestAutoSync('login'));
     }

@@ -15,6 +15,20 @@ import {haversineKm, nextTokenExpiry, resolveRole, sha256, tokenStillValid} from
 
 type MemMap = Record<string, Record<string, unknown>>;
 
+type DeferredJev =
+  | {
+      kind: 'price';
+      logId: string;
+      productId: string | null;
+      marketId: string | null;
+      retailPrice: number;
+      source: string;
+      userId: string;
+      confirmScore: number;
+      rejectScore: number;
+    }
+  | {kind: 'category'; productId: string};
+
 export class DataStore {
   readonly mode: 'memory' | 'mongo';
   private readonly db?: Db;
@@ -37,6 +51,7 @@ export class DataStore {
   private readonly _memMarketSuggestions: MemMap = {};
   private readonly _memTombstones: MemMap = {};
   private _jev?: JevClient;
+  private _jevTail: Promise<void> = Promise.resolve();
   private readonly stats: MarketStats;
 
   private constructor(mode: 'memory' | 'mongo', db?: Db, client?: MongoClient) {
@@ -70,6 +85,53 @@ export class DataStore {
 
   attachJev(client: JevClient): void {
     this._jev = client;
+  }
+
+  private _scheduleJev(jobs: DeferredJev[]): void {
+    if (!jobs.length || !this._jev?.enabled) return;
+    this._jevTail = this._jevTail
+      .catch(() => undefined)
+      .then(() => this._runDeferredJev(jobs));
+  }
+
+  private async _runDeferredJev(jobs: DeferredJev[]): Promise<void> {
+    for (const job of jobs) {
+      try {
+        if (job.kind === 'category') {
+          await this._ensureProductCategory(job.productId);
+          continue;
+        }
+        const classified = await this._classifyWithJev(job);
+        let trustLevel = 'suspect';
+        let confirmScore = job.confirmScore;
+        if (classified.action === 'reject') {
+          trustLevel = 'hidden';
+        } else if (classified.action === 'accept' && job.source === 'nfce') {
+          trustLevel = this._computeTrust({
+            confirmScore: confirmScore + 2,
+            rejectScore: job.rejectScore,
+            lastConfirmedAt: new Date(),
+          });
+          confirmScore += 2;
+        }
+        const patch = {
+          trustLevel,
+          confirmScore,
+          jevAction: classified.action,
+          jevRisk: classified.risk,
+          lastConfirmedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        if (this.mode === 'memory') {
+          const log = this._memLogs[job.logId];
+          if (log) Object.assign(log, patch);
+        } else {
+          await this.col('price_logs').updateOne({id: job.logId}, {$set: patch});
+        }
+      } catch (e) {
+        console.log(`Jev background: ${e}`);
+      }
+    }
   }
 
   async userVoteWeight(userId: string): Promise<number> {
@@ -350,6 +412,10 @@ export class DataStore {
     await this.stats.backfillFromLogs(() => this._logsSinceWeek());
     const weekly = await this.stats.weeklyVisitorSets();
     await this._mergeNoteVisitors(weekly);
+    const reviewIds = markets
+      .map(market => String(market.id ?? ''))
+      .filter(Boolean);
+    const reviewStats = await this._reviewStatsFor(reviewIds);
     const out: Record<string, unknown>[] = [];
     for (const m of markets) {
       const id = m.id as string | undefined;
@@ -364,7 +430,7 @@ export class DataStore {
         );
         if (dist > radiusKm!) continue;
       }
-      const agg = await this._aggregateReviews(id);
+      const agg = reviewStats.get(id) ?? {avg: 0, count: 0};
       out.push({
         ...m,
         avgRating: agg.avg,
@@ -383,7 +449,7 @@ export class DataStore {
     for (const row of unlocated) {
       const id = String(row.id ?? '');
       if (!id) continue;
-      unlocatedReviews.set(id, await this._aggregateReviews(id));
+      unlocatedReviews.set(id, reviewStats.get(id) ?? {avg: 0, count: 0});
     }
     graftUnlocated(out, unlocated, weekly, unlocatedReviews);
     rollupPlaceStats(out, weekly);
@@ -438,13 +504,14 @@ export class DataStore {
     const ids = mates.map(row => String(row.id ?? '')).filter(Boolean);
     const weekly = await this.stats.weeklyVisitorSets();
     await this._mergeNoteVisitors(weekly);
+    const reviewStats = await this._reviewStatsFor(ids);
     const users = new Set<string>();
     let weighted = 0;
     let ratings = 0;
     for (const id of ids) {
       for (const user of weekly.get(id) ?? []) users.add(user);
-      const agg = await this._aggregateReviews(id);
-      if (agg.count > 0) {
+      const agg = reviewStats.get(id);
+      if (agg && agg.count > 0) {
         weighted += agg.avg * agg.count;
         ratings += agg.count;
       }
@@ -561,16 +628,7 @@ export class DataStore {
     }
     near.sort((a, b) => a.dist - b.dist);
     const obvious = near.find(item => item.localSame);
-    if (obvious) return {id: obvious.id, name: obvious.name};
-    const closest = near[0];
-    if (!closest || !this._jev) return null;
-    const same = await this._jev.samePlace({
-      nameA: name,
-      nameB: closest.name,
-      distanceM: closest.dist * 1000,
-      localSame: false,
-    });
-    return same ? {id: closest.id, name: closest.name} : null;
+    return obvious ? {id: obvious.id, name: obvious.name} : null;
   }
 
   /** Quem cadastrou nota entra na contagem do pin, mesmo se a visita antiga usou id local. */
@@ -681,31 +739,67 @@ export class DataStore {
     for (const m of markets) m.featured = featured.has(String(m.id));
   }
 
+  private async _reviewStatsFor(
+    marketIds: string[],
+  ): Promise<Map<string, {avg: number; count: number}>> {
+    const out = new Map<string, {avg: number; count: number}>();
+    if (!marketIds.length) return out;
+    if (this.mode === 'memory') {
+      const wanted = new Set(marketIds);
+      const bucket = new Map<string, {weighted: number; weight: number; count: number}>();
+      for (const review of Object.values(this._memReviews)) {
+        const marketId = String(review.marketId ?? '');
+        if (!wanted.has(marketId)) continue;
+        const weight = Number(review.weight ?? 1);
+        const row = bucket.get(marketId) ?? {weighted: 0, weight: 0, count: 0};
+        row.weighted += Number(review.stars) * weight;
+        row.weight += weight;
+        row.count += 1;
+        bucket.set(marketId, row);
+      }
+      for (const [id, row] of bucket) {
+        out.set(id, {
+          avg: row.weight === 0 ? 0 : row.weighted / row.weight,
+          count: row.count,
+        });
+      }
+      return out;
+    }
+    const rows = (await this.col('market_reviews')
+      .aggregate([
+        {$match: {marketId: {$in: marketIds}}},
+        {
+          $group: {
+            _id: '$marketId',
+            weighted: {
+              $sum: {
+                $multiply: [
+                  {$ifNull: ['$stars', 0]},
+                  {$ifNull: ['$weight', 1]},
+                ],
+              },
+            },
+            weight: {$sum: {$ifNull: ['$weight', 1]}},
+            count: {$sum: 1},
+          },
+        },
+      ])
+      .toArray()) as {_id: string; weighted: number; weight: number; count: number}[];
+    for (const row of rows) {
+      const weight = Number(row.weight);
+      out.set(String(row._id), {
+        avg: weight === 0 ? 0 : Number(row.weighted) / weight,
+        count: Number(row.count),
+      });
+    }
+    return out;
+  }
+
   private async _aggregateReviews(
     marketId: string,
   ): Promise<{avg: number; count: number}> {
-    let reviews: Record<string, unknown>[];
-    if (this.mode === 'memory') {
-      reviews = Object.values(this._memReviews).filter(
-        (r) => r.marketId === marketId,
-      );
-    } else {
-      reviews = (await this.col('market_reviews')
-        .find({marketId})
-        .toArray()) as Record<string, unknown>[];
-    }
-    if (reviews.length === 0) return {avg: 0, count: 0};
-    let sum = 0;
-    let weightSum = 0;
-    for (const r of reviews) {
-      const w = Number(r.weight ?? 1);
-      sum += Number(r.stars) * w;
-      weightSum += w;
-    }
-    return {
-      avg: weightSum === 0 ? 0 : sum / weightSum,
-      count: reviews.length,
-    };
+    const stats = await this._reviewStatsFor([marketId]);
+    return stats.get(marketId) ?? {avg: 0, count: 0};
   }
 
   private async _computePriceLevel(marketId: string): Promise<string> {
@@ -1086,6 +1180,13 @@ export class DataStore {
     const priceLogIdMap: Record<string, string> = {};
     const shoppingListIdMap: Record<string, string> = {};
     const categoryFixes: Record<string, string> = {};
+    const jevJobs: DeferredJev[] = [];
+    const categoryQueued = new Set<string>();
+    const queueCategory = (productId: string | null) => {
+      if (!productId || categoryQueued.has(productId)) return;
+      categoryQueued.add(productId);
+      jevJobs.push({kind: 'category', productId});
+    };
     await this._forgetPushed(userId, body);
 
     for (const raw of (body.markets as unknown[] | undefined) ?? []) {
@@ -1156,8 +1257,7 @@ export class DataStore {
         matchKeys: ['name'],
       });
       productIdMap[String(p.localId)] = remoteId;
-      const picked = await this._ensureProductCategory(remoteId);
-      if (picked) categoryFixes[String(p.localId)] = picked;
+      queueCategory(remoteId);
     }
 
     for (const raw of (body.priceLogs as unknown[] | undefined) ?? []) {
@@ -1166,10 +1266,7 @@ export class DataStore {
         productIdMap[String(l.productLocalId)] ??
         (l.productRemoteId != null ? String(l.productRemoteId) : null) ??
         (await this._resolveProductRemote(l.productLocalId));
-      if (productRemote) {
-        const picked = await this._ensureProductCategory(productRemote);
-        if (picked) categoryFixes[String(l.productLocalId)] = picked;
-      }
+      if (productRemote) queueCategory(productRemote);
       const marketRemote =
         (l.marketRemoteId != null ? String(l.marketRemoteId) : null) ??
         (l.marketLocalId == null
@@ -1179,29 +1276,9 @@ export class DataStore {
       const source = String(l.source ?? 'label');
       const nfceKey = String(l.nfceKey ?? '');
       if (source !== 'nfce' || !/^\d{44}$/.test(nfceKey)) continue;
-      let trustLevel = String(l.trustLevel ?? 'suspect');
+      let trustLevel = 'suspect';
       let confirmScore = Number(l.confirmScore ?? 0);
       if (confirmScore < 1) confirmScore = 1;
-
-      const classified = await this._classifyWithJev({
-        productId: productRemote,
-        marketId: marketRemote,
-        retailPrice: Number(l.retailPrice ?? 0),
-        source,
-        userId,
-      });
-      if (classified.action === 'reject') {
-        trustLevel = 'hidden';
-      } else if (classified.action === 'accept' && source === 'nfce') {
-        trustLevel = this._computeTrust({
-          confirmScore: confirmScore + 2,
-          rejectScore: Number(l.rejectScore ?? 0),
-          lastConfirmedAt: new Date(),
-        });
-        confirmScore = confirmScore + 2;
-      } else {
-        trustLevel = 'suspect';
-      }
 
       const already = await this._findNfceLog(nfceKey, productRemote);
       if (already) {
@@ -1226,14 +1303,25 @@ export class DataStore {
           rejectScore: l.rejectScore ?? 0,
           trustLevel,
           lastConfirmedAt: l.lastConfirmedAt,
-          jevAction: classified.action,
-          jevRisk: classified.risk,
+          jevAction: 'pending',
+          jevRisk: null,
           updatedAt: l.updatedAt,
           contributorId: userId,
         },
         matchKeys: [],
       });
       priceLogIdMap[String(l.localId)] = remoteId;
+      jevJobs.push({
+        kind: 'price',
+        logId: remoteId,
+        productId: productRemote,
+        marketId: marketRemote,
+        retailPrice: Number(l.retailPrice ?? 0),
+        source,
+        userId,
+        confirmScore,
+        rejectScore: Number(l.rejectScore ?? 0),
+      });
       await this.stats.recordVisit(
         marketRemote,
         userId,
@@ -1291,6 +1379,7 @@ export class DataStore {
       );
     }
 
+    this._scheduleJev(jevJobs);
     return {
       productIdMap,
       marketIdMap,
@@ -1515,9 +1604,12 @@ export class DataStore {
     if (!markets.length) return;
     const weekly = await this.stats.weeklyVisitorSets();
     await this._mergeNoteVisitors(weekly);
+    const reviewStats = await this._reviewStatsFor(
+      markets.map(market => String(market.id ?? '')).filter(Boolean),
+    );
     for (const market of markets) {
       const id = String(market.id ?? '');
-      const agg = await this._aggregateReviews(id);
+      const agg = reviewStats.get(id) ?? {avg: 0, count: 0};
       market.avgRating = agg.avg;
       market.ratingsCount = agg.count;
       market.weeklyVisitors = weekly.get(id)?.size ?? 0;
@@ -1899,70 +1991,76 @@ export class DataStore {
     productName?: string | null;
     city?: string | null;
   }): Promise<Record<string, unknown>[]> {
+    const usable = (log: Record<string, unknown>) => {
+      const trust = String(log.trustLevel ?? 'suspect');
+      if (trust === 'hidden') return false;
+      const nfce =
+        String(log.source ?? '') === 'nfce' &&
+        /^\d{44}$/.test(String(log.nfceKey ?? ''));
+      return nfce || trust === 'verified';
+    };
     const logs =
       this.mode === 'memory'
-        ? Object.values(this._memLogs)
-        : ((await this.col('price_logs').find().toArray()) as Record<
-            string,
-            unknown
-          >[]);
+        ? Object.values(this._memLogs).filter(usable)
+        : ((await this.col('price_logs')
+            .find({
+              trustLevel: {$ne: 'hidden'},
+              $or: [
+                {source: 'nfce', nfceKey: {$regex: '^\\d{44}$'}},
+                {trustLevel: 'verified'},
+              ],
+            })
+            .toArray()) as Record<string, unknown>[]);
+    const productIds = [
+      ...new Set(logs.map(log => String(log.productId ?? '')).filter(Boolean)),
+    ];
+    const marketIds = [
+      ...new Set(logs.map(log => String(log.marketId ?? '')).filter(Boolean)),
+    ];
+    const productById = new Map<string, Record<string, unknown>>();
+    const marketById = new Map<string, Record<string, unknown>>();
+    if (this.mode === 'memory') {
+      for (const id of productIds) {
+        const product = this._memProducts[id];
+        if (product) productById.set(id, product);
+      }
+      for (const id of marketIds) {
+        const market = this._memMarkets[id];
+        if (market) marketById.set(id, market);
+      }
+    } else {
+      if (productIds.length) {
+        const products = (await this.col('products')
+          .find({id: {$in: productIds}})
+          .toArray()) as Record<string, unknown>[];
+        for (const product of products) productById.set(String(product.id), product);
+      }
+      if (marketIds.length) {
+        const markets = (await this.col('markets')
+          .find({id: {$in: marketIds}})
+          .toArray()) as Record<string, unknown>[];
+        for (const market of markets) marketById.set(String(market.id), market);
+      }
+    }
+    const needle = args.productName?.trim().toLowerCase() ?? '';
     const out: Record<string, unknown>[] = [];
-    for (const l of logs) {
-      const trust = String(l.trustLevel ?? 'suspect');
-      if (trust === 'hidden') continue;
-      const nfce = String(l.source ?? '') === 'nfce' && /^\d{44}$/.test(String(l.nfceKey ?? ''));
-      const verified = trust === 'verified';
-      if (!nfce && !verified) continue;
-      if (args.productName) {
-        const needle = args.productName.toLowerCase();
-        const pid = l.productId as string | undefined;
-        let p: Record<string, unknown> | null | undefined;
-        if (this.mode === 'memory') {
-          p = pid ? this._memProducts[pid] : undefined;
-        } else if (pid) {
-          p = (await this.col('products').findOne({id: pid})) as Record<
-            string,
-            unknown
-          > | null;
-        }
-        const pname = String(p?.name ?? '').toLowerCase();
-        if (!pname.includes(needle)) continue;
-      }
-      let productName = '';
-      let marketName = '';
-      const pid = l.productId != null ? String(l.productId) : '';
-      const mid = l.marketId != null ? String(l.marketId) : '';
-      if (this.mode === 'memory') {
-        productName = String(this._memProducts[pid]?.name ?? '');
-        marketName = String(this._memMarkets[mid]?.name ?? '');
-      } else {
-        const product = pid
-          ? ((await this.col('products').findOne({id: pid})) as Record<
-              string,
-              unknown
-            > | null)
-          : null;
-        const market = mid
-          ? ((await this.col('markets').findOne({id: mid})) as Record<
-              string,
-              unknown
-            > | null)
-          : null;
-        productName = String(product?.name ?? '');
-        marketName = String(market?.name ?? '');
-      }
+    for (const log of logs) {
+      const productName = String(
+        productById.get(String(log.productId ?? ''))?.name ?? '',
+      );
+      if (needle && !productName.toLowerCase().includes(needle)) continue;
       out.push({
-        priceLogId: l.id,
-        productId: l.productId,
+        priceLogId: log.id,
+        productId: log.productId,
         productName,
-        marketId: l.marketId,
-        marketName,
-        retailPrice: l.retailPrice,
-        trustLevel: trust,
-        source: l.source ?? 'nfce',
-        nfceKey: l.nfceKey ?? null,
-        capturedAt: l.capturedAt,
-        contributorId: l.contributorId ?? null,
+        marketId: log.marketId,
+        marketName: String(marketById.get(String(log.marketId ?? ''))?.name ?? ''),
+        retailPrice: log.retailPrice,
+        trustLevel: log.trustLevel ?? 'suspect',
+        source: log.source ?? 'nfce',
+        nfceKey: log.nfceKey ?? null,
+        capturedAt: log.capturedAt,
+        contributorId: log.contributorId ?? null,
         city: args.city,
       });
     }

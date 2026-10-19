@@ -1,0 +1,40 @@
+import {guessCategory} from '../src/domain/productCategory';
+
+describe('guessCategory', () => {
+  it('lê abreviações da nota', () => {
+    expect(guessCategory('ARR T1 CAMIL 5KG')).toBe('Grãos');
+    expect(guessCategory('FEIJ PRETO KICALDO 1KG')).toBe('Grãos');
+    expect(guessCategory('MAC ESPAGUETE RENATA N8 500G')).toBe('Massas');
+    expect(guessCategory('OLEO DE SOJA LIZA 900ML')).toBe('Óleos e azeites');
+    expect(guessCategory('ACUCAR REF UNIAO 1KG')).toBe('Farinhas e açúcar');
+    expect(guessCategory('SAL REFINADO CISNE 1KG')).toBe('Farinhas e açúcar');
+    expect(guessCategory('MOLHO TOM ELEFANTE SACH 300G')).toBe('Molhos e temperos');
+    expect(guessCategory('ATUM COQUEIRO RALADO')).toBe('Enlatados');
+    expect(guessCategory('CAFE PILAO TRAD POUCH 500G')).toBe('Café e matinais');
+    expect(guessCategory('BISC RECH BONNO CHOCOLATE 126G')).toBe('Biscoitos e doces');
+    expect(guessCategory('SALG CHEETOS REQUEIJAO')).toBe('Salgadinhos');
+    expect(guessCategory('LEITE UHT INTEGRAL NINHO 1L')).toBe('Laticínios');
+    expect(guessCategory('CR LEITE MOCA TP')).toBe('Laticínios');
+    expect(guessCategory('QUEIJO MUSSARELA FAT')).toBe('Frios');
+    expect(guessCategory('PRESUNTO COZIDO SADIA KG')).toBe('Frios');
+    expect(guessCategory('HAMBURGUER PERDIGAO BOV 56G')).toBe('Congelados');
+    expect(guessCategory('LASANHA SADIA BOLOGNESA')).toBe('Congelados');
+    expect(guessCategory('MASSA LASANHA BARILLA')).toBe('Massas');
+    expect(guessCategory('CARNE BOV CONTRA FILE KG')).toBe('Açougue');
+    expect(guessCategory('LING CALABRESA PERDIGAO')).toBe('Açougue');
+    expect(guessCategory('FILLE DE TILAPIA CONG 800G')).toBe('Peixaria');
+    expect(guessCategory('BANANA PRATA KG')).toBe('Frutas');
+    expect(guessCategory('TOMATE DEMORAES KG')).toBe('Verduras');
+    expect(guessCategory('REFRIGERANTE COCA COLA 2L')).toBe('Refrigerantes');
+    expect(guessCategory('AGUA MIN CRYSTAL S/GAS 500ML')).toBe('Águas e sucos');
+    expect(guessCategory('CERV HEINEKEN LT 350ML')).toBe('Cervejas');
+    expect(guessCategory('GIN TANQUERAY 750ML')).toBe('Destilados');
+    expect(guessCategory('SHAMP HEAD SHOULDERS 200ML')).toBe('Higiene');
+    expect(guessCategory('SAB LUX BUQUE DE ROSAS 85G')).toBe('Higiene');
+    expect(guessCategory('DET YPE NEUTRO 500ML')).toBe('Limpeza');
+    expect(guessCategory('SABAO EM PO OMO')).toBe('Limpeza');
+    expect(guessCategory('FRALDA PAMPERS PANTS M')).toBe('Bebê');
+    expect(guessCategory('PAPEL TOALHA SNOB C/2')).toBe('Descartáveis');
+    expect(guessCategory('MACA XAGUACU KG')).toBe('Frutas');
+  });
+});
