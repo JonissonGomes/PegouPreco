@@ -258,4 +258,37 @@ export class JevClient {
       return {...result, action: 'quarantine', fallback: true};
     });
   }
+
+  /**
+   * Qual prateleira vale mais a pena neste dia da semana.
+   * Sem chave, fica a categoria já mais barata no histórico local.
+   */
+  async suggestWeekdayBuy(args: {
+    weekday: string;
+    categories: {name: string; todayAvg: number; usualAvg: number}[];
+  }): Promise<string | null> {
+    const local = args.categories[0]?.name ?? null;
+    if (!this.enabled || args.categories.length === 0) return local;
+    const criteria: Record<string, string> = {};
+    for (const item of args.categories) {
+      criteria[item.name] =
+        `Shelf “${item.name}” averages R$ ${item.todayAvg.toFixed(2)} on this weekday versus R$ ${item.usualAvg.toFixed(2)} overall. Prefer the relatively cheaper one today.`;
+    }
+    const decided = await this.decide(
+      {weekday: args.weekday, currency: 'BRL'},
+      {
+        action: {
+          type: 'choice',
+          instructions:
+            'Pick the one Brazilian supermarket shelf that is the best buy on this weekday, using the price comparison. Do not invent a category outside the list.',
+          criteria,
+        },
+      },
+    );
+    if (decided.fallback) return local;
+    const picked = args.categories.find(
+      item => foldCategory(item.name) === foldCategory(decided.action),
+    );
+    return picked?.name ?? local;
+  }
 }

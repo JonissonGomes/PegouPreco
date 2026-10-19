@@ -170,6 +170,16 @@ export const syncApi = {
     client
       .post('/sync/push', payload, {headers: auth(token)})
       .then(r => r.data),
+  weekdayBuy: (
+    token: string,
+    body: {
+      weekday: string;
+      categories: {name: string; todayAvg: number; usualAvg: number}[];
+    },
+  ) =>
+    client
+      .post('/insights/weekday', body, {headers: auth(token)})
+      .then(r => r.data as {category?: string | null}),
   pullSince: (token: string, since: string) =>
     client
       .get('/sync/pull', {params: {since}, headers: auth(token)})

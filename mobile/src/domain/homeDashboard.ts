@@ -10,6 +10,35 @@ import type {PriceLog, Product, ShoppingList} from '@/data/types';
 export type HomePeriodDays = 7 | 30 | 90;
 export type SpendSpan = 'week' | 'month' | 'quarter';
 
+function two(n: number) {
+  return String(n).padStart(2, '0');
+}
+
+function dayMonth(ms: number) {
+  const date = new Date(ms);
+  return `${two(date.getDate())}/${two(date.getMonth() + 1)}`;
+}
+
+/** Texto do centro do anel: semana, mês ou trimestre. */
+export function spendSpanLabel(
+  anchor: Date,
+  span: SpendSpan,
+  now = Date.now(),
+): string {
+  if (span === 'month') {
+    const name = anchor.toLocaleDateString('pt-BR', {month: 'long'});
+    return name.charAt(0).toUpperCase() + name.slice(1);
+  }
+  if (span === 'quarter') {
+    const startMonth = Math.floor(anchor.getMonth() / 3) * 3;
+    const start = new Date(anchor.getFullYear(), startMonth, 1).getTime();
+    const end = new Date(anchor.getFullYear(), startMonth + 3, 0).getTime();
+    return `${dayMonth(start)} - ${dayMonth(end)}`;
+  }
+  const range = calendarRange(anchor, 'week', now);
+  return `${dayMonth(range.start)} - ${dayMonth(range.end - 1)}`;
+}
+
 export function calendarRange(
   anchor: Date,
   span: SpendSpan,
@@ -166,29 +195,108 @@ export function buildHomeDash(
   };
 }
 
+function monthBuckets(lists: ShoppingList[], startMs: number, endMs: number) {
+  const buckets: {label: string; total: number; from: number; to: number}[] = [];
+  const cursor = new Date(startMs);
+  cursor.setDate(1);
+  cursor.setHours(0, 0, 0, 0);
+  while (cursor.getTime() < endMs && buckets.length < 8) {
+    const from = cursor.getTime();
+    const next = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+    const label = cursor
+      .toLocaleDateString('pt-BR', {month: 'short'})
+      .replace('.', '');
+    buckets.push({label, total: 0, from, to: next.getTime()});
+    cursor.setMonth(cursor.getMonth() + 1);
+  }
+  for (const list of lists) {
+    const at = new Date(list.finishedAt).getTime();
+    const bucket = buckets.find(item => at >= item.from && at < item.to);
+    if (bucket) bucket.total += list.subtotal;
+  }
+  return buckets.map(item => ({
+    label: item.label,
+    total: Number(item.total.toFixed(2)),
+  }));
+}
+
 function spendTrend(
   lists: ShoppingList[],
-  periodDays: number,
+  _periodDays: number,
   now: number,
   range?: {start: number; end: number},
 ) {
-  const span = range ? range.end - range.start : periodDays * 86400000;
-  const buckets = span <= 10 * 86400000 ? 7 : span <= 40 * 86400000 ? 4 : 6;
+  const start = range?.start ?? now - _periodDays * 86400000;
+  const end = range?.end ?? now + 1;
+  const span = Math.max(end - start, 1);
+  if (span > 45 * 86400000) return monthBuckets(lists, start, end);
+
+  const buckets = span <= 10 * 86400000 ? 7 : 4;
   const size = span / buckets;
-  const start = range?.start ?? now - span;
   const totals = Array.from({length: buckets}, () => 0);
   for (const list of lists) {
-    const t = new Date(list.finishedAt).getTime();
-    if (!Number.isFinite(t)) continue;
-    const index = Math.min(buckets - 1, Math.max(0, Math.floor((t - start) / size)));
+    const at = new Date(list.finishedAt).getTime();
+    if (!Number.isFinite(at) || at < start || at >= end) continue;
+    const index = Math.min(buckets - 1, Math.max(0, Math.floor((at - start) / size)));
     totals[index] += list.subtotal;
   }
   return totals.map((total, index) => {
     const at = new Date(start + size * index + size / 2);
     const label =
-      periodDays <= 7
+      span <= 10 * 86400000
         ? at.toLocaleDateString('pt-BR', {weekday: 'narrow'})
-        : at.toLocaleDateString('pt-BR', {month: 'short'}).replace('.', '');
+        : dayMonth(at.getTime());
     return {label, total: Number(total.toFixed(2))};
   });
+}
+
+export type WeekdayCandidate = {
+  category: string;
+  todayAvg: number;
+  usualAvg: number;
+};
+
+/** Categoria relativamente mais barata no dia da semana, com base nas notas. */
+export function weekdayBuyCandidates(
+  lists: ShoppingList[],
+  products: Product[],
+  now = new Date(),
+): WeekdayCandidate[] {
+  const day = now.getDay();
+  const stats = new Map<
+    string,
+    {all: number; allN: number; today: number; todayN: number}
+  >();
+  for (const list of lists.filter(isFiscalList)) {
+    const at = new Date(list.finishedAt);
+    if (Number.isNaN(at.getTime())) continue;
+    const onDay = at.getDay() === day;
+    for (const row of rowsOf(list)) {
+      const category = rowCategory(row, products);
+      if (!category || category === 'Outros') continue;
+      const price = Number(row.retailPrice ?? 0);
+      if (!(price > 0)) continue;
+      const current = stats.get(category) ?? {all: 0, allN: 0, today: 0, todayN: 0};
+      current.all += price;
+      current.allN += 1;
+      if (onDay) {
+        current.today += price;
+        current.todayN += 1;
+      }
+      stats.set(category, current);
+    }
+  }
+  const ranked: WeekdayCandidate[] = [];
+  for (const [category, stat] of stats) {
+    if (stat.todayN < 1) continue;
+    ranked.push({
+      category,
+      todayAvg: Number((stat.today / stat.todayN).toFixed(2)),
+      usualAvg: Number((stat.all / stat.allN).toFixed(2)),
+    });
+  }
+  ranked.sort(
+    (a, b) => a.todayAvg / a.usualAvg - b.todayAvg / b.usualAvg,
+  );
+  return ranked.slice(0, 6);
 }

@@ -83,19 +83,35 @@ export function KeyboardSafeSheet({
       setKeyboardLift(0);
       return;
     }
+    let last: KeyboardEvent | null = null;
+    let timers: ReturnType<typeof setTimeout>[] = [];
+    const apply = () => {
+      if (!last) return;
+      setKeyboardLift(keyboardOverlap(last));
+    };
+    const schedule = (e: KeyboardEvent) => {
+      last = e;
+      apply();
+      // O Android encolhe a janela depois do evento. Medir de novo evita subir duas vezes.
+      timers.forEach(clearTimeout);
+      timers = [setTimeout(apply, 80), setTimeout(apply, 280)];
+    };
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const show = Keyboard.addListener(showEvent, e => {
-      setKeyboardLift(keyboardOverlap(e));
+    const show = Keyboard.addListener(showEvent, schedule);
+    const frame = Keyboard.addListener('keyboardDidChangeFrame', schedule);
+    const hide = Keyboard.addListener(hideEvent, () => {
+      last = null;
+      timers.forEach(clearTimeout);
+      setKeyboardLift(0);
     });
-    const frame = Keyboard.addListener('keyboardDidChangeFrame', e => {
-      setKeyboardLift(keyboardOverlap(e));
-    });
-    const hide = Keyboard.addListener(hideEvent, () => setKeyboardLift(0));
+    const dims = Dimensions.addEventListener('change', apply);
     return () => {
+      timers.forEach(clearTimeout);
       show.remove();
       frame.remove();
       hide.remove();
+      dims.remove();
     };
   }, [visible]);
 

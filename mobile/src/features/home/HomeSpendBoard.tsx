@@ -5,7 +5,7 @@ import {formatBrl} from '@/domain/money';
 import type {HomeDash, HomePeriodDays} from '@/domain/homeDashboard';
 import {Reveal, useDraw} from '@/ui/reveal';
 import {palette} from '@/ui/primaryColors';
-import {categorySliceColor} from '@/features/history/categoryTone';
+import {heatColor} from '@/features/history/categoryTone';
 import {colors, space} from '@/ui/theme';
 
 const PERIOD_LABEL: Record<HomePeriodDays, string> = {
@@ -20,17 +20,18 @@ export function HomeSpendBoard({
   play = 0,
   onPress,
   onOpenCategory,
+  buyTip,
 }: {
   dash: HomeDash;
   period: HomePeriodDays;
   play?: number;
   onPress?: () => void;
   onOpenCategory?: (category: string) => void;
+  buyTip?: string | null;
 }) {
   const slices = dash.categories.slice(0, 5);
   const total = slices.reduce((sum, item) => sum + item.total, 0) || dash.spent || 1;
   const lead = slices[0];
-  const leadPct = lead ? Math.round((lead.total / total) * 100) : 0;
   const trendMax = Math.max(...dash.trend.map(point => point.total), 1);
   const draw = useDraw(160, 900, play);
 
@@ -47,6 +48,13 @@ export function HomeSpendBoard({
               <Text style={styles.periodText}>{PERIOD_LABEL[period]}</Text>
             </View>
           </View>
+          {buyTip ? (
+            <View style={styles.tipPill}>
+              <Text style={styles.tipText} numberOfLines={2}>
+                Ótimo dia para comprar {buyTip}
+              </Text>
+            </View>
+          ) : null}
           <View style={styles.heroRow}>
             <View style={styles.heroCopy}>
               <Text style={styles.big}>{formatBrl(dash.spent)}</Text>
@@ -54,14 +62,14 @@ export function HomeSpendBoard({
                 {dash.purchaseCount} compra{dash.purchaseCount === 1 ? '' : 's'} no período
               </Text>
             </View>
-            <MiniRing
-              play={play}
-              ratio={
-                dash.spent + dash.savings > 0
-                  ? dash.savings / (dash.spent + dash.savings)
-                  : 0
-              }
-            />
+            {lead ? (
+              <View style={styles.ringWrap}>
+                <MiniRing play={play} ratio={lead.total / total} />
+                <Text style={styles.ringCaption} numberOfLines={1}>
+                  {lead.category}
+                </Text>
+              </View>
+            ) : null}
           </View>
           <View style={styles.tiles}>
             <View style={[styles.tile, {backgroundColor: palette.navySoft}]}>
@@ -108,11 +116,11 @@ export function HomeSpendBoard({
               <Pressable onPress={onPress} disabled={!onPress}>
                 <CategoryDonut
                   play={play}
-                  slices={slices.map(item => ({
+                  slices={slices.map((item, index) => ({
                     total: item.total,
-                    color: categorySliceColor(item.category),
+                    color: heatColor(index, slices.length),
                   }))}
-                  center={`${leadPct}%`}
+                  center={formatBrl(dash.spent)}
                 />
               </Pressable>
               <View style={styles.legend}>
@@ -124,7 +132,10 @@ export function HomeSpendBoard({
                     <View
                       style={[
                         styles.dot,
-                        {backgroundColor: categorySliceColor(item.category)},
+                        {backgroundColor: heatColor(
+                          slices.findIndex(slice => slice.category === item.category),
+                          slices.length,
+                        )},
                       ]}
                     />
                     <Text style={styles.legendName} numberOfLines={1}>
@@ -341,6 +352,15 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   periodText: {fontSize: 12, fontWeight: '800', color: colors.navy},
+  tipPill: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#FFF6D8',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    maxWidth: '100%',
+  },
+  tipText: {fontSize: 12, fontWeight: '800', color: colors.navy},
   heroRow: {flexDirection: 'row', alignItems: 'center', gap: 12},
   heroCopy: {flex: 1, gap: 4},
   big: {fontSize: 32, fontWeight: '900', color: colors.navy},
@@ -353,9 +373,18 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 8,
     gap: 2,
+    alignItems: 'center',
   },
-  tileValue: {fontSize: 13, fontWeight: '900', color: colors.navy},
-  tileLabel: {fontSize: 11, fontWeight: '700', color: colors.muted},
+  tileValue: {fontSize: 13, fontWeight: '900', color: colors.navy, textAlign: 'center'},
+  tileLabel: {fontSize: 11, fontWeight: '700', color: colors.muted, textAlign: 'center'},
+  ringWrap: {alignItems: 'center', width: 92},
+  ringCaption: {
+    marginTop: 2,
+    fontSize: 11,
+    fontWeight: '800',
+    color: colors.navy,
+    textAlign: 'center',
+  },
   barEnds: {flexDirection: 'row', justifyContent: 'space-between'},
   barLabel: {fontSize: 12, fontWeight: '700', color: colors.muted},
   track: {

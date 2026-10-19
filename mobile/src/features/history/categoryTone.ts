@@ -29,32 +29,41 @@ export function categoryTone(name: string): {bg: string; fg: string} {
   return TONES[name] ?? TONES.Outros;
 }
 
-/** Cor cheia do gráfico. Uma por categoria, afastadas no círculo de matiz. */
+/** Pastel do gráfico. Uma cor clara por categoria, ainda distinguível. */
 const SLICE: Record<string, string> = {
-  Bebidas: '#0284C7',
-  Mercearia: '#CA8A04',
-  Laticínios: '#2563EB',
-  Açougue: '#DC2626',
-  Frutas: '#16A34A',
-  Verduras: '#059669',
-  Peixaria: '#0891B2',
-  Frios: '#D97706',
-  Hortifruti: '#65A30D',
-  Padaria: '#EA580C',
-  Congelados: '#4F46E5',
-  'Café e matinais': '#78350F',
-  'Molhos e temperos': '#B45309',
-  Enlatados: '#475569',
-  Limpeza: '#0F766E',
-  Higiene: '#7C3AED',
-  'Biscoitos e doces': '#DB2777',
-  Salgadinhos: '#EAB308',
-  Bebê: '#E11D48',
-  Pet: '#9A3412',
-  Descartáveis: '#6B7280',
-  Outros: '#94A3B8',
+  Bebidas: '#BAE6FD',
+  Mercearia: '#FDE68A',
+  Laticínios: '#BFDBFE',
+  Açougue: '#FECACA',
+  Frutas: '#BBF7D0',
+  Verduras: '#A7F3D0',
+  Peixaria: '#A5F3FC',
+  Frios: '#F5D0FE',
+  Hortifruti: '#D9F99D',
+  Padaria: '#FED7AA',
+  Congelados: '#C7D2FE',
+  'Café e matinais': '#E7D5C4',
+  'Molhos e temperos': '#FDBA74',
+  Enlatados: '#E2E8F0',
+  Limpeza: '#99F6E4',
+  Higiene: '#DDD6FE',
+  'Biscoitos e doces': '#FBCFE8',
+  Salgadinhos: '#FEF08A',
+  Bebê: '#FECDD3',
+  Pet: '#FFEDD5',
+  Descartáveis: '#CBD5E1',
+  Outros: '#E5E7EB',
 };
 
 export function categorySliceColor(name: string): string {
   return SLICE[name] ?? SLICE.Outros;
+}
+
+/** Do mais quente (maior gasto) ao mais frio. Tons médios, nem pastel nem neon. */
+const HEAT = ['#E11D48', '#EA580C', '#D97706', '#65A30D', '#0D9488', '#0284C7', '#1D4ED8'];
+
+export function heatColor(rank: number, count: number): string {
+  if (count <= 1) return HEAT[0];
+  const pos = (Math.max(0, rank) / (count - 1)) * (HEAT.length - 1);
+  return HEAT[Math.round(pos)] ?? HEAT[HEAT.length - 1];
 }

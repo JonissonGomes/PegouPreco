@@ -4,7 +4,7 @@ import Svg, {Circle} from 'react-native-svg';
 import {formatBrl} from '@/domain/money';
 import type {HomeDash, SpendSpan} from '@/domain/homeDashboard';
 import {CategoryIcon} from '@/features/history/categoryIcon';
-import {categorySliceColor} from '@/features/history/categoryTone';
+import {heatColor} from '@/features/history/categoryTone';
 import {useDraw} from '@/ui/reveal';
 import {colors, space} from '@/ui/theme';
 
@@ -38,6 +38,7 @@ export function SpendOverview({
   onNext,
   onOpenCategory,
   play = 0,
+  periodLabel,
 }: {
   dash: HomeDash;
   span: SpendSpan;
@@ -52,6 +53,7 @@ export function SpendOverview({
   onNext: () => void;
   onOpenCategory?: (category: string) => void;
   play?: number;
+  periodLabel: string;
 }) {
   const slices = dash.categories;
   return (
@@ -98,11 +100,13 @@ export function SpendOverview({
           <View style={styles.donutWrap}>
             <Donut
               play={play}
-              slices={slices.map(item => ({
+              slices={slices.map((item, index) => ({
                 total: item.total,
-                color: categorySliceColor(item.category),
+                color: heatColor(index, slices.length),
+                category: item.category,
               }))}
               center={compactBrl(dash.spent)}
+              caption={periodLabel}
             />
           </View>
           <View style={styles.legend}>
@@ -128,10 +132,12 @@ export function SpendOverview({
 function Donut({
   slices,
   center,
+  caption,
   play,
 }: {
-  slices: {total: number; color: string}[];
+  slices: {total: number; color: string; category: string}[];
   center: string;
+  caption: string;
   play: number;
 }) {
   const size = 210;
@@ -142,13 +148,14 @@ function Donut({
   const sum = slices.reduce((acc, item) => acc + item.total, 0) || 1;
   const gap = slices.length > 1 ? 1 : 0;
   const usable = Math.max(length - gap * slices.length, 1);
-  const arcs: {color: string; start: number; part: number}[] = [];
+  const arcs: {color: string; start: number; part: number; category: string}[] = [];
   let cursor = 0;
   for (const slice of slices) {
     const part = (slice.total / sum) * usable;
-    arcs.push({color: slice.color, start: cursor, part});
+    arcs.push({color: slice.color, start: cursor, part, category: slice.category});
     cursor += part + gap;
   }
+  const iconBox = 28;
   return (
     <View style={{width: size, height: size}}>
       <Svg width={size} height={size}>
@@ -178,9 +185,21 @@ function Donut({
           />
         ))}
       </Svg>
+      {arcs.map(arc => {
+        if (arc.part < length * 0.07) return null;
+        const mid = arc.start + arc.part / 2;
+        const theta = (mid / length) * Math.PI * 2 - Math.PI / 2;
+        const left = size / 2 + Math.cos(theta) * radius - iconBox / 2;
+        const top = size / 2 + Math.sin(theta) * radius - iconBox / 2;
+        return (
+          <View key={arc.category} style={[styles.arcIcon, {left, top}]}>
+            <CategoryIcon name={arc.category} size={14} />
+          </View>
+        );
+      })}
       <View style={styles.center}>
         <Text style={styles.centerValue}>{center}</Text>
-        <Text style={styles.centerHint}>no período</Text>
+        <Text style={styles.centerHint}>{caption}</Text>
       </View>
     </View>
   );
@@ -224,11 +243,18 @@ const styles = StyleSheet.create({
   },
   legendName: {flex: 1, fontWeight: '700', color: colors.ink, fontSize: 13},
   legendValue: {fontWeight: '800', color: colors.navy, fontSize: 12},
+  arcIcon: {position: 'absolute'},
   center: {
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
     justifyContent: 'center',
   },
   centerValue: {fontSize: 22, fontWeight: '900', color: colors.navy},
-  centerHint: {fontSize: 12, fontWeight: '700', color: colors.muted},
+  centerHint: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.muted,
+    textAlign: 'center',
+    paddingHorizontal: 36,
+  },
 });

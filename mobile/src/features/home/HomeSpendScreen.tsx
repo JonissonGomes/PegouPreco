@@ -2,13 +2,14 @@ import React, {useCallback, useEffect, useMemo, useState} from 'react';
 import {Pressable, ScrollView, StyleSheet, Text, View} from 'react-native';
 import {useFocusEffect, useNavigation, useRoute} from '@react-navigation/native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
-import {ArrowLeft, SlidersHorizontal} from 'lucide-react-native';
+import {ArrowLeft, ChevronDown, SlidersHorizontal} from 'lucide-react-native';
 import {formatBrl, formatQty} from '@/domain/money';
 import {PRODUCT_CATEGORIES, resolveCategory} from '@/domain/productCategory';
 import {lineTotal} from '@/domain/pricing';
 import {
   buildHomeDash,
   calendarRange,
+  spendSpanLabel,
   type HomePeriodDays,
   type SpendSpan,
 } from '@/domain/homeDashboard';
@@ -82,6 +83,7 @@ export function HomeSpendScreen() {
   );
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [play, setPlay] = useState(0);
+  const [openPurchaseId, setOpenPurchaseId] = useState<number | null>(null);
   const lists = useAppStore(s => s.lists);
   const products = useAppStore(s => s.products);
   const markets = useAppStore(s => s.markets);
@@ -187,6 +189,7 @@ export function HomeSpendScreen() {
             )
           }
           play={play}
+          periodLabel={spendSpanLabel(month, span)}
         />
         <Text style={styles.section}>
           {categories.length ? categories.join(' · ') : 'Compras do filtro'}
@@ -194,9 +197,15 @@ export function HomeSpendScreen() {
         {dash.purchases.length === 0 ? (
           <Text style={styles.empty}>Nenhuma compra neste filtro.</Text>
         ) : (
-          dash.purchases.map(list => (
+          dash.purchases.map(list => {
+            const open = openPurchaseId === list.id;
+            return (
             <View key={list.id} style={styles.purchase}>
-              <View style={styles.purchaseHead}>
+              <Pressable
+                style={styles.purchaseHead}
+                onPress={() =>
+                  setOpenPurchaseId(current => (current === list.id ? null : list.id))
+                }>
                 <View style={{flex: 1}}>
                   <Text style={styles.market} numberOfLines={1}>
                     {list.marketName || list.name}
@@ -206,8 +215,13 @@ export function HomeSpendScreen() {
                   </Text>
                 </View>
                 <Text style={styles.total}>{formatBrl(list.subtotal)}</Text>
-              </View>
-              {parseItems(list).map((item, index) => {
+                <ChevronDown
+                  size={18}
+                  color={colors.navy}
+                  style={{transform: [{rotate: open ? '180deg' : '0deg'}]}}
+                />
+              </Pressable>
+              {open ? parseItems(list).map((item, index) => {
                 const stored = products.find(p => p.id === item.productId)?.category?.trim();
                 const cat = resolveCategory(stored, item.productName);
                 if (categories.length > 0 && !categories.includes(cat)) return null;
@@ -225,9 +239,10 @@ export function HomeSpendScreen() {
                     <Text style={styles.linePrice}>{formatBrl(lineTotal(item))}</Text>
                   </View>
                 );
-              })}
+              }) : null}
             </View>
-          ))
+            );
+          })
         )}
       </ScrollView>
       <HomeFilterSheet

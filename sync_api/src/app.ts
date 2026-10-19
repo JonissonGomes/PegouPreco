@@ -594,6 +594,28 @@ export function createRouter(store: DataStore): Router {
     return res.json(result);
   });
 
+  router.post('/insights/weekday', async (req, res) => {
+    const userId = await auth(req, store);
+    if (!userId) return sendError(res, 401, 'unauthorized');
+    const body = req.body as {
+      weekday?: string;
+      categories?: {name?: string; todayAvg?: number; usualAvg?: number}[];
+    };
+    const categories = (body.categories ?? [])
+      .map(item => ({
+        name: String(item.name ?? '').trim(),
+        todayAvg: Number(item.todayAvg ?? 0),
+        usualAvg: Number(item.usualAvg ?? 0),
+      }))
+      .filter(item => item.name && item.todayAvg > 0 && item.usualAvg > 0)
+      .slice(0, 6);
+    const category = await jev.suggestWeekdayBuy({
+      weekday: String(body.weekday ?? ''),
+      categories,
+    });
+    return res.json({category});
+  });
+
   router.get('/prices/community', async (req, res) => {
     const userId = await auth(req, store);
     if (!userId) return sendError(res, 401, 'unauthorized');
