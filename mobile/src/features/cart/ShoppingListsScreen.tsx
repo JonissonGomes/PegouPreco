@@ -75,7 +75,10 @@ export function ShoppingListsScreen() {
     setFiltersOpen(false);
     setSelected(null);
   });
-  const totalSpent = lists.reduce((s, l) => s + l.subtotal, 0);
+  const totalSpent = lists.reduce(
+    (s, l) => (isFiscalList(l) ? s + l.subtotal : s),
+    0,
+  );
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     return lists.filter(l => {

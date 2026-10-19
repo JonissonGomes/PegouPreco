@@ -1,5 +1,5 @@
 import {resolveCategory} from '@/domain/productCategory';
-import {hasSpend, isFiscalLog} from '@/domain/fiscal';
+import {isFiscalList, isFiscalLog} from '@/domain/fiscal';
 import {
   economyAgainstAverage,
   pointsFromLists,
@@ -120,7 +120,7 @@ export function buildHomeDash(
 ): HomeDash {
   const sinceMs = range?.start ?? now - periodDays * 24 * 60 * 60 * 1000;
   const untilMs = range?.end ?? Infinity;
-  const receipts = lists.filter(hasSpend);
+  const receipts = lists.filter(isFiscalList);
   const inWindow = receipts.filter(l => inPeriod(l, sinceMs, untilMs));
 
   const markets = new Map<number, string>();
@@ -298,7 +298,7 @@ export function weekdayBuyCandidates(
     string,
     {all: number; allN: number; today: number; todayN: number}
   >();
-  for (const list of lists.filter(hasSpend)) {
+  for (const list of lists.filter(isFiscalList)) {
     const at = new Date(list.finishedAt);
     if (Number.isNaN(at.getTime())) continue;
     const onDay = at.getDay() === day;

@@ -1258,6 +1258,9 @@ export class DataStore {
         matchKeys: [],
       });
       shoppingListIdMap[String(s.localId)] = remoteId;
+      if (/^\d{44}$/.test(listKey)) {
+        await this._keepNfceKey(remoteId, userId, listKey);
+      }
       const listMarket =
         (s.marketRemoteId != null ? String(s.marketRemoteId) : null) ??
         (s.marketId != null ? marketIdMap[String(s.marketId)] ?? null : null);
@@ -1539,6 +1542,18 @@ export class DataStore {
         if (Number(list.itemCount ?? 0) !== itemCount) return false;
         return Math.abs(Number(list.subtotal ?? 0) - subtotal) < 0.05;
       }) ?? null
+    );
+  }
+
+  private async _keepNfceKey(id: string, ownerId: string, nfceKey: string) {
+    if (this.mode === 'memory') {
+      const row = this._memShoppingLists[id];
+      if (row && row.ownerId === ownerId) row.nfceKey = nfceKey;
+      return;
+    }
+    await this.col('shopping_lists').updateOne(
+      {id, ownerId},
+      {$set: {nfceKey}},
     );
   }
 

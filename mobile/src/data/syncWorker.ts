@@ -406,7 +406,9 @@ function applyPull(pull: Record<string, unknown>) {
     );
     if (existing) {
       existing.remoteId = remoteId;
-      existing.synced = 1;
+      if (nfceKey.length >= 40) existing.nfceKey = nfceKey;
+      const localKey = existing.nfceKey ?? '';
+      existing.synced = localKey.length >= 40 && nfceKey.length < 40 ? 0 : 1;
       continue;
     }
     const marketRemote = r.marketId != null ? String(r.marketId) : '';

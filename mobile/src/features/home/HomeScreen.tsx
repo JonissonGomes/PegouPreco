@@ -36,7 +36,7 @@ import {ensureNearbyMarketsDiscovered} from '@/data/remote/ensureNearbyMarkets';
 import {PRODUCT_CATEGORIES} from '@/domain/productCategory';
 import {buildHomeDash, type HomePeriodDays} from '@/domain/homeDashboard';
 import {useWeekdayBuyTip} from '@/features/home/useWeekdayBuyTip';
-import {hasSpend, isFiscalLog} from '@/domain/fiscal';
+import {isFiscalList, isFiscalLog} from '@/domain/fiscal';
 import {HomeHowItWorks} from '@/features/home/HomeHowItWorks';
 import {HomeHub, homeShortcutIcons} from '@/features/home/HomeHub';
 import {HomeSpendBoard} from '@/features/home/HomeSpendBoard';
@@ -120,7 +120,7 @@ export function HomeScreen() {
   );
   const buyTip = useWeekdayBuyTip(lists, products, auth?.token);
   const cheaper = useMemo(() => {
-    const receipts = lists.filter(hasSpend);
+    const receipts = lists.filter(isFiscalList);
     const fiscalLogs = priceLogs.filter(isFiscalLog);
     const purchases = pointsFromLists(receipts, products);
     return cheaperCategories(

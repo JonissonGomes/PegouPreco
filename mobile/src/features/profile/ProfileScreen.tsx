@@ -41,7 +41,7 @@ import {
   pointsFromLists,
   pointsFromLogs,
 } from '@/domain/purchaseInsights';
-import {hasSpend, isFiscalLog} from '@/domain/fiscal';
+import {isFiscalList, isFiscalLog} from '@/domain/fiscal';
 import type {FiscalLevel} from '@/data/types';
 import {MAPBOX_ACCESS_TOKEN} from '@/config/env';
 import {refreshPermissionFlags} from '@/app/permissions';
@@ -112,7 +112,7 @@ export function ProfileScreen() {
     () => priceLogRepo.all().filter(isFiscalLog),
     [lists, products],
   );
-  const receiptLists = useMemo(() => lists.filter(hasSpend), [lists]);
+  const receiptLists = useMemo(() => lists.filter(isFiscalList), [lists]);
   const spent3m = useMemo(
     () => spentOf(receiptLists, Date.now() - 90 * 86400000),
     [receiptLists],
