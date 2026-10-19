@@ -16,6 +16,30 @@ function listItems(list: ShoppingList): CartItem[] {
   }
 }
 
+export function shelfFromProducts(
+  rows: {name: string; category: string | null; count: number}[],
+): ShelfCategory[] {
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    const category = resolveCategory(row.category, row.name);
+    if (!category || category === 'Outros') continue;
+    counts.set(category, (counts.get(category) ?? 0) + row.count);
+  }
+  return [...counts.entries()]
+    .map(([category, purchases]) => ({category, purchases}))
+    .sort((a, b) => b.purchases - a.purchases || a.category.localeCompare(b.category, 'pt-BR'));
+}
+
+export function mergeShelf(local: ShelfCategory[], remote: ShelfCategory[]): ShelfCategory[] {
+  const counts = new Map<string, number>();
+  for (const item of [...local, ...remote]) {
+    counts.set(item.category, Math.max(counts.get(item.category) ?? 0, item.purchases));
+  }
+  return [...counts.entries()]
+    .map(([category, purchases]) => ({category, purchases}))
+    .sort((a, b) => b.purchases - a.purchases || a.category.localeCompare(b.category, 'pt-BR'));
+}
+
 /** Categorias vistas no mercado e quantas compras de nota cada uma teve. */
 export function marketShelf(
   market: Market,

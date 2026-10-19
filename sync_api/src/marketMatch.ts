@@ -109,6 +109,79 @@ export function rollupPlaceStats(
   }
 }
 
+function hasGeo(row: Record<string, unknown>): boolean {
+  if (row.lat == null || row.lng == null || row.lat === '' || row.lng === '') {
+    return false;
+  }
+  return Number.isFinite(Number(row.lat)) && Number.isFinite(Number(row.lng));
+}
+
+/**
+ * Nota fiscal muitas vezes grava o mercado sem coordenada.
+ * Esse cadastro não vira pin; as compras e avaliações passam para o pin de mesmo nome.
+ */
+export function graftUnlocated(
+  pins: Record<string, unknown>[],
+  extras: Record<string, unknown>[],
+  visitors: Map<string, Set<string>>,
+  reviews: Map<string, {avg: number; count: number}>,
+): void {
+  for (const extra of extras) {
+    if (hasGeo(extra)) continue;
+    const extraId = String(extra.id ?? '');
+    const extraName = String(extra.name ?? '');
+    if (!extraId || !extraName) continue;
+    const host = pins.find(pin => namesLikelySame(String(pin.name ?? ''), extraName));
+    if (!host) continue;
+    const hostId = String(host.id ?? '');
+    const mates = new Set<string>(
+      Array.isArray(host.mateIds) ? host.mateIds.map(id => String(id)) : [hostId],
+    );
+    mates.add(hostId);
+    mates.add(extraId);
+    host.mateIds = [...mates];
+    const users = new Set<string>(visitors.get(hostId) ?? []);
+    for (const user of visitors.get(extraId) ?? []) users.add(user);
+    if (hostId) visitors.set(hostId, users);
+    host.weeklyVisitors = users.size;
+    const extraReview = reviews.get(extraId);
+    if (!extraReview || extraReview.count <= 0) continue;
+    const hostCount = Number(host.ratingsCount ?? 0);
+    const hostAvg = Number(host.avgRating ?? 0);
+    const count = hostCount + extraReview.count;
+    host.ratingsCount = count;
+    host.avgRating =
+      count > 0 ? (hostAvg * hostCount + extraReview.avg * extraReview.count) / count : 0;
+  }
+}
+
+export type ShelfRow = {name: string; category: string | null; count: number};
+
+export function shelfRows(
+  marketIds: string[],
+  logs: {marketId?: unknown; productId?: unknown}[],
+  products: Map<string, {name: string; category: string | null}>,
+): ShelfRow[] {
+  const ids = new Set(marketIds);
+  const counts = new Map<string, ShelfRow>();
+  for (const log of logs) {
+    const marketId = String(log.marketId ?? '');
+    if (!ids.has(marketId)) continue;
+    const product = products.get(String(log.productId ?? ''));
+    const name = product?.name?.trim() || '';
+    if (!name) continue;
+    const key = name.toLowerCase();
+    const current = counts.get(key) ?? {
+      name,
+      category: product?.category ?? null,
+      count: 0,
+    };
+    current.count += 1;
+    counts.set(key, current);
+  }
+  return [...counts.values()].sort((a, b) => b.count - a.count).slice(0, 80);
+}
+
 export function collapseMapPins(
   pins: Record<string, unknown>[],
 ): Record<string, unknown>[] {
@@ -147,7 +220,9 @@ export function marketNameKey(name: string): string {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
-    .replace(/\b(ltda|s\/a|sa|supermercado|mercado|atacarejo|hipermercado)\b/g, ' ')
+    .replace(/\b(ltda|s\/a|sa|supermercado|mercado|atacarejo|hipermercado|alimentos|comercio|comercial|eireli|epp)\b/g, ' ')
+    .replace(/\b(lj|loja)\s*\d+\b/g, ' ')
+    .replace(/\b\d+\b/g, ' ')
     .replace(/[^a-z0-9]+/g, ' ')
     .trim();
 }

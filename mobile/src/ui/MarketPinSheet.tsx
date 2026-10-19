@@ -23,7 +23,7 @@ import {MAPBOX_ACCESS_TOKEN} from '@/config/env';
 import {PIN_REPORTS, type PinReportId} from '@/domain/pinReports';
 import {friendlyMarketTitle, relatedMarketIds} from '@/domain/marketBrand';
 import {getState} from '@/data/db';
-import {marketShelf} from '@/domain/marketShelf';
+import {marketShelf, mergeShelf, shelfFromProducts} from '@/domain/marketShelf';
 import {MarketShelfBlock} from '@/ui/MarketShelfBlock';
 
 function BandIcon({band}: {band: PriceBand}) {
@@ -100,21 +100,39 @@ export function MarketPinSheet({
   const [confirmedKeys, setConfirmedKeys] = useState<string[]>(() =>
     prefs.confirmedMarketKeys(),
   );
+  const [remoteShelf, setRemoteShelf] = useState<
+    {name: string; category: string | null; count: number}[]
+  >([]);
+  const [remoteStats, setRemoteStats] = useState<{
+    avgRating: number;
+    ratingsCount: number;
+    weeklyVisitors: number;
+  } | null>(null);
 
   useEffect(() => {
     if (market) {
       setCached(market);
       setCachedDist(distanceKm);
       setReviewOpen(false);
+      setRemoteShelf([]);
+      setRemoteStats(null);
     }
   }, [market, distanceKm]);
 
   const shown = market ?? cached;
   const dist = market ? distanceKm : cachedDist;
   const band = shown ? resolvePriceBand(shown) : 'unknown';
-  const rating = shown?.avgRating ?? 0;
+  const rating = Math.max(shown?.avgRating ?? 0, remoteStats?.avgRating ?? 0);
+  const ratingsCount = Math.max(
+    shown?.ratingsCount ?? 0,
+    remoteStats?.ratingsCount ?? 0,
+  );
   const visitors = shown
-    ? Math.max(shown.weeklyVisitors ?? 0, localWeeklyVisitors(shown))
+    ? Math.max(
+        shown.weeklyVisitors ?? 0,
+        localWeeklyVisitors(shown),
+        remoteStats?.weeklyVisitors ?? 0,
+      )
     : 0;
   const locationConfirmed = shown
     ? confirmedKeys.includes(marketKey(shown))
@@ -122,10 +140,50 @@ export function MarketPinSheet({
   const shelf = useMemo(
     () =>
       shown
-        ? marketShelf(shown, markets, products, priceLogRepo.all(), lists)
+        ? mergeShelf(
+            marketShelf(shown, markets, products, priceLogRepo.all(), lists),
+            shelfFromProducts(remoteShelf),
+          )
         : [],
-    [shown, markets, products, lists],
+    [shown, markets, products, lists, remoteShelf],
   );
+
+  useEffect(() => {
+    if (!shown) return;
+    let cancelled = false;
+    void syncApi
+      .marketCommunity({
+        id: shown.remoteId,
+        name: shown.name,
+        lat: shown.lat,
+        lng: shown.lng,
+      })
+      .then(data => {
+        if (cancelled) return;
+        setRemoteShelf(Array.isArray(data.shelf) ? data.shelf : []);
+        setRemoteStats({
+          avgRating: Number(data.avgRating ?? 0),
+          ratingsCount: Number(data.ratingsCount ?? 0),
+          weeklyVisitors: Number(data.weeklyVisitors ?? 0),
+        });
+        const nextCount = Number(data.ratingsCount ?? 0);
+        const nextVisitors = Number(data.weeklyVisitors ?? 0);
+        if (nextCount > 0 || nextVisitors > 0) {
+          marketRepo.upsertGeo(shown.id, {
+            avgRating:
+              nextCount > 0 ? Number(data.avgRating ?? 0) : shown.avgRating,
+            ratingsCount: Math.max(shown.ratingsCount, nextCount),
+            weeklyVisitors: Math.max(shown.weeklyVisitors ?? 0, nextVisitors),
+            synced: 1,
+          });
+          useAppStore.getState().refresh();
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [shown?.id, shown?.remoteId, shown?.name, shown?.lat, shown?.lng]);
 
   useEffect(() => {
     if (!shown?.lat || shown.lng == null) {
@@ -309,8 +367,8 @@ export function MarketPinSheet({
                   </Text>
                 </View>
                 <Text style={styles.statHint}>
-                  {shown.ratingsCount > 0
-                    ? `${shown.ratingsCount} avaliações`
+                  {ratingsCount > 0
+                    ? `${ratingsCount} avaliações`
                     : 'ainda sem avaliações'}
                 </Text>
               </View>

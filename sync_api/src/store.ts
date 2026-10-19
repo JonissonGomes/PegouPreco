@@ -4,9 +4,11 @@ import {config} from './config.js';
 import {JevClient} from './jev.js';
 import {
   collapseMapPins,
+  graftUnlocated,
   namesLikelySame,
   rollupPlaceStats,
   sameStorefront,
+  shelfRows,
 } from './marketMatch.js';
 import {MarketStats, SUGGESTION_KEEP_MS} from './marketStats.js';
 import {haversineKm, nextTokenExpiry, resolveRole, sha256, tokenStillValid} from './util.js';
@@ -371,9 +373,153 @@ export class DataStore {
         weeklyVisitors: weekly.get(id)?.size ?? 0,
       });
     }
+    const unlocated = markets.filter(row => {
+      if (row.lat == null || row.lng == null || row.lat === '' || row.lng === '') {
+        return true;
+      }
+      return !Number.isFinite(Number(row.lat)) || !Number.isFinite(Number(row.lng));
+    });
+    const unlocatedReviews = new Map<string, {avg: number; count: number}>();
+    for (const row of unlocated) {
+      const id = String(row.id ?? '');
+      if (!id) continue;
+      unlocatedReviews.set(id, await this._aggregateReviews(id));
+    }
+    graftUnlocated(out, unlocated, weekly, unlocatedReviews);
     rollupPlaceStats(out, weekly);
+    await this._attachShelf(out);
     await this._applyHighlights(out);
     return collapseMapPins(out);
+  }
+
+  /** Compras e avaliações da comunidade para o pin, inclusive nota sem coordenada. */
+  async communityForPin(args: {
+    id?: string | null;
+    name?: string | null;
+    lat?: number | null;
+    lng?: number | null;
+  }): Promise<Record<string, unknown>> {
+    const markets = await this._allMarkets();
+    const name = String(args.name ?? '').trim();
+    let anchor =
+      args.id != null
+        ? markets.find(row => String(row.id ?? '') === String(args.id))
+        : undefined;
+    if (!anchor && name && args.lat != null && args.lng != null) {
+      anchor = markets.find(row => {
+        const rowLat = Number(row.lat);
+        const rowLng = Number(row.lng);
+        if (!Number.isFinite(rowLat) || !Number.isFinite(rowLng)) return false;
+        if (
+          haversineKm(
+            {lat: rowLat, lng: rowLng},
+            {lat: Number(args.lat), lng: Number(args.lng)},
+          ) > 0.45
+        ) {
+          return false;
+        }
+        return namesLikelySame(String(row.name ?? ''), name);
+      });
+    }
+    const anchorName = String(anchor?.name ?? name);
+    const mates = markets.filter(row => {
+      const located =
+        row.lat != null &&
+        row.lng != null &&
+        row.lat !== '' &&
+        row.lng !== '' &&
+        Number.isFinite(Number(row.lat)) &&
+        Number.isFinite(Number(row.lng));
+      if (anchor && located && sameStorefront(anchor, row)) return true;
+      if (!anchorName || located) return false;
+      return namesLikelySame(anchorName, String(row.name ?? ''));
+    });
+    if (anchor && !mates.some(row => row.id === anchor!.id)) mates.push(anchor);
+    const ids = mates.map(row => String(row.id ?? '')).filter(Boolean);
+    const weekly = await this.stats.weeklyVisitorSets();
+    await this._mergeNoteVisitors(weekly);
+    const users = new Set<string>();
+    let weighted = 0;
+    let ratings = 0;
+    for (const id of ids) {
+      for (const user of weekly.get(id) ?? []) users.add(user);
+      const agg = await this._aggregateReviews(id);
+      if (agg.count > 0) {
+        weighted += agg.avg * agg.count;
+        ratings += agg.count;
+      }
+    }
+    const shelf = await this._shelfFor(ids);
+    return {
+      avgRating: ratings > 0 ? weighted / ratings : 0,
+      ratingsCount: ratings,
+      weeklyVisitors: users.size,
+      shelf,
+    };
+  }
+
+  private async _attachShelf(pins: Record<string, unknown>[]): Promise<void> {
+    const ids = new Set<string>();
+    for (const pin of pins) {
+      const mates = Array.isArray(pin.mateIds)
+        ? pin.mateIds.map(id => String(id))
+        : [String(pin.id ?? '')];
+      const pinId = String(pin.id ?? '');
+      if (pinId && !mates.includes(pinId)) mates.unshift(pinId);
+      pin.mateIds = mates;
+      for (const id of mates) if (id) ids.add(id);
+    }
+    const logs = await this._logsForMarkets([...ids]);
+    const productIds = [
+      ...new Set(logs.map(log => String(log.productId ?? '')).filter(Boolean)),
+    ];
+    const products = await this._productNames(productIds);
+    for (const pin of pins) {
+      pin.shelf = shelfRows(pin.mateIds as string[], logs, products);
+      delete pin.mateIds;
+    }
+  }
+
+  private async _logsForMarkets(
+    ids: string[],
+  ): Promise<{marketId?: unknown; productId?: unknown}[]> {
+    if (!ids.length) return [];
+    if (this.mode === 'memory') {
+      return Object.values(this._memLogs).filter(log =>
+        ids.includes(String(log.marketId ?? '')),
+      );
+    }
+    return (await this.col('price_logs')
+      .find({marketId: {$in: ids}, trustLevel: {$ne: 'hidden'}})
+      .toArray()) as {marketId?: unknown; productId?: unknown}[];
+  }
+
+  private async _productNames(
+    ids: string[],
+  ): Promise<Map<string, {name: string; category: string | null}>> {
+    const out = new Map<string, {name: string; category: string | null}>();
+    if (!ids.length) return out;
+    const rows =
+      this.mode === 'memory'
+        ? ids.map(id => this._memProducts[id]).filter(Boolean)
+        : ((await this.col('products')
+            .find({id: {$in: ids}})
+            .toArray()) as Record<string, unknown>[]);
+    for (const row of rows) {
+      out.set(String(row.id ?? ''), {
+        name: String(row.name ?? ''),
+        category: row.category != null ? String(row.category) : null,
+      });
+    }
+    return out;
+  }
+
+  private async _shelfFor(ids: string[]) {
+    const logs = await this._logsForMarkets(ids);
+    const productIds = [
+      ...new Set(logs.map(log => String(log.productId ?? '')).filter(Boolean)),
+    ];
+    return shelfRows(ids, logs, await this._productNames(productIds));
   }
 
   private async _canonicalMarket(

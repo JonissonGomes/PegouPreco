@@ -71,7 +71,9 @@ export function marketNameKey(name: string): string {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
-    .replace(/\b(ltda|s\/a|sa|supermercado|mercado|atacarejo|hipermercado)\b/g, ' ')
+    .replace(/\b(ltda|s\/a|sa|supermercado|mercado|atacarejo|hipermercado|alimentos|comercio|comercial|eireli|epp)\b/g, ' ')
+    .replace(/\b(lj|loja)\s*\d+\b/g, ' ')
+    .replace(/\b\d+\b/g, ' ')
     .replace(/[^a-z0-9]+/g, ' ')
     .trim();
 }

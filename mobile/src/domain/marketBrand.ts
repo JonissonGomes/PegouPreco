@@ -42,7 +42,14 @@ export function friendlyMarketTitle(market: Market, others: Market[]): string {
 export function relatedMarketIds(market: Market, others: Market[]): number[] {
   const ids = [market.id];
   for (const other of others) {
-    if (other.id === market.id || !near(market, other)) continue;
+    if (other.id === market.id) continue;
+    const sameName = namesLikelySame(market.name, other.name);
+    const otherHasGeo = other.lat != null && other.lng != null;
+    const thisHasGeo = market.lat != null && market.lng != null;
+    if (!near(market, other)) {
+      if (sameName && otherHasGeo !== thisHasGeo) ids.push(other.id);
+      continue;
+    }
     const sameChain =
       chainLabel(market.name) != null &&
       chainLabel(market.name) === chainLabel(other.name);

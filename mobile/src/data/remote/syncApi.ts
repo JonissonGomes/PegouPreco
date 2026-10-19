@@ -200,6 +200,23 @@ export const syncApi = {
         if (Array.isArray(data)) return data;
         return data.markets ?? [];
       }),
+  marketCommunity: (params: {
+    id?: string | null;
+    name?: string;
+    lat?: number | null;
+    lng?: number | null;
+  }) =>
+    client
+      .get('/markets/community', {params})
+      .then(
+        r =>
+          r.data as {
+            avgRating?: number;
+            ratingsCount?: number;
+            weeklyVisitors?: number;
+            shelf?: {name: string; category: string | null; count: number}[];
+          },
+      ),
   marketReviews: (marketId: string) =>
     client
       .get(`/markets/${marketId}/reviews`)

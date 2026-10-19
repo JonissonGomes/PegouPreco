@@ -452,6 +452,18 @@ export function createRouter(store: DataStore): Router {
     return res.json({markets});
   });
 
+  router.get('/markets/community', async (req, res) => {
+    const lat = req.query.lat != null ? Number(req.query.lat) : null;
+    const lng = req.query.lng != null ? Number(req.query.lng) : null;
+    const snapshot = await store.communityForPin({
+      id: req.query.id != null ? String(req.query.id) : null,
+      name: req.query.name != null ? String(req.query.name) : null,
+      lat: Number.isFinite(lat) ? lat : null,
+      lng: Number.isFinite(lng) ? lng : null,
+    });
+    return res.json(snapshot);
+  });
+
   router.post('/markets/:id/reviews', async (req, res) => {
     const userId = await auth(req, store);
     if (!userId) return sendError(res, 401, 'unauthorized');

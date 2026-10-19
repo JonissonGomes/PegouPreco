@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {rollupPlaceStats, sameStorefront} from './marketMatch.js';
+import {graftUnlocated, namesLikelySame, rollupPlaceStats, sameStorefront} from './marketMatch.js';
 
 test('mesmo CNPJ é a mesma loja mesmo com nome diferente', () => {
   assert.equal(
@@ -42,4 +42,42 @@ test('pin soma visitantes e avaliações de cadastros irmãos', () => {
   assert.equal(pins[1].weeklyVisitors, 2);
   assert.equal(pins[0].ratingsCount, 2);
   assert.equal(pins[1].avgRating, 4.5);
+});
+
+test('nota sem coordenada entra no pin de mesmo nome', () => {
+  assert.equal(
+    namesLikelySame('NOVO ATACAREJO LJ 40 IGARASSU', 'Novo Atacarejo - Igarassu'),
+    true,
+  );
+  assert.equal(
+    namesLikelySame(
+      'ATACAREJO DE ALIMENTOS IDEAL IGARASSU LTDA',
+      'Novo Atacarejo - Igarassu',
+    ),
+    false,
+  );
+  const pins = [
+    {
+      id: 'geo',
+      name: 'Novo Atacarejo - Igarassu',
+      lat: -7.83,
+      lng: -34.91,
+      avgRating: 0,
+      ratingsCount: 0,
+      weeklyVisitors: 0,
+    },
+  ];
+  const visitors = new Map<string, Set<string>>([
+    ['geo', new Set<string>()],
+    ['note', new Set(['user-1'])],
+  ]);
+  graftUnlocated(
+    pins,
+    [{id: 'note', name: 'NOVO ATACAREJO LJ 40 IGARASSU', lat: null, lng: null}],
+    visitors,
+    new Map([['note', {avg: 5, count: 1}]]),
+  );
+  assert.equal(pins[0].weeklyVisitors, 1);
+  assert.equal(pins[0].ratingsCount, 1);
+  assert.deepEqual(pins[0].mateIds, ['geo', 'note']);
 });
