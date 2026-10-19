@@ -1,6 +1,7 @@
 import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {Pressable, StyleSheet, Text, View} from 'react-native';
-import {useNavigation, useRoute} from '@react-navigation/native';
+import {useIsFocused, useNavigation, useRoute} from '@react-navigation/native';
+import {useCameraForeground} from '@/features/cart/useCameraForeground';
 import {Camera} from 'react-native-vision-camera';
 import {ArrowLeft} from 'lucide-react-native';
 import {AppButton, AppField} from '@/ui/chrome';
@@ -23,6 +24,8 @@ import {requestAutoSync} from '@/data/syncWorker';
 export function ImportPurchaseScreen() {
   const nav = useNavigation<any>();
   const route = useRoute<any>();
+  const focused = useIsFocused();
+  const cameraLive = useCameraForeground();
   const refresh = useAppStore(s => s.refresh);
   const lists = useAppStore(s => s.lists);
   const [replaceListId, setReplaceListId] = useState<number | null>(
@@ -150,10 +153,17 @@ export function ImportPurchaseScreen() {
         {cam.cameraGranted && cam.device ? (
           <>
           <Camera
+            key={cameraLive.session}
             ref={cam.cameraRef}
             style={StyleSheet.absoluteFill}
             device={cam.device}
-            isActive={!pasteOpen && !busy && draft == null}
+            isActive={
+              focused &&
+              cameraLive.foreground &&
+              !pasteOpen &&
+              !busy &&
+              draft == null
+            }
             codeScanner={cam.codeScanner}
             zoom={cam.zoom}
             enableZoomGesture

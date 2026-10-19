@@ -7,7 +7,8 @@ import {
   Text,
   View,
 } from 'react-native';
-import {useFocusEffect, useNavigation, useRoute} from '@react-navigation/native';
+import {useFocusEffect, useIsFocused, useNavigation, useRoute} from '@react-navigation/native';
+import {useCameraForeground} from '@/features/cart/useCameraForeground';
 import {
   Camera,
   useCameraDevice,
@@ -199,6 +200,8 @@ export function CaptureScreen() {
   );
   const device = useCameraDevice('back');
   const cameraRef = useRef<Camera>(null);
+  const focused = useIsFocused();
+  const cameraLive = useCameraForeground();
   const busyRef = useRef(false);
   const lastFpRef = useRef<string | null>(null);
   const lastNfceRef = useRef<string | null>(null);
@@ -375,6 +378,8 @@ export function CaptureScreen() {
   );
 
   const liveScanActive =
+    focused &&
+    cameraLive.foreground &&
     cameraOn &&
     cameraGranted &&
     !!device &&
@@ -617,10 +622,17 @@ export function CaptureScreen() {
       <View style={styles.stage}>
         {cameraOn && cameraGranted && device ? (
           <Camera
+            key={cameraLive.session}
             ref={cameraRef}
             style={StyleSheet.absoluteFill}
             device={device}
-            isActive={cameraOn && !fields && extra === 'none'}
+            isActive={
+              focused &&
+              cameraLive.foreground &&
+              cameraOn &&
+              !fields &&
+              extra === 'none'
+            }
             photo
             codeScanner={codeScanner}
             enableZoomGesture

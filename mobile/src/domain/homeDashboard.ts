@@ -8,6 +8,33 @@ import {
 import type {PriceLog, Product, ShoppingList} from '@/data/types';
 
 export type HomePeriodDays = 7 | 30 | 90;
+export type SpendSpan = 'week' | 'month' | 'quarter';
+
+export function calendarRange(
+  anchor: Date,
+  span: SpendSpan,
+  now = Date.now(),
+): {start: number; end: number} {
+  const year = anchor.getFullYear();
+  const month = anchor.getMonth();
+  if (span === 'quarter') {
+    const startMonth = Math.floor(month / 3) * 3;
+    return {
+      start: new Date(year, startMonth, 1).getTime(),
+      end: new Date(year, startMonth + 3, 1).getTime(),
+    };
+  }
+  if (span === 'month') {
+    return {
+      start: new Date(year, month, 1).getTime(),
+      end: new Date(year, month + 1, 1).getTime(),
+    };
+  }
+  const monthStart = new Date(year, month, 1).getTime();
+  const monthEnd = new Date(year, month + 1, 1).getTime();
+  const end = now >= monthStart && now < monthEnd ? now + 1 : monthEnd;
+  return {start: Math.max(monthStart, end - 7 * 86400000), end};
+}
 
 export type CategorySlice = {
   category: string;
@@ -47,9 +74,9 @@ function rowCategory(row: ListRow, products: Product[]) {
   return resolveCategory(named, row.productName || '');
 }
 
-function inPeriod(list: ShoppingList, sinceMs: number) {
+function inPeriod(list: ShoppingList, sinceMs: number, untilMs = Infinity) {
   const t = new Date(list.finishedAt).getTime();
-  return Number.isFinite(t) && t >= sinceMs;
+  return Number.isFinite(t) && t >= sinceMs && t < untilMs;
 }
 
 export function buildHomeDash(
@@ -60,10 +87,12 @@ export function buildHomeDash(
   selected: string[],
   logs: PriceLog[] = [],
   now = Date.now(),
+  range?: {start: number; end: number},
 ): HomeDash {
-  const sinceMs = now - periodDays * 24 * 60 * 60 * 1000;
+  const sinceMs = range?.start ?? now - periodDays * 24 * 60 * 60 * 1000;
+  const untilMs = range?.end ?? Infinity;
   const receipts = lists.filter(isFiscalList);
-  const inWindow = receipts.filter(l => inPeriod(l, sinceMs));
+  const inWindow = receipts.filter(l => inPeriod(l, sinceMs, untilMs));
 
   const markets = new Map<number, string>();
   for (const list of inWindow) {
@@ -133,15 +162,20 @@ export function buildHomeDash(
     purchases: recent,
     markets: [...markets.entries()].map(([id, name]) => ({id, name})),
     categoryNames: [...categoryNames].sort((a, b) => a.localeCompare(b, 'pt-BR')),
-    trend: spendTrend(matched, periodDays, now),
+    trend: spendTrend(matched, periodDays, now, range),
   };
 }
 
-function spendTrend(lists: ShoppingList[], periodDays: number, now: number) {
-  const buckets = periodDays <= 7 ? 7 : periodDays <= 30 ? 4 : 6;
-  const span = periodDays * 86400000;
+function spendTrend(
+  lists: ShoppingList[],
+  periodDays: number,
+  now: number,
+  range?: {start: number; end: number},
+) {
+  const span = range ? range.end - range.start : periodDays * 86400000;
+  const buckets = span <= 10 * 86400000 ? 7 : span <= 40 * 86400000 ? 4 : 6;
   const size = span / buckets;
-  const start = now - span;
+  const start = range?.start ?? now - span;
   const totals = Array.from({length: buckets}, () => 0);
   for (const list of lists) {
     const t = new Date(list.finishedAt).getTime();

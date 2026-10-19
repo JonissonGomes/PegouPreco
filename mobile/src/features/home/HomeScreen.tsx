@@ -356,13 +356,6 @@ export function HomeScreen() {
                 categories: dashCategory,
               })
             }
-            onOpenCategory={category =>
-              nav.navigate('HomeSpend', {
-                period,
-                marketId: dashMarket,
-                categories: [category],
-              })
-            }
           />
           <HomeHub
             shortcuts={[

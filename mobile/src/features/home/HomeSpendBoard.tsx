@@ -1,10 +1,10 @@
 import React from 'react';
 import {Pressable, StyleSheet, Text, View} from 'react-native';
-import Svg, {Circle} from 'react-native-svg';
+import Svg, {Circle, Path} from 'react-native-svg';
 import {formatBrl} from '@/domain/money';
 import type {HomeDash, HomePeriodDays} from '@/domain/homeDashboard';
 import {Reveal, useDraw} from '@/ui/reveal';
-import {palette, paletteAt} from '@/ui/primaryColors';
+import {palette} from '@/ui/primaryColors';
 import {colors, space} from '@/ui/theme';
 
 const PERIOD_LABEL: Record<HomePeriodDays, string> = {
@@ -18,18 +18,12 @@ export function HomeSpendBoard({
   period,
   play = 0,
   onPress,
-  onOpenCategory,
 }: {
   dash: HomeDash;
   period: HomePeriodDays;
   play?: number;
   onPress?: () => void;
-  onOpenCategory?: (category: string) => void;
 }) {
-  const slices = dash.categories.slice(0, 5);
-  const total = slices.reduce((sum, item) => sum + item.total, 0) || dash.spent || 1;
-  const lead = slices[0];
-  const leadPct = lead ? Math.round((lead.total / total) * 100) : 0;
   const trendMax = Math.max(...dash.trend.map(point => point.total), 1);
   const draw = useDraw(160, 900, play);
 
@@ -97,47 +91,6 @@ export function HomeSpendBoard({
         </Pressable>
       </Reveal>
 
-      <Reveal delay={80} play={play}>
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Gasto por categoria</Text>
-          {slices.length === 0 ? (
-            <Text style={styles.empty}>Cadastre uma nota para ver as categorias.</Text>
-          ) : (
-            <View style={styles.donutRow}>
-              <Pressable onPress={onPress} disabled={!onPress}>
-                <Donut
-                  play={play}
-                  slices={slices.map((item, index) => ({
-                    total: item.total,
-                    color: paletteAt(index),
-                  }))}
-                  center={`${leadPct}%`}
-                />
-              </Pressable>
-              <View style={styles.legend}>
-                {slices.map((item, index) => (
-                  <Pressable
-                    key={item.category}
-                    style={styles.legendRow}
-                    onPress={() => onOpenCategory?.(item.category)}>
-                    <View
-                      style={[
-                        styles.dot,
-                        {backgroundColor: paletteAt(index)},
-                      ]}
-                    />
-                    <Text style={styles.legendName} numberOfLines={1}>
-                      {item.category}
-                    </Text>
-                    <Text style={styles.legendValue}>{formatBrl(item.total)}</Text>
-                  </Pressable>
-                ))}
-              </View>
-            </View>
-          )}
-        </View>
-      </Reveal>
-
       {dash.trend.some(point => point.total > 0) ? (
         <Reveal delay={140} play={play}>
           <Pressable style={styles.card} onPress={onPress} disabled={!onPress}>
@@ -190,67 +143,6 @@ function MiniRing({ratio, play}: {ratio: number; play: number}) {
   );
 }
 
-function Donut({
-  slices,
-  center,
-  play,
-}: {
-  slices: {total: number; color: string}[];
-  center: string;
-  play: number;
-}) {
-  const size = 132;
-  const stroke = 16;
-  const radius = (size - stroke) / 2;
-  const length = 2 * Math.PI * radius;
-  const progress = useDraw(200, 1100, play);
-  const sum = slices.reduce((acc, item) => acc + item.total, 0) || 1;
-  const arcs: {color: string; start: number; part: number}[] = [];
-  let cursor = 0;
-  for (const slice of slices) {
-    const part = (slice.total / sum) * length;
-    arcs.push({color: slice.color, start: cursor, part});
-    cursor += part;
-  }
-  return (
-    <View style={{width: size, height: size}}>
-      <Svg width={size} height={size}>
-        <Circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          stroke="#E5E7EB"
-          strokeWidth={stroke}
-          fill="none"
-        />
-        {arcs.map(arc => {
-          const shown = arc.part * progress;
-          return (
-            <Circle
-              key={`${arc.color}-${arc.start}`}
-              cx={size / 2}
-              cy={size / 2}
-              r={radius}
-              stroke={arc.color}
-              strokeWidth={stroke}
-              fill="none"
-              strokeDasharray={`${shown} ${length - shown}`}
-              strokeDashoffset={-arc.start}
-              strokeLinecap="round"
-              originX={size / 2}
-              originY={size / 2}
-              rotation={-90}
-            />
-          );
-        })}
-      </Svg>
-      <View style={styles.donutCenter}>
-        <Text style={styles.donutPct}>{center}</Text>
-      </View>
-    </View>
-  );
-}
-
 function Trend({
   points,
   max,
@@ -260,30 +152,65 @@ function Trend({
   max: number;
   play: number;
 }) {
+  const [width, setWidth] = React.useState(0);
   const progress = useDraw(160, 800, play);
+  const height = 96;
+  const coords =
+    width > 0
+      ? points.map((point, index) => {
+          const x =
+            points.length === 1
+              ? width / 2
+              : (index / (points.length - 1)) * (width - 16) + 8;
+          const ratio = max > 0 ? Math.min(1, point.total / max) : 0;
+          const y = height - 8 - ratio * progress * (height - 20);
+          return {x, y, label: point.label};
+        })
+      : [];
+  const line = coords
+    .map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`)
+    .join(' ');
+  const area =
+    coords.length > 1
+      ? `${line} L ${coords[coords.length - 1].x} ${height} L ${coords[0].x} ${height} Z`
+      : '';
   return (
-    <View style={styles.bars}>
-      {points.map((point, index) => {
-        const ratio = max > 0 ? Math.min(1, point.total / max) : 0;
-        return (
-          <View key={`${point.label}-${index}`} style={styles.barCol}>
-            <View style={styles.barTrack}>
-              <View
-                style={[
-                  styles.barFill,
-                  {
-                    height: `${Math.max(4, ratio * progress * 100)}%`,
-                    backgroundColor: paletteAt(index),
-                  },
-                ]}
-              />
-            </View>
-            <Text style={styles.trendLabel} numberOfLines={1}>
-              {point.label}
-            </Text>
-          </View>
-        );
-      })}
+    <View onLayout={e => setWidth(e.nativeEvent.layout.width)}>
+      {width > 0 ? (
+        <Svg width={width} height={height}>
+          {area ? <Path d={area} fill={palette.navySoft} /> : null}
+          {line ? (
+            <Path
+              d={line}
+              stroke={palette.navy}
+              strokeWidth={3}
+              fill="none"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          ) : null}
+          {coords.map(point => (
+            <Circle
+              key={`${point.label}-${point.x}`}
+              cx={point.x}
+              cy={point.y}
+              r={4}
+              fill={colors.white}
+              stroke={palette.navy}
+              strokeWidth={2}
+            />
+          ))}
+        </Svg>
+      ) : (
+        <View style={{height}} />
+      )}
+      <View style={styles.trendLabels}>
+        {points.map((point, index) => (
+          <Text key={`${point.label}-${index}`} style={styles.trendLabel}>
+            {point.label}
+          </Text>
+        ))}
+      </View>
     </View>
   );
 }
@@ -334,29 +261,11 @@ const styles = StyleSheet.create({
   trackSave: {backgroundColor: palette.cyan},
   ringPct: {fontSize: 14, fontWeight: '900', color: colors.navy},
   cardTitle: {fontSize: 16, fontWeight: '900', color: colors.navy},
-  empty: {color: colors.muted, fontWeight: '600'},
-  donutRow: {flexDirection: 'row', alignItems: 'center', gap: 12},
-  legend: {flex: 1, gap: 8},
-  legendRow: {flexDirection: 'row', alignItems: 'center', gap: 6},
-  dot: {width: 10, height: 10, borderRadius: 5},
-  legendName: {flex: 1, fontWeight: '700', color: colors.ink, fontSize: 13},
-  legendValue: {fontWeight: '800', color: colors.navy, fontSize: 12},
   donutCenter: {
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  donutPct: {fontSize: 18, fontWeight: '900', color: colors.navy},
+  trendLabels: {flexDirection: 'row', justifyContent: 'space-between'},
   trendLabel: {fontSize: 11, fontWeight: '700', color: colors.muted},
-  bars: {flexDirection: 'row', alignItems: 'flex-end', gap: 8, height: 108},
-  barCol: {flex: 1, alignItems: 'center', gap: 4},
-  barTrack: {
-    width: '70%',
-    height: 84,
-    borderRadius: 8,
-    backgroundColor: colors.bg,
-    justifyContent: 'flex-end',
-    overflow: 'hidden',
-  },
-  barFill: {width: '100%', borderRadius: 8},
 });

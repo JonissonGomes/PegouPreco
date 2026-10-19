@@ -1,132 +1,232 @@
 import React from 'react';
-import {StyleSheet, Text, View} from 'react-native';
+import {Pressable, StyleSheet, Text, View} from 'react-native';
+import Svg, {Circle} from 'react-native-svg';
 import {formatBrl} from '@/domain/money';
-import type {HomeDash} from '@/domain/homeDashboard';
-import {CategoryIcon} from '@/features/history/categoryIcon';
-import {paletteAt} from '@/ui/primaryColors';
+import type {HomeDash, SpendSpan} from '@/domain/homeDashboard';
+import {categoryTone} from '@/features/history/categoryTone';
 import {colors, space} from '@/ui/theme';
 
-/** Painel da tela de Gastos: barras de categoria e de período, sem o anel da Home. */
-export function SpendOverview({dash}: {dash: HomeDash}) {
-  const slices = dash.categories.slice(0, 6);
-  const maxCat = Math.max(...slices.map(item => item.total), 1);
-  const maxTrend = Math.max(...dash.trend.map(point => point.total), 1);
-  const ticket =
-    dash.purchaseCount > 0 ? dash.spent / dash.purchaseCount : 0;
+const SPANS: {id: SpendSpan; label: string}[] = [
+  {id: 'week', label: 'Semana'},
+  {id: 'month', label: 'Mês'},
+  {id: 'quarter', label: 'Trimestre'},
+];
 
+function compactBrl(value: number) {
+  if (value >= 1000) {
+    const mil = value / 1000;
+    const digits = mil >= 10 ? 0 : 1;
+    return `R$ ${mil.toFixed(digits).replace('.', ',')} mil`;
+  }
+  return formatBrl(value);
+}
+
+/** Classificação visual dos gastos: período, meses e anel por categoria. */
+export function SpendOverview({
+  dash,
+  span,
+  selectedLabel,
+  previousLabel,
+  nextLabel,
+  previousTotal,
+  nextTotal,
+  canNext,
+  onSpan,
+  onPrevious,
+  onNext,
+  onOpenCategory,
+}: {
+  dash: HomeDash;
+  span: SpendSpan;
+  selectedLabel: string;
+  previousLabel: string;
+  nextLabel: string;
+  previousTotal: number;
+  nextTotal: number;
+  canNext: boolean;
+  onSpan: (span: SpendSpan) => void;
+  onPrevious: () => void;
+  onNext: () => void;
+  onOpenCategory?: (category: string) => void;
+}) {
+  const slices = dash.categories;
   return (
-    <View style={styles.wrap}>
-      <View style={styles.metrics}>
-        <Metric label="Gasto" value={formatBrl(dash.spent)} />
-        <Metric label="Notas" value={String(dash.purchaseCount)} />
-        <Metric label="Ticket" value={formatBrl(ticket)} />
-      </View>
-      <Text style={styles.title}>Valor por categoria</Text>
-      {slices.length === 0 ? (
-        <Text style={styles.empty}>Nenhuma categoria neste filtro.</Text>
-      ) : (
-        slices.map((item, index) => (
-          <View key={item.category} style={styles.catRow}>
-            <CategoryIcon name={item.category} />
-            <Text style={styles.catName} numberOfLines={1}>
-              {item.category}
-            </Text>
-            <View style={styles.catTrack}>
-              <View
-                style={[
-                  styles.catFill,
-                  {
-                    width: `${Math.max(8, (item.total / maxCat) * 100)}%`,
-                    backgroundColor: paletteAt(index),
-                  },
-                ]}
-              />
-            </View>
-            <Text style={styles.catValue}>{formatBrl(item.total)}</Text>
-          </View>
-        ))
-      )}
-      <Text style={styles.title}>Gasto no período</Text>
-      <View style={styles.bars}>
-        {dash.trend.map((point, index) => {
-          const ratio = point.total / maxTrend;
+    <View style={styles.card}>
+      <View style={styles.spans}>
+        {SPANS.map(item => {
+          const on = item.id === span;
           return (
-            <View key={`${point.label}-${index}`} style={styles.barCol}>
-              <View style={styles.barTrack}>
-                <View
-                  style={[
-                    styles.barFill,
-                    {
-                      height: `${Math.max(point.total > 0 ? 8 : 0, ratio * 100)}%`,
-                      backgroundColor: colors.navy,
-                    },
-                  ]}
-                />
-              </View>
-              <Text style={styles.barLabel} numberOfLines={1}>
-                {point.label}
+            <Pressable
+              key={item.id}
+              style={[styles.span, on && styles.spanOn]}
+              onPress={() => onSpan(item.id)}>
+              <Text style={[styles.spanText, on && styles.spanTextOn]}>
+                {item.label}
               </Text>
-            </View>
+            </Pressable>
           );
         })}
       </View>
+
+      <View style={styles.months}>
+        <Pressable style={styles.monthSide} onPress={onPrevious}>
+          <Text style={styles.monthSideName}>{previousLabel}</Text>
+          <Text style={styles.monthSideValue}>{formatBrl(previousTotal)}</Text>
+        </Pressable>
+        <View style={styles.monthCurrent}>
+          <Text style={styles.monthCurrentName}>{selectedLabel}</Text>
+        </View>
+        <Pressable
+          style={[styles.monthSide, !canNext && styles.monthOff]}
+          disabled={!canNext}
+          onPress={onNext}>
+          <Text style={styles.monthSideName}>{nextLabel}</Text>
+          <Text style={styles.monthSideValue}>
+            {canNext ? formatBrl(nextTotal) : '—'}
+          </Text>
+        </Pressable>
+      </View>
+
+      {slices.length === 0 ? (
+        <Text style={styles.empty}>Nenhuma compra neste período.</Text>
+      ) : (
+        <>
+          <View style={styles.donutWrap}>
+            <Donut
+              slices={slices.map(item => ({
+                total: item.total,
+                color: categoryTone(item.category).fg,
+              }))}
+              center={compactBrl(dash.spent)}
+            />
+          </View>
+          <View style={styles.legend}>
+            {slices.map(item => (
+              <Pressable
+                key={item.category}
+                style={styles.legendItem}
+                onPress={() => onOpenCategory?.(item.category)}>
+                <View
+                  style={[
+                    styles.dot,
+                    {backgroundColor: categoryTone(item.category).fg},
+                  ]}
+                />
+                <Text style={styles.legendName} numberOfLines={1}>
+                  {item.category}
+                </Text>
+                <Text style={styles.legendValue}>{formatBrl(item.total)}</Text>
+              </Pressable>
+            ))}
+          </View>
+        </>
+      )}
     </View>
   );
 }
 
-function Metric({label, value}: {label: string; value: string}) {
+function Donut({
+  slices,
+  center,
+}: {
+  slices: {total: number; color: string}[];
+  center: string;
+}) {
+  const size = 210;
+  const stroke = 22;
+  const radius = (size - stroke) / 2;
+  const length = 2 * Math.PI * radius;
+  const sum = slices.reduce((acc, item) => acc + item.total, 0) || 1;
+  const gap = slices.length > 1 ? 10 : 0;
+  const usable = Math.max(length - gap * slices.length, 1);
+  const arcs: {color: string; start: number; part: number}[] = [];
+  let cursor = 0;
+  for (const slice of slices) {
+    const part = (slice.total / sum) * usable;
+    arcs.push({color: slice.color, start: cursor, part});
+    cursor += part + gap;
+  }
   return (
-    <View style={styles.metric}>
-      <Text style={styles.metricLabel}>{label}</Text>
-      <Text style={styles.metricValue} numberOfLines={1}>
-        {value}
-      </Text>
+    <View style={{width: size, height: size}}>
+      <Svg width={size} height={size}>
+        <Circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke="#E8EDF5"
+          strokeWidth={stroke}
+          fill="none"
+        />
+        {arcs.map(arc => (
+          <Circle
+            key={`${arc.color}-${arc.start}`}
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            stroke={arc.color}
+            strokeWidth={stroke}
+            fill="none"
+            strokeDasharray={`${arc.part} ${length - arc.part}`}
+            strokeDashoffset={-arc.start}
+            strokeLinecap="round"
+            originX={size / 2}
+            originY={size / 2}
+            rotation={-90}
+          />
+        ))}
+      </Svg>
+      <View style={styles.center}>
+        <Text style={styles.centerValue}>{center}</Text>
+        <Text style={styles.centerHint}>no período</Text>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  wrap: {
+  card: {
     marginHorizontal: space.md,
     marginBottom: space.md,
     backgroundColor: colors.white,
-    borderRadius: 20,
+    borderRadius: 28,
     padding: space.md,
-    gap: 10,
+    gap: 16,
   },
-  metrics: {flexDirection: 'row', gap: 8},
-  metric: {
-    flex: 1,
+  spans: {
+    flexDirection: 'row',
     backgroundColor: colors.bg,
-    borderRadius: 14,
-    padding: 10,
-    gap: 2,
+    borderRadius: 999,
+    padding: 4,
   },
-  metricLabel: {fontSize: 11, fontWeight: '700', color: colors.muted},
-  metricValue: {fontSize: 14, fontWeight: '900', color: colors.navy},
-  title: {fontSize: 15, fontWeight: '900', color: colors.navy, marginTop: 4},
-  empty: {color: colors.muted, fontWeight: '600'},
-  catRow: {flexDirection: 'row', alignItems: 'center', gap: 8},
-  catName: {width: 92, fontWeight: '700', color: colors.ink, fontSize: 12},
-  catTrack: {
-    flex: 1,
-    height: 10,
-    borderRadius: 6,
-    backgroundColor: colors.bg,
-    overflow: 'hidden',
+  span: {flex: 1, borderRadius: 999, paddingVertical: 8, alignItems: 'center'},
+  spanOn: {backgroundColor: colors.navy},
+  spanText: {fontWeight: '800', color: colors.muted, fontSize: 13},
+  spanTextOn: {color: colors.white},
+  months: {flexDirection: 'row', alignItems: 'flex-end', gap: 8},
+  monthSide: {flex: 1, alignItems: 'center', gap: 2, paddingVertical: 4},
+  monthOff: {opacity: 0.35},
+  monthSideName: {fontSize: 13, fontWeight: '700', color: colors.muted},
+  monthSideValue: {fontSize: 12, fontWeight: '800', color: colors.navy},
+  monthCurrent: {flex: 1.2, alignItems: 'center'},
+  monthCurrentName: {fontSize: 20, fontWeight: '900', color: colors.navy},
+  empty: {color: colors.muted, fontWeight: '600', textAlign: 'center'},
+  donutWrap: {alignItems: 'center'},
+  legend: {flexDirection: 'row', flexWrap: 'wrap', rowGap: 10},
+  legendItem: {
+    width: '50%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingRight: 8,
   },
-  catFill: {height: '100%', borderRadius: 6},
-  catValue: {width: 72, textAlign: 'right', fontWeight: '800', color: colors.navy, fontSize: 12},
-  bars: {flexDirection: 'row', alignItems: 'flex-end', gap: 8, height: 110},
-  barCol: {flex: 1, alignItems: 'center', gap: 4},
-  barTrack: {
-    width: '70%',
-    height: 84,
-    borderRadius: 8,
-    backgroundColor: colors.bg,
-    justifyContent: 'flex-end',
-    overflow: 'hidden',
+  dot: {width: 8, height: 8, borderRadius: 4},
+  legendName: {flex: 1, fontWeight: '700', color: colors.ink, fontSize: 13},
+  legendValue: {fontWeight: '800', color: colors.navy, fontSize: 12},
+  center: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  barFill: {width: '100%', backgroundColor: colors.navy, borderRadius: 8},
-  barLabel: {fontSize: 10, fontWeight: '700', color: colors.muted},
+  centerValue: {fontSize: 22, fontWeight: '900', color: colors.navy},
+  centerHint: {fontSize: 12, fontWeight: '700', color: colors.muted},
 });

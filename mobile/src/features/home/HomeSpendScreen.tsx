@@ -6,7 +6,12 @@ import {ArrowLeft, SlidersHorizontal} from 'lucide-react-native';
 import {formatBrl, formatQty} from '@/domain/money';
 import {PRODUCT_CATEGORIES, resolveCategory} from '@/domain/productCategory';
 import {lineTotal} from '@/domain/pricing';
-import {buildHomeDash, type HomePeriodDays} from '@/domain/homeDashboard';
+import {
+  buildHomeDash,
+  calendarRange,
+  type HomePeriodDays,
+  type SpendSpan,
+} from '@/domain/homeDashboard';
 import {CategoryIcon} from '@/features/history/categoryIcon';
 import {HomeFilterSheet} from '@/features/home/HomeFilterSheet';
 import {SpendOverview} from '@/features/home/SpendOverview';
@@ -30,6 +35,33 @@ function parseItems(list: ShoppingList): CartItem[] {
   }
 }
 
+function spanOf(period: HomePeriodDays): SpendSpan {
+  if (period === 7) return 'week';
+  if (period === 90) return 'quarter';
+  return 'month';
+}
+
+function periodOf(span: SpendSpan): HomePeriodDays {
+  if (span === 'week') return 7;
+  if (span === 'quarter') return 90;
+  return 30;
+}
+
+function monthStart(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), 1);
+}
+
+function addMonths(date: Date, delta: number) {
+  return new Date(date.getFullYear(), date.getMonth() + delta, 1);
+}
+
+function monthName(date: Date, length: 'long' | 'short') {
+  const raw = date
+    .toLocaleDateString('pt-BR', {month: length})
+    .replace('.', '');
+  return raw.charAt(0).toUpperCase() + raw.slice(1);
+}
+
 function formatWhen(iso: string) {
   const d = new Date(iso);
   const month = d.toLocaleDateString('pt-BR', {month: 'short'}).replace('.', '');
@@ -42,6 +74,8 @@ export function HomeSpendScreen() {
   const route = useRoute();
   const params = (route.params ?? {}) as Partial<Params>;
   const [period, setPeriod] = useState<HomePeriodDays>(params.period ?? 30);
+  const [span, setSpan] = useState<SpendSpan>(spanOf(params.period ?? 30));
+  const [month, setMonth] = useState(() => monthStart(new Date()));
   const [marketId, setMarketId] = useState<number | null>(params.marketId ?? null);
   const [categories, setCategories] = useState<string[]>(
     params.categories ?? (params.category ? [params.category] : []),
@@ -52,14 +86,58 @@ export function HomeSpendScreen() {
   const markets = useAppStore(s => s.markets);
   const logs = useMemo(() => priceLogRepo.all(), [lists, products]);
   useEffect(() => {
-    setPeriod(params.period ?? 30);
+    const nextPeriod = params.period ?? 30;
+    setPeriod(nextPeriod);
+    setSpan(spanOf(nextPeriod));
     setMarketId(params.marketId ?? null);
     setCategories(params.categories ?? (params.category ? [params.category] : []));
   }, [params.period, params.marketId, params.category, params.categories]);
+  const range = useMemo(() => calendarRange(month, span), [month, span]);
   const dash = useMemo(
-    () => buildHomeDash(lists, products, period, marketId, categories, logs),
-    [lists, products, period, marketId, categories, logs],
+    () =>
+      buildHomeDash(
+        lists,
+        products,
+        period,
+        marketId,
+        categories,
+        logs,
+        Date.now(),
+        range,
+      ),
+    [lists, products, period, marketId, categories, logs, range],
   );
+  const previousMonth = addMonths(month, -1);
+  const nextMonth = addMonths(month, 1);
+  const canNext = nextMonth.getTime() <= monthStart(new Date()).getTime();
+  const neighborSpent = useMemo(() => {
+    const totalAt = (anchor: Date) =>
+      buildHomeDash(
+        lists,
+        products,
+        period,
+        marketId,
+        categories,
+        logs,
+        Date.now(),
+        calendarRange(anchor, span),
+      ).spent;
+    return {
+      previous: totalAt(previousMonth),
+      next: canNext ? totalAt(nextMonth) : 0,
+    };
+  }, [
+    lists,
+    products,
+    period,
+    marketId,
+    categories,
+    logs,
+    span,
+    previousMonth,
+    nextMonth,
+    canNext,
+  ]);
   const filterCount =
     (period !== 30 ? 1 : 0) + (marketId != null ? 1 : 0) + categories.length;
 
@@ -80,7 +158,29 @@ export function HomeSpendScreen() {
         </Pressable>
       </View>
       <ScrollView contentContainerStyle={{paddingBottom: insets.bottom + 24}}>
-        <SpendOverview dash={dash} />
+        <SpendOverview
+          dash={dash}
+          span={span}
+          selectedLabel={monthName(month, 'long')}
+          previousLabel={monthName(previousMonth, 'short')}
+          nextLabel={monthName(nextMonth, 'short')}
+          previousTotal={neighborSpent.previous}
+          nextTotal={neighborSpent.next}
+          canNext={canNext}
+          onSpan={next => {
+            setSpan(next);
+            setPeriod(periodOf(next));
+          }}
+          onPrevious={() => setMonth(previousMonth)}
+          onNext={() => {
+            if (canNext) setMonth(nextMonth);
+          }}
+          onOpenCategory={category =>
+            setCategories(current =>
+              current.length === 1 && current[0] === category ? [] : [category],
+            )
+          }
+        />
         <Text style={styles.section}>
           {categories.length ? categories.join(' · ') : 'Compras do filtro'}
         </Text>
