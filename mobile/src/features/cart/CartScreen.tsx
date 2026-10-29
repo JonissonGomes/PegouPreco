@@ -15,6 +15,7 @@ import {useFocusEffect, useNavigation, useRoute} from '@react-navigation/native'
 import Geolocation from 'react-native-geolocation-service';
 import {
   ClipboardList,
+  FileText,
   History,
   MoreVertical,
   Plus,
@@ -64,6 +65,10 @@ import {haversineKm} from '@/data/remote/nearbyMarkets';
 import {MAPBOX_ACCESS_TOKEN} from '@/config/env';
 import {CartEmptyGuide} from '@/features/cart/CartEmptyGuide';
 import {BasketWhereCard} from '@/features/cart/BasketWhereCard';
+import {ImportListSheet} from '@/features/cart/ImportListSheet';
+import {CategoryIcon} from '@/features/history/categoryIcon';
+import {groupCartByCategory} from '@/domain/groupCartByCategory';
+import {parseShoppingListText} from '@/domain/parseShoppingListText';
 
 function qtyPhrase(qty: number) {
   const n = formatQty(qty);
@@ -82,11 +87,13 @@ export function CartScreen() {
   const activeMarketId = useAppStore(s => s.activeMarketId);
   const spendLimit = useAppStore(s => s.spendLimit);
   const markets = useAppStore(s => s.markets);
+  const products = useAppStore(s => s.products);
   const auth = useAppStore(s => s.auth);
   const marketName = useMarketName(activeMarketId);
   const [editItem, setEditItem] = useState<CartItem | null>(null);
   const [startOpen, setStartOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [listName, setListName] = useState('Compras de hoje');
   const [spendLimitText, setSpendLimitText] = useState('');
   const presetMarketId = useRef<number | null>(null);
@@ -115,6 +122,14 @@ export function CartScreen() {
     () => cart.filter(i => !i.checkedOff),
     [cart],
   );
+  const inCartGroups = useMemo(
+    () => groupCartByCategory(inCart, products),
+    [inCart, products],
+  );
+  const missingGroups = useMemo(
+    () => groupCartByCategory(missing, products),
+    [missing, products],
+  );
   const progress =
     totals.itemCount > 0 ? selectedCount / totals.itemCount : 0;
 
@@ -136,6 +151,47 @@ export function CartScreen() {
     setItemDraft('');
     setAddOpen(false);
     refresh();
+  };
+
+  const importListText = (raw: string) => {
+    const parsed = parseShoppingListText(raw);
+    if (!parsed.length) {
+      appAlert('Importar lista', 'Não reconheci nenhum item neste texto.');
+      return;
+    }
+    animateLayout();
+    const known = new Map(cart.map(row => [row.productId, row]));
+    for (const item of parsed) {
+      const product = productRepo.resolveOrCreate(item.name, item.category);
+      const existing = known.get(product.id);
+      const nextQty = (existing?.quantity ?? 0) + item.quantity;
+      cartRepo.upsert({
+        productId: product.id,
+        productName: item.name,
+        quantity: nextQty,
+        retailPrice: existing?.retailPrice ?? 0,
+        wholesalePrice: existing?.wholesalePrice ?? null,
+        minWholesaleQty: existing?.minWholesaleQty ?? null,
+        checkedOff: existing?.checkedOff ?? 0,
+      });
+      known.set(product.id, {
+        id: existing?.id ?? product.id,
+        productId: product.id,
+        productName: item.name,
+        quantity: nextQty,
+        retailPrice: existing?.retailPrice ?? 0,
+        wholesalePrice: existing?.wholesalePrice ?? null,
+        minWholesaleQty: existing?.minWholesaleQty ?? null,
+        useWholesale: existing?.useWholesale ?? 0,
+        checkedOff: existing?.checkedOff ?? 0,
+        updatedAt: existing?.updatedAt ?? '',
+      });
+    }
+    refresh();
+    appAlert(
+      'Lista importada',
+      `${parsed.length} itens adicionados ao carrinho.`,
+    );
   };
 
   const scanListItem = (item: CartItem) => {
@@ -360,29 +416,37 @@ export function CartScreen() {
               <Text style={styles.menuItemText}>Histórico</Text>
             </Pressable>
             {activeListName ? (
-              <Pressable
-                style={styles.menuItem}
-                onPress={() =>
-                  runMenuAction(() =>
-                    appAlert(
-                      'Cancelar esta compra?',
-                      'Os itens saem do carrinho e você pode iniciar outra.',
-                      [
-                        {label: 'Voltar', style: 'cancel'},
-                        {
-                          label: 'Cancelar compra',
-                          style: 'destructive',
-                          onPress: () => cancelPurchase(),
-                        },
-                      ],
-                    ),
-                  )
-                }>
-                <Trash2 size={18} color={colors.danger} />
-                <Text style={[styles.menuItemText, {color: colors.danger}]}>
-                  Cancelar compra
-                </Text>
-              </Pressable>
+              <>
+                <Pressable
+                  style={styles.menuItem}
+                  onPress={() => runMenuAction(() => setImportOpen(true))}>
+                  <FileText size={18} color={colors.navy} />
+                  <Text style={styles.menuItemText}>Importar lista</Text>
+                </Pressable>
+                <Pressable
+                  style={styles.menuItem}
+                  onPress={() =>
+                    runMenuAction(() =>
+                      appAlert(
+                        'Cancelar esta compra?',
+                        'Os itens saem do carrinho e você pode iniciar outra.',
+                        [
+                          {label: 'Voltar', style: 'cancel'},
+                          {
+                            label: 'Cancelar compra',
+                            style: 'destructive',
+                            onPress: () => cancelPurchase(),
+                          },
+                        ],
+                      ),
+                    )
+                  }>
+                  <Trash2 size={18} color={colors.danger} />
+                  <Text style={[styles.menuItemText, {color: colors.danger}]}>
+                    Cancelar compra
+                  </Text>
+                </Pressable>
+              </>
             ) : null}
           </View>
         </Pressable>
@@ -430,43 +494,51 @@ export function CartScreen() {
             />
             {cart.length === 0 ? (
               <Text style={styles.emptyList}>
-                Lista vazia. Toque em + no topo para escrever um item.
+                Lista vazia. Toque em + no topo ou importe uma lista no menu.
               </Text>
             ) : null}
 
             {inCart.length > 0 ? (
               <>
                 <Text style={styles.sectionTitle}>No carrinho</Text>
-                {inCart.map(item => (
-                  <CartRow
-                    key={item.id}
-                    item={item}
-                    muted={false}
-                    onEdit={() => setEditItem(item)}
-                    onDelete={() => {
-                      appAlert(
-                        'Excluir item?',
-                        `"${item.productName}" será removido da lista.`,
-                        [
-                          {label: 'Cancelar', style: 'cancel'},
-                          {
-                            label: 'Excluir',
-                            style: 'destructive',
-                            onPress: () => {
-                              animateLayout();
-                              cartRepo.remove(item.id);
-                              refresh();
-                            },
-                          },
-                        ],
-                      );
-                    }}
-                    onToggle={() => {
-                      cartRepo.toggleChecked(item.id);
-                      refresh();
-                    }}
-                    onScan={() => scanListItem(item)}
-                  />
+                {inCartGroups.map(group => (
+                  <View key={`in-${group.category}`} style={styles.catBlock}>
+                    <View style={styles.catHead}>
+                      <CategoryIcon name={group.category} size={14} />
+                      <Text style={styles.catTitle}>{group.category}</Text>
+                    </View>
+                    {group.items.map(item => (
+                      <CartRow
+                        key={item.id}
+                        item={item}
+                        muted={false}
+                        onEdit={() => setEditItem(item)}
+                        onDelete={() => {
+                          appAlert(
+                            'Excluir item?',
+                            `"${item.productName}" será removido da lista.`,
+                            [
+                              {label: 'Cancelar', style: 'cancel'},
+                              {
+                                label: 'Excluir',
+                                style: 'destructive',
+                                onPress: () => {
+                                  animateLayout();
+                                  cartRepo.remove(item.id);
+                                  refresh();
+                                },
+                              },
+                            ],
+                          );
+                        }}
+                        onToggle={() => {
+                          cartRepo.toggleChecked(item.id);
+                          refresh();
+                        }}
+                        onScan={() => scanListItem(item)}
+                      />
+                    ))}
+                  </View>
                 ))}
               </>
             ) : null}
@@ -476,36 +548,44 @@ export function CartScreen() {
                 <Text style={styles.sectionTitle}>
                   Faltam · {missing.length}
                 </Text>
-                {missing.map(item => (
-                  <CartRow
-                    key={item.id}
-                    item={item}
-                    muted
-                    onEdit={() => setEditItem(item)}
-                    onDelete={() => {
-                      appAlert(
-                        'Excluir item?',
-                        `"${item.productName}" será removido da lista.`,
-                        [
-                          {label: 'Cancelar', style: 'cancel'},
-                          {
-                            label: 'Excluir',
-                            style: 'destructive',
-                            onPress: () => {
-                              animateLayout();
-                              cartRepo.remove(item.id);
-                              refresh();
-                            },
-                          },
-                        ],
-                      );
-                    }}
-                    onToggle={() => {
-                      cartRepo.toggleChecked(item.id);
-                      refresh();
-                    }}
-                    onScan={() => scanListItem(item)}
-                  />
+                {missingGroups.map(group => (
+                  <View key={`miss-${group.category}`} style={styles.catBlock}>
+                    <View style={styles.catHead}>
+                      <CategoryIcon name={group.category} size={14} />
+                      <Text style={styles.catTitle}>{group.category}</Text>
+                    </View>
+                    {group.items.map(item => (
+                      <CartRow
+                        key={item.id}
+                        item={item}
+                        muted
+                        onEdit={() => setEditItem(item)}
+                        onDelete={() => {
+                          appAlert(
+                            'Excluir item?',
+                            `"${item.productName}" será removido da lista.`,
+                            [
+                              {label: 'Cancelar', style: 'cancel'},
+                              {
+                                label: 'Excluir',
+                                style: 'destructive',
+                                onPress: () => {
+                                  animateLayout();
+                                  cartRepo.remove(item.id);
+                                  refresh();
+                                },
+                              },
+                            ],
+                          );
+                        }}
+                        onToggle={() => {
+                          cartRepo.toggleChecked(item.id);
+                          refresh();
+                        }}
+                        onScan={() => scanListItem(item)}
+                      />
+                    ))}
+                  </View>
                 ))}
               </>
             ) : null}
@@ -553,6 +633,12 @@ export function CartScreen() {
           )}
         </>
       )}
+
+      <ImportListSheet
+        visible={importOpen}
+        onClose={() => setImportOpen(false)}
+        onImport={importListText}
+      />
 
       <KeyboardSafeSheet
         visible={addOpen}
@@ -997,6 +1083,14 @@ const styles = StyleSheet.create({
     color: colors.navy,
     letterSpacing: -0.5,
   },
+  catBlock: {gap: 8, marginBottom: 4},
+  catHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 4,
+  },
+  catTitle: {fontWeight: '900', color: colors.navy, fontSize: 13},
   sectionTitle: {
     fontSize: 17,
     fontWeight: '900',

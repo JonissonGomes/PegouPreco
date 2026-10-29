@@ -1,13 +1,26 @@
 import React, {useEffect, useState} from 'react';
 import {Pressable, ScrollView, StyleSheet, Text, View} from 'react-native';
 import {KeyboardSafeSheet} from '@/ui/keyboardSheet';
+import {DateRangeCalendar} from '@/ui/DateRangeCalendar';
 import {colors, radii} from '@/ui/theme';
 import {categoryTone} from './categoryTone';
+import {rangeLabel, type DateRange} from '@/domain/dateRange';
+import type {HomePeriodDays} from '@/domain/homeDashboard';
+
+const PERIODS: {days: HomePeriodDays | 'all' | 'custom'; label: string}[] = [
+  {days: 'all', label: 'Tudo'},
+  {days: 7, label: '7 dias'},
+  {days: 30, label: '30 dias'},
+  {days: 90, label: '90 dias'},
+  {days: 'custom', label: 'Personalizado'},
+];
 
 export function HistoryFilterSheet({
   visible,
   market,
   category,
+  periodDays,
+  customRange,
   markets,
   categories,
   onClose,
@@ -16,23 +29,75 @@ export function HistoryFilterSheet({
   visible: boolean;
   market: string | null;
   category: string[];
+  periodDays: HomePeriodDays | null;
+  customRange: DateRange | null;
   markets: string[];
   categories: string[];
   onClose: () => void;
-  onApply: (next: {market: string | null; category: string[]}) => void;
+  onApply: (next: {
+    market: string | null;
+    category: string[];
+    periodDays: HomePeriodDays | null;
+    customRange: DateRange | null;
+  }) => void;
 }) {
   const [draftMarket, setDraftMarket] = useState(market);
   const [draftCategory, setDraftCategory] = useState(category);
+  const [draftPeriod, setDraftPeriod] = useState<HomePeriodDays | null>(periodDays);
+  const [draftCustom, setDraftCustom] = useState<DateRange | null>(customRange);
+  const [customMode, setCustomMode] = useState(customRange != null);
 
   useEffect(() => {
     if (!visible) return;
     setDraftMarket(market);
     setDraftCategory(category);
-  }, [visible, market, category]);
+    setDraftPeriod(periodDays);
+    setDraftCustom(customRange);
+    setCustomMode(customRange != null);
+  }, [visible, market, category, periodDays, customRange]);
+
+  const periodKey: HomePeriodDays | 'all' | 'custom' = customMode
+    ? 'custom'
+    : draftPeriod == null
+      ? 'all'
+      : draftPeriod;
 
   return (
     <KeyboardSafeSheet visible={visible} onClose={onClose}>
       <Text style={styles.title}>Filtros</Text>
+      <Text style={styles.section}>Período</Text>
+      <View style={styles.row}>
+        {PERIODS.map(item => (
+          <Pressable
+            key={String(item.days)}
+            onPress={() => {
+              if (item.days === 'custom') {
+                setCustomMode(true);
+                return;
+              }
+              setCustomMode(false);
+              setDraftCustom(null);
+              setDraftPeriod(item.days === 'all' ? null : item.days);
+            }}
+            style={[styles.chip, periodKey === item.days && styles.chipOn]}>
+            <Text
+              style={[
+                styles.chipText,
+                periodKey === item.days && styles.chipTextOn,
+              ]}>
+              {item.label}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+      {customMode ? (
+        <>
+          {draftCustom ? (
+            <Text style={styles.rangeHint}>{rangeLabel(draftCustom)}</Text>
+          ) : null}
+          <DateRangeCalendar value={draftCustom} onChange={setDraftCustom} />
+        </>
+      ) : null}
       <Text style={styles.section}>Mercado</Text>
       <ScrollView style={styles.list} nestedScrollEnabled>
         <Option
@@ -79,12 +144,23 @@ export function HistoryFilterSheet({
           onPress={() => {
             setDraftMarket(null);
             setDraftCategory([]);
+            setDraftPeriod(null);
+            setDraftCustom(null);
+            setCustomMode(false);
           }}>
           <Text style={styles.clearText}>Limpar</Text>
         </Pressable>
         <Pressable
           style={styles.apply}
-          onPress={() => onApply({market: draftMarket, category: draftCategory})}>
+          onPress={() => {
+            if (customMode && !draftCustom) return;
+            onApply({
+              market: draftMarket,
+              category: draftCategory,
+              periodDays: customMode ? null : draftPeriod,
+              customRange: customMode ? draftCustom : null,
+            });
+          }}>
           <Text style={styles.applyText}>Aplicar</Text>
         </Pressable>
       </View>
@@ -124,16 +200,33 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: colors.muted,
   },
-  list: {maxHeight: 160},
+  rangeHint: {
+    fontWeight: '800',
+    color: colors.navy,
+    fontSize: 13,
+    marginBottom: 4,
+  },
+  row: {flexDirection: 'row', flexWrap: 'wrap', gap: 8},
+  chip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: radii.pill,
+    backgroundColor: colors.bg,
+  },
+  chipOn: {backgroundColor: colors.navy},
+  chipText: {fontWeight: '800', color: colors.navy},
+  chipTextOn: {color: colors.white},
+  list: {maxHeight: 140},
   option: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
   },
-  dot: {width: 8, height: 8, borderRadius: 4, marginRight: 8},
   optionText: {flex: 1, fontWeight: '700', color: colors.ink, marginRight: 12},
+  dot: {width: 10, height: 10, borderRadius: 5, marginRight: 8},
   radio: {
     width: 22,
     height: 22,

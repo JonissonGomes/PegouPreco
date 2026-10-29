@@ -15,7 +15,9 @@ import {SoftCard, SoftHeader} from '@/ui/screenChrome';
 import {colors, radii, space, spacing} from '@/ui/theme';
 import {formatBrl} from '@/domain/money';
 import {dateSearchText} from '@/domain/dateSearch';
+import {inDateRange, type DateRange} from '@/domain/dateRange';
 import {isFiscalList} from '@/domain/fiscal';
+import type {HomePeriodDays} from '@/domain/homeDashboard';
 import {PRODUCT_CATEGORIES, resolveCategory} from '@/domain/productCategory';
 import {forgetPurchase, useAppStore} from '@/store/appStore';
 import {requestAutoSync} from '@/data/syncWorker';
@@ -57,12 +59,16 @@ export function HistoryScreen() {
   const [query, setQuery] = useState('');
   const [market, setMarket] = useState<string | null>(null);
   const [category, setCategory] = useState<string[]>([]);
+  const [periodDays, setPeriodDays] = useState<HomePeriodDays | null>(null);
+  const [customRange, setCustomRange] = useState<DateRange | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [openList, setOpenList] = useState<ShoppingList | null>(null);
   useClearOnBlur(() => {
     setQuery('');
     setMarket(null);
     setCategory([]);
+    setPeriodDays(null);
+    setCustomRange(null);
     setFiltersOpen(false);
     setOpenList(null);
   });
@@ -99,20 +105,30 @@ export function HistoryScreen() {
   }, [withCats]);
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
+    const now = Date.now();
+    const presetRange =
+      periodDays != null
+        ? {start: now - periodDays * 86400000, end: now + 1}
+        : null;
+    const dateFilter = customRange ?? presetRange;
     return withCats.filter(row => {
       if (market && marketLabel(row.list) !== market) return false;
       if (category.length > 0 && !category.some(name => row.categories.includes(name))) {
         return false;
       }
+      if (dateFilter && !inDateRange(row.list.finishedAt, dateFilter)) return false;
       if (!q) return true;
       if (row.list.name.toLowerCase().includes(q)) return true;
       if (marketLabel(row.list).toLowerCase().includes(q)) return true;
       if (dateSearchText(row.list.finishedAt).includes(q)) return true;
       return row.items.some(it => it.productName.toLowerCase().includes(q));
     });
-  }, [withCats, query, market, category]);
+  }, [withCats, query, market, category, periodDays, customRange]);
 
-  const filterCount = (market ? 1 : 0) + (category.length > 0 ? 1 : 0);
+  const filterCount =
+    (market ? 1 : 0) +
+    (category.length > 0 ? 1 : 0) +
+    (periodDays != null || customRange != null ? 1 : 0);
   const readNote = (list: ShoppingList) => {
     setOpenList(null);
     nav.navigate('ImportPurchase', {replaceListId: list.id});
@@ -229,12 +245,16 @@ export function HistoryScreen() {
         visible={filtersOpen}
         market={market}
         category={category}
+        periodDays={periodDays}
+        customRange={customRange}
         markets={markets}
         categories={categories}
         onClose={() => setFiltersOpen(false)}
         onApply={next => {
           setMarket(next.market);
           setCategory(next.category);
+          setPeriodDays(next.periodDays);
+          setCustomRange(next.customRange);
           setFiltersOpen(false);
         }}
       />

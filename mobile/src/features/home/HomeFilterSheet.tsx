@@ -1,8 +1,10 @@
 import React, {useEffect, useState} from 'react';
 import {Pressable, ScrollView, StyleSheet, Text, View} from 'react-native';
 import {KeyboardSafeSheet} from '@/ui/keyboardSheet';
-import {colors, radii, space} from '@/ui/theme';
+import {DateRangeCalendar} from '@/ui/DateRangeCalendar';
+import {colors, radii} from '@/ui/theme';
 import type {HomePeriodDays} from '@/domain/homeDashboard';
+import {rangeLabel, type DateRange} from '@/domain/dateRange';
 
 const PERIODS: {days: HomePeriodDays; label: string}[] = [
   {days: 7, label: '7 dias'},
@@ -13,6 +15,7 @@ const PERIODS: {days: HomePeriodDays; label: string}[] = [
 export function HomeFilterSheet({
   visible,
   period,
+  customRange,
   marketId,
   category,
   markets,
@@ -22,6 +25,7 @@ export function HomeFilterSheet({
 }: {
   visible: boolean;
   period: HomePeriodDays;
+  customRange: DateRange | null;
   marketId: number | null;
   category: string[];
   markets: {id: number; name: string}[];
@@ -29,39 +33,68 @@ export function HomeFilterSheet({
   onClose: () => void;
   onApply: (next: {
     period: HomePeriodDays;
+    customRange: DateRange | null;
     marketId: number | null;
     category: string[];
   }) => void;
 }) {
   const [draftPeriod, setDraftPeriod] = useState(period);
+  const [draftCustom, setDraftCustom] = useState<DateRange | null>(customRange);
+  const [customMode, setCustomMode] = useState(customRange != null);
   const [draftMarket, setDraftMarket] = useState(marketId);
   const [draftCategory, setDraftCategory] = useState(category);
 
   useEffect(() => {
     if (!visible) return;
     setDraftPeriod(period);
+    setDraftCustom(customRange);
+    setCustomMode(customRange != null);
     setDraftMarket(marketId);
     setDraftCategory(category);
-  }, [visible, period, marketId, category]);
+  }, [visible, period, customRange, marketId, category]);
 
   return (
-    <KeyboardSafeSheet
-      visible={visible}
-      onClose={onClose}>
+    <KeyboardSafeSheet visible={visible} onClose={onClose}>
       <Text style={styles.title}>Filtros</Text>
       <Text style={styles.section}>Período</Text>
       <View style={styles.row}>
         {PERIODS.map(item => (
           <Pressable
             key={item.days}
-            onPress={() => setDraftPeriod(item.days)}
-            style={[styles.chip, draftPeriod === item.days && styles.chipOn]}>
-            <Text style={[styles.chipText, draftPeriod === item.days && styles.chipTextOn]}>
+            onPress={() => {
+              setCustomMode(false);
+              setDraftCustom(null);
+              setDraftPeriod(item.days);
+            }}
+            style={[
+              styles.chip,
+              !customMode && draftPeriod === item.days && styles.chipOn,
+            ]}>
+            <Text
+              style={[
+                styles.chipText,
+                !customMode && draftPeriod === item.days && styles.chipTextOn,
+              ]}>
               {item.label}
             </Text>
           </Pressable>
         ))}
+        <Pressable
+          onPress={() => setCustomMode(true)}
+          style={[styles.chip, customMode && styles.chipOn]}>
+          <Text style={[styles.chipText, customMode && styles.chipTextOn]}>
+            Personalizado
+          </Text>
+        </Pressable>
       </View>
+      {customMode ? (
+        <>
+          {draftCustom ? (
+            <Text style={styles.rangeHint}>{rangeLabel(draftCustom)}</Text>
+          ) : null}
+          <DateRangeCalendar value={draftCustom} onChange={setDraftCustom} />
+        </>
+      ) : null}
       <Text style={styles.section}>Mercado</Text>
       <ScrollView style={styles.list} nestedScrollEnabled>
         <Option
@@ -106,6 +139,8 @@ export function HomeFilterSheet({
           style={styles.clear}
           onPress={() => {
             setDraftPeriod(30);
+            setDraftCustom(null);
+            setCustomMode(false);
             setDraftMarket(null);
             setDraftCategory([]);
           }}>
@@ -113,13 +148,15 @@ export function HomeFilterSheet({
         </Pressable>
         <Pressable
           style={styles.apply}
-          onPress={() =>
+          onPress={() => {
+            if (customMode && !draftCustom) return;
             onApply({
               period: draftPeriod,
+              customRange: customMode ? draftCustom : null,
               marketId: draftMarket,
               category: draftCategory,
-            })
-          }>
+            });
+          }}>
           <Text style={styles.applyText}>Aplicar</Text>
         </Pressable>
       </View>
@@ -155,6 +192,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '800',
     color: colors.muted,
+  },
+  rangeHint: {
+    fontWeight: '800',
+    color: colors.navy,
+    fontSize: 13,
+    marginBottom: 4,
   },
   row: {flexDirection: 'row', flexWrap: 'wrap', gap: 8},
   chip: {

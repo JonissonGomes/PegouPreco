@@ -35,6 +35,7 @@ import {isInBrazil} from '@/data/remote/nearbyMarkets';
 import {ensureNearbyMarketsDiscovered} from '@/data/remote/ensureNearbyMarkets';
 import {PRODUCT_CATEGORIES} from '@/domain/productCategory';
 import {buildHomeDash, type HomePeriodDays} from '@/domain/homeDashboard';
+import type {DateRange} from '@/domain/dateRange';
 import {useWeekdayBuyTip} from '@/features/home/useWeekdayBuyTip';
 import {isFiscalList, isFiscalLog} from '@/domain/fiscal';
 import {HomeHowItWorks} from '@/features/home/HomeHowItWorks';
@@ -77,6 +78,7 @@ export function HomeScreen() {
     },
   );
   const [period, setPeriod] = useState<HomePeriodDays>(30);
+  const [customRange, setCustomRange] = useState<DateRange | null>(null);
   const [dashMarket, setDashMarket] = useState<number | null>(null);
   const [dashCategory, setDashCategory] = useState<string[]>([]);
   const [play, setPlay] = useState(0);
@@ -114,12 +116,31 @@ export function HomeScreen() {
   );
   const dash = useMemo(
     () =>
-      buildHomeDash(lists, products, period, dashMarket, dashCategory, priceLogs),
-    [lists, products, period, dashMarket, dashCategory, priceLogs],
+      buildHomeDash(
+        lists,
+        products,
+        period,
+        dashMarket,
+        dashCategory,
+        priceLogs,
+        Date.now(),
+        customRange ?? undefined,
+      ),
+    [lists, products, period, dashMarket, dashCategory, priceLogs, customRange],
   );
   const filterOptions = useMemo(
-    () => buildHomeDash(lists, products, period, null, [], priceLogs),
-    [lists, products, period, priceLogs],
+    () =>
+      buildHomeDash(
+        lists,
+        products,
+        period,
+        null,
+        [],
+        priceLogs,
+        Date.now(),
+        customRange ?? undefined,
+      ),
+    [lists, products, period, priceLogs, customRange],
   );
   const buyTip = useWeekdayBuyTip(lists, products, auth?.token);
   const cheaper = useMemo(() => {
@@ -240,6 +261,7 @@ export function HomeScreen() {
 
   useClearOnBlur(() => {
     setPeriod(30);
+    setCustomRange(null);
     setDashMarket(null);
     setDashCategory([]);
     setFiltersOpen(false);
@@ -313,7 +335,9 @@ export function HomeScreen() {
   const goLists = useCallback(() => nav.navigate('Lists'), [nav]);
   const goCapture = useCallback(() => nav.navigate('Capture'), [nav]);
   const filterCount =
-    (period !== 30 ? 1 : 0) + (dashMarket != null ? 1 : 0) + (dashCategory.length > 0 ? 1 : 0);
+    (customRange != null || period !== 30 ? 1 : 0) +
+    (dashMarket != null ? 1 : 0) +
+    (dashCategory.length > 0 ? 1 : 0);
   const firstName = auth?.displayName?.trim().split(/\s+/)[0] || '';
 
   const howItWorks = (
@@ -523,6 +547,7 @@ export function HomeScreen() {
       <HomeFilterSheet
         visible={filtersOpen}
         period={period}
+        customRange={customRange}
         marketId={dashMarket}
         category={dashCategory}
         markets={filterOptions.markets}
@@ -532,6 +557,7 @@ export function HomeScreen() {
         onClose={() => setFiltersOpen(false)}
         onApply={next => {
           setPeriod(next.period);
+          setCustomRange(next.customRange);
           setDashMarket(next.marketId);
           setDashCategory(next.category);
           setFiltersOpen(false);
