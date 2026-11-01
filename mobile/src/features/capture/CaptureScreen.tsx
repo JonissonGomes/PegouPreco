@@ -458,7 +458,8 @@ export function CaptureScreen() {
     refresh();
     setFields(null);
     lastFpRef.current = null;
-    setStatus('Item salvo — aponte para a próxima etiqueta');
+    setStatus('Item salvo no carrinho');
+    nav.navigate('Lists');
   };
 
   const fetchNfce = async (explicit?: string): Promise<boolean> => {
@@ -626,7 +627,14 @@ export function CaptureScreen() {
       <AppScreenHeader title="Capturar" subtitle={subtitle} />
 
       <View style={styles.stage}>
-        {cameraOn && cameraGranted && device ? (
+        {fields ? (
+          <View style={styles.stageIdle}>
+            <Text style={styles.stageTitle}>Confirmando item lido</Text>
+            <Text style={styles.stageHint}>
+              Revise os valores na folha abaixo para salvar no carrinho
+            </Text>
+          </View>
+        ) : cameraOn && cameraGranted && device ? (
           <Camera
             key={cameraLive.session}
             ref={cameraRef}

@@ -34,6 +34,7 @@ import {AdminMarketsScreen} from '@/features/admin/AdminMarketsScreen';
 import {HistoryScreen} from '@/features/history/HistoryScreen';
 import {OnboardingScreen} from '@/features/onboarding/OnboardingScreen';
 import {BrandLogo} from '@/ui/chrome';
+import {CustomBottomTabBar} from '@/ui/CustomBottomTabBar';
 import {animateLayout, motion} from '@/ui/motion';
 import {colors} from '@/ui/theme';
 import {useAppStore} from '@/store/appStore';
@@ -61,103 +62,51 @@ function Tabs() {
   return (
     <Tab.Navigator
       initialRouteName="Home"
+      tabBar={props => <CustomBottomTabBar {...props} visible={visible} />}
       screenOptions={{
         headerShown: false,
         tabBarHideOnKeyboard: true,
-        tabBarStyle: {
-          position: 'absolute',
-          left: 16,
-          right: 16,
-          bottom,
-          height: 68,
-          paddingBottom: 8,
-          paddingTop: 6,
-          borderRadius: 34,
-          backgroundColor: '#fff',
-          borderTopWidth: 0,
-          shadowColor: '#0B2A6B',
-          shadowOpacity: 0.12,
-          shadowRadius: 16,
-          shadowOffset: {width: 0, height: 6},
-          elevation: 10,
-          opacity: visible ? 1 : 0,
-        },
-        tabBarActiveTintColor: colors.navy,
-        tabBarInactiveTintColor: colors.muted,
-        tabBarLabelStyle: {fontSize: 10, fontWeight: '700', marginTop: 2},
-        tabBarItemStyle: {borderRadius: 28, paddingTop: 2},
       }}>
       <Tab.Screen
         name="Lists"
         component={CartScreen}
-        options={{
-          title: 'Compras',
-          tabBarIcon: ({color}) => <ShoppingCart size={20} color={color} />,
-        }}
+        options={{title: 'Compras'}}
       />
       <Tab.Screen
         name="History"
         component={HistoryScreen}
-        options={{
-          title: 'Histórico',
-          tabBarIcon: ({color}) => <History size={20} color={color} />,
-        }}
+        options={{title: 'Histórico'}}
       />
       <Tab.Screen
         name="Home"
         component={HomeScreen}
-        options={{
-          title: 'Início',
-          tabBarIcon: () => (
-            <View style={styles.homeFab}>
-              <Home size={26} color={colors.navy} />
-            </View>
-          ),
-        }}
+        options={{title: 'Início'}}
       />
       <Tab.Screen
         name="Insights"
         component={InsightsScreen}
-        options={{
-          title: 'Dicas',
-          tabBarIcon: ({color}) => <Lightbulb size={20} color={color} />,
-        }}
+        options={{title: 'Dicas'}}
       />
       <Tab.Screen
         name="Profile"
         component={ProfileScreen}
-        options={{
-          title: 'Perfil',
-          tabBarIcon: ({color}) => <UserRound size={20} color={color} />,
-        }}
+        options={{title: 'Perfil'}}
       />
-      {/* Mantém a tab bar visível; sem slot no layout da barra. */}
+      {/* Mantém as telas acessíveis no Tab.Navigator sem botão visual */}
       <Tab.Screen
         name="Map"
         component={MapScreen}
-        options={{
-          title: 'Mapa',
-          tabBarButton: () => null,
-          tabBarItemStyle: {display: 'none'},
-        }}
+        options={{tabBarItemStyle: {display: 'none'}}}
       />
       <Tab.Screen
         name="Community"
         component={CommunityScreen}
-        options={{
-          title: 'Comunidade',
-          tabBarButton: () => null,
-          tabBarItemStyle: {display: 'none'},
-        }}
+        options={{tabBarItemStyle: {display: 'none'}}}
       />
       <Tab.Screen
         name="Capture"
         component={CaptureScreen}
-        options={{
-          title: 'Captura',
-          tabBarButton: () => null,
-          tabBarItemStyle: {display: 'none'},
-        }}
+        options={{tabBarItemStyle: {display: 'none'}}}
       />
     </Tab.Navigator>
   );

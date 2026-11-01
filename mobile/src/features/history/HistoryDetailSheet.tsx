@@ -1,6 +1,6 @@
 import React, {useMemo, useState} from 'react';
 import {Pressable, ScrollView, StyleSheet, Text, TextInput, View} from 'react-native';
-import {Receipt} from 'lucide-react-native';
+import {Receipt, Search, Trash2, X} from 'lucide-react-native';
 import {KeyboardSafeSheet} from '@/ui/keyboardSheet';
 import {colors, radii, space} from '@/ui/theme';
 import {formatBrl, formatQty} from '@/domain/money';
@@ -84,21 +84,43 @@ export function HistoryDetailSheet({
       }}>
       {list ? (
         <>
-          <Text style={styles.title}>{list.marketName || list.name}</Text>
-          <Text style={styles.sub}>
-            {formatWhen(list.finishedAt)}
-          </Text>
-          <View style={styles.chart}>
-            <Text style={styles.chartPrice}>{formatBrl(list.subtotal)}</Text>
-            <Text style={styles.chartCount}>
-              {items.length} {items.length === 1 ? 'item' : 'itens'}
-            </Text>
-            {discount > 0 ? (
-              <Text style={styles.chartSave}>
-                Desconto {formatBrl(discount)}
+          <View style={styles.sheetHeader}>
+            <View style={{flex: 1, marginRight: 8}}>
+              <Text style={styles.title} numberOfLines={1}>
+                {list.marketName || list.name}
               </Text>
-            ) : null}
-            {byCategory.slice(0, 4).map(([name, count]) => (
+              <Text style={styles.sub}>{formatWhen(list.finishedAt)}</Text>
+            </View>
+            <Pressable
+              onPress={() => onDelete(list)}
+              hitSlop={8}
+              style={styles.deleteHeaderBtn}
+              accessibilityLabel="Remover do histórico">
+              <Trash2 size={18} color={colors.danger} />
+            </Pressable>
+          </View>
+
+          <View style={styles.chart}>
+            <View style={styles.chartHeaderRow}>
+              <View>
+                <Text style={styles.chartLabel}>TOTAL DA COMPRA</Text>
+                <Text style={styles.chartPrice}>{formatBrl(list.subtotal)}</Text>
+              </View>
+              <View style={styles.chartMeta}>
+                <View style={styles.chartBadge}>
+                  <Text style={styles.chartCount}>
+                    {items.length} {items.length === 1 ? 'item' : 'itens'}
+                  </Text>
+                </View>
+                {discount > 0 ? (
+                  <Text style={styles.chartSave}>
+                    Economia {formatBrl(discount)}
+                  </Text>
+                ) : null}
+              </View>
+            </View>
+
+            {byCategory.slice(0, 3).map(([name, count]) => (
               <View key={name} style={styles.chartRow}>
                 <CategoryIcon name={name} size={12} />
                 <Text style={styles.chartName} numberOfLines={1}>
@@ -116,13 +138,23 @@ export function HistoryDetailSheet({
               </View>
             ))}
           </View>
-          <TextInput
-            value={query}
-            onChangeText={setQuery}
-            placeholder="Buscar item"
-            placeholderTextColor={colors.muted}
-            style={styles.search}
-          />
+
+          <View style={styles.searchBar}>
+            <Search size={15} color={colors.muted} />
+            <TextInput
+              value={query}
+              onChangeText={setQuery}
+              placeholder="Buscar item nesta compra…"
+              placeholderTextColor={colors.muted}
+              style={styles.search}
+            />
+            {query ? (
+              <Pressable onPress={() => setQuery('')} hitSlop={8}>
+                <X size={15} color={colors.navy} />
+              </Pressable>
+            ) : null}
+          </View>
+
           <ScrollView
             horizontal
             nestedScrollEnabled
@@ -153,6 +185,7 @@ export function HistoryDetailSheet({
               );
             })}
           </ScrollView>
+
           {visible.map((item, index) => {
             const cat = itemCategory(item, products);
             return (
@@ -168,7 +201,7 @@ export function HistoryDetailSheet({
                     <Text style={styles.meta} numberOfLines={1}>
                       {formatQty(item.quantity)} × {formatBrl(item.retailPrice)}
                     </Text>
-                    <CategoryIcon name={cat} size={12} />
+                    <CategoryIcon name={cat} size={11} />
                   </View>
                 </View>
                 <Text style={styles.price}>{formatBrl(lineTotal(item))}</Text>
@@ -183,11 +216,6 @@ export function HistoryDetailSheet({
               <Text style={styles.readNoteText}>Cadastrar nota fiscal</Text>
             </Pressable>
           ) : null}
-          <Pressable
-            style={styles.remove}
-            onPress={() => onDelete(list)}>
-            <Text style={styles.removeText}>Remover do histórico</Text>
-          </Pressable>
         </>
       ) : null}
     </KeyboardSafeSheet>
@@ -195,57 +223,100 @@ export function HistoryDetailSheet({
 }
 
 const styles = StyleSheet.create({
-  title: {fontWeight: '900', color: colors.navy, fontSize: 22},
-  sub: {color: colors.muted, fontWeight: '700', marginBottom: 4},
+  sheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  title: {fontWeight: '900', color: colors.navy, fontSize: 20},
+  sub: {color: colors.muted, fontWeight: '700', fontSize: 12},
+  deleteHeaderBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#FEE2E2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   chart: {
     backgroundColor: colors.bg,
     borderRadius: 16,
-    padding: 12,
-    gap: 8,
+    padding: 10,
+    gap: 6,
+    marginVertical: 4,
   },
-  chartPrice: {fontSize: 28, fontWeight: '900', color: colors.navy},
-  chartCount: {fontWeight: '800', color: colors.ink},
-  chartSave: {fontWeight: '800', color: colors.trustGreen},
+  chartHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  chartLabel: {
+    fontSize: 9,
+    fontWeight: '900',
+    color: colors.muted,
+    letterSpacing: 0.5,
+  },
+  chartPrice: {fontSize: 22, fontWeight: '900', color: colors.navy, letterSpacing: -0.5},
+  chartMeta: {alignItems: 'flex-end', gap: 2},
+  chartBadge: {
+    backgroundColor: '#fff',
+    borderRadius: radii.pill,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  chartCount: {fontWeight: '800', color: colors.ink, fontSize: 11},
+  chartSave: {fontWeight: '800', color: colors.trustGreen, fontSize: 11},
   chartRow: {flexDirection: 'row', alignItems: 'center', gap: 6},
-  chartName: {width: 88, fontSize: 12, fontWeight: '700', color: colors.ink},
+  chartName: {width: 80, fontSize: 11, fontWeight: '700', color: colors.ink},
   chartTrack: {
     flex: 1,
-    height: 8,
-    borderRadius: 4,
+    height: 6,
+    borderRadius: 3,
     backgroundColor: colors.white,
     overflow: 'hidden',
   },
-  chartFill: {height: '100%', borderRadius: 4, backgroundColor: colors.navy},
-  chartQty: {width: 18, textAlign: 'right', fontWeight: '800', color: colors.navy, fontSize: 12},
-  search: {
-    height: 44,
+  chartFill: {height: '100%', borderRadius: 3, backgroundColor: colors.navy},
+  chartQty: {width: 16, textAlign: 'right', fontWeight: '800', color: colors.navy, fontSize: 11},
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: colors.bg,
     borderRadius: radii.pill,
-    paddingHorizontal: space.md,
-    fontSize: 15,
+    paddingHorizontal: space.sm,
+    height: 38,
+    gap: 6,
+    marginVertical: 4,
+  },
+  search: {
+    flex: 1,
+    height: 38,
+    paddingVertical: 0,
+    fontSize: 13,
     fontWeight: '600',
     color: colors.ink,
   },
-  chips: {gap: 8, paddingVertical: 4},
+  chips: {gap: 6, paddingVertical: 2},
   chip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     borderRadius: radii.pill,
     backgroundColor: colors.bg,
     borderWidth: 1,
     borderColor: colors.bg,
   },
   chipOn: {backgroundColor: colors.navy, borderColor: colors.navy},
-  chipText: {fontWeight: '800', color: colors.navy, fontSize: 13},
+  chipText: {fontWeight: '800', color: colors.navy, fontSize: 12},
   chipTextOn: {color: colors.white},
   card: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: colors.bg,
-    borderRadius: 14,
-    paddingVertical: 8,
+    borderRadius: 12,
+    paddingVertical: 6,
     paddingHorizontal: 10,
     gap: 8,
+    marginBottom: 4,
   },
   icon: {
     width: 28,

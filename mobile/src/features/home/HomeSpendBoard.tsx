@@ -1,5 +1,5 @@
 import React from 'react';
-import {Pressable, StyleSheet, Text, View} from 'react-native';
+import {StyleSheet, Text, View} from 'react-native';
 import Svg, {Circle, Path} from 'react-native-svg';
 import {formatBrl} from '@/domain/money';
 import {buyDayPhrase, type HomeDash, type HomePeriodDays} from '@/domain/homeDashboard';
@@ -7,6 +7,7 @@ import {Reveal, useDraw} from '@/ui/reveal';
 import {palette} from '@/ui/primaryColors';
 import {heatColor} from '@/features/history/categoryTone';
 import {colors, space} from '@/ui/theme';
+import {PressableScale} from '@/ui/PressableScale';
 
 const PERIOD_LABEL: Record<HomePeriodDays, string> = {
   7: '7 dias',
@@ -38,10 +39,11 @@ export function HomeSpendBoard({
   return (
     <View style={styles.wrap}>
       <Reveal play={play}>
-        <Pressable
+        <PressableScale
           style={styles.card}
           onPress={onPress}
-          disabled={!onPress}>
+          disabled={!onPress}
+          activeScale={0.98}>
           <View style={styles.head}>
             {buyTip ? (
               <View style={styles.tipPill}>
@@ -56,9 +58,10 @@ export function HomeSpendBoard({
           </View>
           <View style={styles.heroRow}>
             <View style={styles.heroCopy}>
+              <Text style={styles.heroPreLabel}>Gasto acumulado</Text>
               <Text style={styles.big}>{formatBrl(dash.spent)}</Text>
               <Text style={styles.hint}>
-                {dash.purchaseCount} compra{dash.purchaseCount === 1 ? '' : 's'} no período
+                {dash.purchaseCount} compra{dash.purchaseCount === 1 ? '' : 's'} registradas
               </Text>
             </View>
             {lead ? (
@@ -71,20 +74,20 @@ export function HomeSpendBoard({
             ) : null}
           </View>
           <View style={styles.tiles}>
-            <View style={[styles.tile, {backgroundColor: palette.navySoft}]}>
-              <Text style={[styles.tileValue, {color: palette.ink}]}>{formatBrl(dash.spent)}</Text>
+            <View style={[styles.tile, {backgroundColor: '#F3F6FD'}]}>
+              <Text style={[styles.tileValue, {color: palette.navy}]}>{formatBrl(dash.spent)}</Text>
               <Text style={styles.tileLabel}>Gasto</Text>
             </View>
-            <View style={[styles.tile, {backgroundColor: palette.yellowSoft}]}>
-              <Text style={[styles.tileValue, {color: palette.ink}]}>{formatBrl(dash.savings)}</Text>
+            <View style={[styles.tile, {backgroundColor: '#ECFDF5'}]}>
+              <Text style={[styles.tileValue, {color: '#059669'}]}>{formatBrl(dash.savings)}</Text>
               <Text style={styles.tileLabel}>Economia</Text>
             </View>
-            <View style={[styles.tile, {backgroundColor: palette.cyanSoft}]}>
-              <Text style={[styles.tileValue, {color: palette.ink}]}>{dash.categories.length}</Text>
+            <View style={[styles.tile, {backgroundColor: '#FFFBEB'}]}>
+              <Text style={[styles.tileValue, {color: '#D97706'}]}>{dash.categories.length}</Text>
               <Text style={styles.tileLabel}>Categorias</Text>
             </View>
           </View>
-          <View style={[styles.track, {backgroundColor: palette.yellowSoft}]}>
+          <View style={[styles.track, {backgroundColor: '#E5E7EB'}]}>
             <View
               style={[
                 styles.trackSpend,
@@ -102,7 +105,7 @@ export function HomeSpendBoard({
             <Text style={styles.barLabel}>Gasto</Text>
             <Text style={styles.barLabel}>Economia</Text>
           </View>
-        </Pressable>
+        </PressableScale>
       </Reveal>
 
       <Reveal delay={80} play={play}>
@@ -112,7 +115,7 @@ export function HomeSpendBoard({
             <Text style={styles.empty}>Cadastre uma nota para ver as categorias.</Text>
           ) : (
             <View style={styles.donutRow}>
-              <Pressable onPress={onPress} disabled={!onPress}>
+              <PressableScale onPress={onPress} disabled={!onPress} activeScale={0.96}>
                 <CategoryDonut
                   play={play}
                   slices={slices.map((item, index) => ({
@@ -121,12 +124,13 @@ export function HomeSpendBoard({
                   }))}
                   center={formatBrl(dash.spent)}
                 />
-              </Pressable>
+              </PressableScale>
               <View style={styles.legend}>
                 {slices.map(item => (
-                  <Pressable
+                  <PressableScale
                     key={item.category}
                     style={styles.legendRow}
+                    activeScale={0.97}
                     onPress={() => onOpenCategory?.(item.category)}>
                     <View
                       style={[
@@ -141,7 +145,7 @@ export function HomeSpendBoard({
                       {item.category}
                     </Text>
                     <Text style={styles.legendValue}>{formatBrl(item.total)}</Text>
-                  </Pressable>
+                  </PressableScale>
                 ))}
               </View>
             </View>
@@ -151,10 +155,10 @@ export function HomeSpendBoard({
 
       {dash.trend.some(point => point.total > 0) ? (
         <Reveal delay={140} play={play}>
-          <Pressable style={styles.card} onPress={onPress} disabled={!onPress}>
+          <PressableScale style={styles.card} onPress={onPress} disabled={!onPress} activeScale={0.98}>
             <Text style={styles.cardTitle}>Evolução do gasto</Text>
             <Trend play={play} points={dash.trend} max={trendMax} />
-          </Pressable>
+          </PressableScale>
         </Reveal>
       ) : null}
     </View>
@@ -334,63 +338,70 @@ function Trend({
 }
 
 const styles = StyleSheet.create({
-  wrap: {gap: 12, marginBottom: space.md},
+  wrap: {gap: 14, marginBottom: space.md},
   card: {
     marginHorizontal: space.md,
     backgroundColor: colors.white,
-    borderRadius: 24,
+    borderRadius: 26,
     padding: space.lg,
-    gap: 8,
+    gap: 10,
+    shadowColor: '#0A2540',
+    shadowOpacity: 0.07,
+    shadowRadius: 14,
+    shadowOffset: {width: 0, height: 4},
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: 'rgba(230, 235, 245, 0.9)',
   },
-  head: {flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between'},
+  head: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'},
   periodPill: {
-    backgroundColor: '#FFF6D8',
+    backgroundColor: '#FEF3C7',
     borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
   },
   periodText: {fontSize: 12, fontWeight: '800', color: colors.navy},
   tipPill: {
     flex: 1,
     marginRight: 8,
-    backgroundColor: '#FFF6D8',
+    backgroundColor: '#F3F4F6',
     borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
   },
-  tipText: {fontSize: 12, fontWeight: '800', color: colors.navy},
-  heroRow: {flexDirection: 'row', alignItems: 'center', gap: 12},
-  heroCopy: {flex: 1, gap: 4},
-  big: {fontSize: 32, fontWeight: '900', color: colors.navy},
-  hint: {fontWeight: '700', color: colors.muted},
-  tiles: {flexDirection: 'row', gap: 8},
+  tipText: {fontSize: 12, fontWeight: '700', color: colors.navy},
+  heroRow: {flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 4},
+  heroCopy: {flex: 1, gap: 2},
+  heroPreLabel: {fontSize: 12, fontWeight: '800', color: colors.muted, textTransform: 'uppercase', letterSpacing: 0.5},
+  big: {fontSize: 34, fontWeight: '900', color: colors.navy, letterSpacing: -0.5},
+  hint: {fontWeight: '700', color: colors.muted, fontSize: 13},
+  tiles: {flexDirection: 'row', gap: 8, marginTop: 4},
   tile: {
     flex: 1,
-    backgroundColor: colors.bg,
-    borderRadius: 16,
-    paddingVertical: 10,
+    borderRadius: 18,
+    paddingVertical: 12,
     paddingHorizontal: 8,
-    gap: 2,
+    gap: 3,
     alignItems: 'center',
   },
-  tileValue: {fontSize: 13, fontWeight: '900', color: colors.navy, textAlign: 'center'},
-  tileLabel: {fontSize: 11, fontWeight: '700', color: colors.muted, textAlign: 'center'},
+  tileValue: {fontSize: 14, fontWeight: '900', textAlign: 'center'},
+  tileLabel: {fontSize: 11, fontWeight: '800', color: colors.muted, textAlign: 'center'},
   ringWrap: {alignItems: 'center', width: 92},
   ringCaption: {
-    marginTop: 2,
+    marginTop: 4,
     fontSize: 11,
     fontWeight: '800',
     color: colors.navy,
     textAlign: 'center',
   },
-  barEnds: {flexDirection: 'row', justifyContent: 'space-between'},
-  barLabel: {fontSize: 12, fontWeight: '700', color: colors.muted},
+  barEnds: {flexDirection: 'row', justifyContent: 'space-between', marginTop: 2},
+  barLabel: {fontSize: 11, fontWeight: '800', color: colors.muted},
   track: {
     height: 10,
     borderRadius: 8,
-    backgroundColor: '#E5E7EB',
     overflow: 'hidden',
     flexDirection: 'row',
+    marginTop: 6,
   },
   trackSpend: {backgroundColor: palette.navy},
   trackSave: {backgroundColor: palette.cyan},

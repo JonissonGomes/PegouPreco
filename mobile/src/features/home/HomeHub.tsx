@@ -10,7 +10,8 @@ import {
   Store,
   UsersRound,
 } from 'lucide-react-native';
-import {colors, space} from '@/ui/theme';
+import {colors, radii, space} from '@/ui/theme';
+import {PressableScale} from '@/ui/PressableScale';
 
 type Shortcut = {
   label: string;
@@ -21,17 +22,21 @@ type Shortcut = {
 export function HomeHub({shortcuts}: {shortcuts: Shortcut[]}) {
   return (
     <View style={styles.wrap}>
-      <Text style={styles.sectionTitle}>Atalhos</Text>
+      <Text style={styles.sectionTitle}>Atalhos rápidos</Text>
       <View style={styles.grid}>
         {shortcuts.map(item => (
-          <Pressable key={item.label} style={styles.tile} onPress={item.onPress}>
+          <PressableScale
+            key={item.label}
+            style={styles.tile}
+            onPress={item.onPress}
+            activeScale={0.92}>
             <View style={styles.tileIcon}>
-              <item.Icon size={20} color={colors.navy} />
+              <item.Icon size={22} color={colors.navy} strokeWidth={2.2} />
             </View>
             <Text style={styles.tileLabel} numberOfLines={2}>
               {item.label}
             </Text>
-          </Pressable>
+          </PressableScale>
         ))}
       </View>
     </View>
@@ -59,8 +64,17 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: colors.navy,
   },
-  grid: {flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: space.sm},
-  tile: {width: '25%', alignItems: 'center', gap: 6, marginBottom: 12},
+  grid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingHorizontal: space.sm,
+    justifyContent: 'flex-start',
+  },
+  tile: {
+    width: '25%',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
   tileIcon: {
     width: 52,
     height: 52,
@@ -68,11 +82,21 @@ const styles = StyleSheet.create({
     backgroundColor: colors.white,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#091E42',
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    shadowOffset: {width: 0, height: 3},
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: 'rgba(235, 240, 248, 0.8)',
+    marginBottom: 6,
   },
   tileLabel: {
     fontSize: 11,
     fontWeight: '800',
     color: colors.navy,
     textAlign: 'center',
+    lineHeight: 14,
+    paddingHorizontal: 2,
   },
 });

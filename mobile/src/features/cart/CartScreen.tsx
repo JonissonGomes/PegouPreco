@@ -8,6 +8,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   UIManager,
   View,
 } from 'react-native';
@@ -21,7 +22,10 @@ import {
   Plus,
   Barcode,
   QrCode,
+  Search,
+  SlidersHorizontal,
   Trash2,
+  X,
 } from 'lucide-react-native';
 import {AppButton, AppField} from '@/ui/chrome';
 import {
@@ -94,6 +98,8 @@ export function CartScreen() {
   const [startOpen, setStartOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [limitModalOpen, setLimitModalOpen] = useState(false);
+  const [limitModalText, setLimitModalText] = useState('');
   const [listName, setListName] = useState('Compras de hoje');
   const [spendLimitText, setSpendLimitText] = useState('');
   const presetMarketId = useRef<number | null>(null);
@@ -110,17 +116,24 @@ export function CartScreen() {
   const [itemDraft, setItemDraft] = useState('');
   const [addOpen, setAddOpen] = useState(false);
   const [keyboardOpen, setKeyboardOpen] = useState(false);
+  const [searchItemQuery, setSearchItemQuery] = useState('');
 
   const totals = useMemo(() => cartRepo.computeTotals(cart), [cart]);
   const selectedCount = totals.checkedCount;
   const bottomPad = spacing.bottomNavClearance;
+  const filteredCart = useMemo(() => {
+    const q = searchItemQuery.trim().toLowerCase();
+    if (!q) return cart;
+    return cart.filter(i => i.productName.toLowerCase().includes(q));
+  }, [cart, searchItemQuery]);
+
   const inCart = useMemo(
-    () => cart.filter(i => i.checkedOff),
-    [cart],
+    () => filteredCart.filter(i => i.checkedOff),
+    [filteredCart],
   );
   const missing = useMemo(
-    () => cart.filter(i => !i.checkedOff),
-    [cart],
+    () => filteredCart.filter(i => !i.checkedOff),
+    [filteredCart],
   );
   const inCartGroups = useMemo(
     () => groupCartByCategory(inCart, products),
@@ -419,6 +432,25 @@ export function CartScreen() {
               <>
                 <Pressable
                   style={styles.menuItem}
+                  onPress={() =>
+                    runMenuAction(() => {
+                      setLimitModalText(
+                        spendLimit != null && spendLimit > 0
+                          ? spendLimit.toFixed(2)
+                          : '',
+                      );
+                      setLimitModalOpen(true);
+                    })
+                  }>
+                  <SlidersHorizontal size={18} color={colors.navy} />
+                  <Text style={styles.menuItemText}>
+                    {spendLimit != null && spendLimit > 0
+                      ? 'Alterar limite de gasto'
+                      : 'Definir limite de gasto'}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  style={styles.menuItem}
                   onPress={() => runMenuAction(() => setImportOpen(true))}>
                   <FileText size={18} color={colors.navy} />
                   <Text style={styles.menuItemText}>Importar lista</Text>
@@ -466,24 +498,56 @@ export function CartScreen() {
               styles.listPad,
               {paddingBottom: keyboardOpen ? space.md : 16},
             ]}>
-            <SoftCard style={styles.summaryCard}>
-              <Text style={styles.summaryLabel}>
-                Total no carrinho · {selectedCount} de {totals.itemCount}{' '}
-                itens
-              </Text>
-              <View style={styles.summaryRow}>
-                <Text style={styles.summaryTotal}>
-                  {formatBrl(totals.subtotal)}
-                </Text>
-                {totals.savings > 0 ? (
-                  <SavePill label={`Atacado: -${formatBrl(totals.savings)}`} />
+            <View style={styles.summaryCard}>
+              <View style={styles.summaryTopRow}>
+                <View style={{flex: 1}}>
+                  <Text style={styles.summaryKicker}>TOTAL NO CARRINHO</Text>
+                  <Text style={styles.summaryTotal}>
+                    {formatBrl(totals.subtotal)}
+                  </Text>
+                </View>
+                <View style={styles.summaryBadges}>
+                  <View style={styles.itemsBadge}>
+                    <Text style={styles.itemsBadgeText}>
+                      {selectedCount}/{totals.itemCount} itens
+                    </Text>
+                  </View>
+                  {totals.savings > 0 ? (
+                    <SavePill label={`-${formatBrl(totals.savings)}`} />
+                  ) : null}
+                </View>
+              </View>
+
+              <View style={{marginTop: 6}}>
+                <ProgressBar progress={progress} height={6} />
+              </View>
+
+              {spendLimit != null ? (
+                <View style={{marginTop: 4}}>
+                  <SpendLimitBar spent={totals.subtotal} limit={spendLimit} />
+                </View>
+              ) : null}
+            </View>
+
+            {cart.length > 0 ? (
+              <View style={styles.searchBar}>
+                <Search size={16} color={colors.muted} />
+                <TextInput
+                  placeholder="Buscar item no carrinho…"
+                  placeholderTextColor={colors.muted}
+                  value={searchItemQuery}
+                  onChangeText={setSearchItemQuery}
+                  style={styles.searchInput}
+                  returnKeyType="search"
+                />
+                {searchItemQuery ? (
+                  <Pressable onPress={() => setSearchItemQuery('')} hitSlop={8}>
+                    <X size={16} color={colors.navy} />
+                  </Pressable>
                 ) : null}
               </View>
-              <ProgressBar progress={progress} height={8} />
-              {spendLimit != null ? (
-                <SpendLimitBar spent={totals.subtotal} limit={spendLimit} />
-              ) : null}
-            </SoftCard>
+            ) : null}
+
             <BasketWhereCard
               cart={cart}
               markets={markets}
@@ -657,6 +721,52 @@ export function CartScreen() {
       </KeyboardSafeSheet>
 
       <KeyboardSafeSheet
+        visible={limitModalOpen}
+        onClose={() => setLimitModalOpen(false)}>
+        <Text style={styles.modalTitle}>Limite de gasto da compra</Text>
+        <Text style={styles.limitModalHint}>
+          Defina um teto para acompanhar seus gastos em tempo real com barra de progresso.
+        </Text>
+        <AppField
+          label="Valor limite (R$)"
+          value={limitModalText}
+          onChangeText={text => setLimitModalText(maskMoneyTyping(text))}
+          placeholder="Ex.: 350,00"
+          keyboardType="numeric"
+          compact
+          autoFocus
+        />
+        <View style={{flexDirection: 'row', gap: 10, marginTop: 4}}>
+          {spendLimit != null && spendLimit > 0 ? (
+            <AppButton
+              label="Remover limite"
+              outlined
+              onPress={() => {
+                prefs.setSpendLimit(null);
+                refresh();
+                setLimitModalOpen(false);
+              }}
+            />
+          ) : null}
+          <View style={{flex: 1}}>
+            <AppButton
+              label="Salvar limite"
+              onPress={() => {
+                const parsed = parseSpendLimit(limitModalText);
+                if (parsed === 'invalid') {
+                  appAlert('Valor inválido', 'Digite um valor numérico válido.');
+                  return;
+                }
+                prefs.setSpendLimit(parsed);
+                refresh();
+                setLimitModalOpen(false);
+              }}
+            />
+          </View>
+        </View>
+      </KeyboardSafeSheet>
+
+      <KeyboardSafeSheet
         visible={startOpen}
         onClose={() => {
           setStartOpen(false);
@@ -668,14 +778,6 @@ export function CartScreen() {
           label="Nome da compra"
           value={listName}
           onChangeText={setListName}
-          compact
-        />
-        <AppField
-          label="Limite total da compra"
-          value={spendLimitText}
-          onChangeText={text => setSpendLimitText(maskMoneyTyping(text))}
-          placeholder="Opcional"
-          keyboardType="numeric"
           compact
         />
         {startStep === 'loading' ? (
@@ -894,7 +996,7 @@ function CartRow({
           <View style={styles.rowMain}>
             <Text
               style={[styles.itemName, muted && priced && {color: colors.muted}]}
-              numberOfLines={2}>
+              numberOfLines={1}>
               {item.productName}
             </Text>
             <Pressable
@@ -902,7 +1004,7 @@ function CartRow({
               hitSlop={8}
               style={styles.scanBtn}
               accessibilityLabel="Ler código de barras">
-              <Barcode size={22} color={colors.navy} />
+              <Barcode size={18} color={colors.navy} />
             </Pressable>
             {priced ? (
               <Text style={[styles.price, muted && {opacity: 0.5}]}>
@@ -1059,44 +1161,100 @@ const styles = StyleSheet.create({
     shadowOffset: {width: 0, height: 2},
     elevation: 2,
   },
-  summaryCard: {marginBottom: space.md, gap: 10},
-  emptyList: {
-    color: colors.muted,
-    fontWeight: '600',
-    fontSize: 14,
-    lineHeight: 20,
+  summaryCard: {
+    backgroundColor: '#fff',
+    borderRadius: radii.xl,
+    padding: space.md,
+    marginBottom: space.xs,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    shadowOffset: {width: 0, height: 2},
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: 'rgba(230, 235, 245, 0.9)',
   },
-  summaryLabel: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: colors.muted,
-  },
-  summaryRow: {
+  summaryTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 10,
+    justifyContent: 'space-between',
+  },
+  summaryKicker: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: colors.muted,
+    letterSpacing: 0.5,
   },
   summaryTotal: {
-    fontSize: 32,
+    fontSize: 26,
     fontWeight: '900',
     color: colors.navy,
     letterSpacing: -0.5,
   },
-  catBlock: {gap: 8, marginBottom: 4},
+  summaryBadges: {
+    alignItems: 'flex-end',
+    gap: 4,
+  },
+  itemsBadge: {
+    backgroundColor: '#F3F4F6',
+    borderRadius: radii.pill,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  itemsBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: colors.navy,
+  },
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: radii.pill,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    marginBottom: space.xs,
+    marginTop: space.xs,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: 8,
+  },
+  searchInput: {
+    flex: 1,
+    height: 36,
+    paddingVertical: 0,
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.ink,
+  },
+  emptyList: {
+    textAlign: 'center',
+    color: colors.muted,
+    fontSize: 13,
+    fontWeight: '600',
+    paddingVertical: space.lg,
+  },
+  sectionTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: colors.muted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+    marginTop: 6,
+    marginBottom: 4,
+  },
+  catBlock: {marginBottom: 6},
   catHead: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginTop: 4,
+    gap: 6,
+    paddingVertical: 3,
+    paddingHorizontal: 2,
   },
-  catTitle: {fontWeight: '900', color: colors.navy, fontSize: 13},
-  sectionTitle: {
-    fontSize: 17,
-    fontWeight: '900',
+  catTitle: {
+    fontSize: 11,
+    fontWeight: '800',
     color: colors.navy,
-    marginBottom: space.sm,
-    marginTop: space.xs,
   },
   menuBackdrop: {
     flex: 1,
@@ -1153,18 +1311,20 @@ const styles = StyleSheet.create({
   },
   rowCard: {
     backgroundColor: '#fff',
-    borderRadius: radii.xl,
-    paddingVertical: space.sm,
-    paddingHorizontal: space.md,
-    marginBottom: space.sm,
+    borderRadius: 14,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginBottom: 5,
     shadowColor: '#000',
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.03,
+    shadowRadius: 5,
+    shadowOffset: {width: 0, height: 1},
     elevation: 1,
+    borderWidth: 1,
+    borderColor: 'rgba(235, 240, 248, 0.7)',
   },
   cardDim: {opacity: 0.55},
-  rowBody: {flex: 1, minWidth: 0, gap: 6},
+  rowBody: {flex: 1, minWidth: 0, gap: 4},
   rowMain: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1175,36 +1335,43 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 8,
+    gap: 6,
   },
   itemName: {
     flex: 1,
-    fontWeight: '900',
+    fontWeight: '800',
     color: colors.navy,
-    fontSize: 15,
+    fontSize: 14,
   },
-  price: {fontWeight: '900', color: colors.navy, fontSize: 16},
-  metaText: {fontSize: 12, fontWeight: '600', color: colors.muted},
+  price: {fontWeight: '900', color: colors.navy, fontSize: 14},
+  metaText: {fontSize: 11, fontWeight: '700', color: colors.muted},
   modeSeg: {
     flexDirection: 'row',
     backgroundColor: colors.bg,
     borderRadius: radii.pill,
-    padding: 2,
+    padding: 1.5,
     gap: 2,
   },
   modeSegBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
     borderRadius: radii.pill,
   },
   modeSegBtnOn: {backgroundColor: colors.yellow},
   modeSegText: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '800',
     color: colors.muted,
   },
   modeSegTextOn: {color: colors.navy},
   modalTitle: {fontSize: 18, fontWeight: '800', color: colors.navy},
+  limitModalHint: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.muted,
+    lineHeight: 18,
+    marginBottom: 6,
+  },
   suggestLabel: {
     marginTop: 4,
     marginBottom: 6,

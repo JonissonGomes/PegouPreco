@@ -3,6 +3,7 @@ import {Pressable, ScrollView, StyleSheet, Text, View} from 'react-native';
 import {KeyboardSafeSheet} from '@/ui/keyboardSheet';
 import {DateRangeCalendar} from '@/ui/DateRangeCalendar';
 import {colors, radii} from '@/ui/theme';
+import {PressableScale} from '@/ui/PressableScale';
 import type {HomePeriodDays} from '@/domain/homeDashboard';
 import {rangeLabel, type DateRange} from '@/domain/dateRange';
 
@@ -59,8 +60,9 @@ export function HomeFilterSheet({
       <Text style={styles.section}>Período</Text>
       <View style={styles.row}>
         {PERIODS.map(item => (
-          <Pressable
+          <PressableScale
             key={item.days}
+            activeScale={0.92}
             onPress={() => {
               setCustomMode(false);
               setDraftCustom(null);
@@ -77,15 +79,16 @@ export function HomeFilterSheet({
               ]}>
               {item.label}
             </Text>
-          </Pressable>
+          </PressableScale>
         ))}
-        <Pressable
+        <PressableScale
           onPress={() => setCustomMode(true)}
+          activeScale={0.92}
           style={[styles.chip, customMode && styles.chipOn]}>
           <Text style={[styles.chipText, customMode && styles.chipTextOn]}>
             Personalizado
           </Text>
-        </Pressable>
+        </PressableScale>
       </View>
       {customMode ? (
         <>
@@ -135,8 +138,9 @@ export function HomeFilterSheet({
         ))}
       </ScrollView>
       <View style={styles.actions}>
-        <Pressable
+        <PressableScale
           style={styles.clear}
+          activeScale={0.95}
           onPress={() => {
             setDraftPeriod(30);
             setDraftCustom(null);
@@ -145,9 +149,10 @@ export function HomeFilterSheet({
             setDraftCategory([]);
           }}>
           <Text style={styles.clearText}>Limpar</Text>
-        </Pressable>
-        <Pressable
+        </PressableScale>
+        <PressableScale
           style={styles.apply}
+          activeScale={0.95}
           onPress={() => {
             if (customMode && !draftCustom) return;
             onApply({
@@ -158,7 +163,7 @@ export function HomeFilterSheet({
             });
           }}>
           <Text style={styles.applyText}>Aplicar</Text>
-        </Pressable>
+        </PressableScale>
       </View>
     </KeyboardSafeSheet>
   );

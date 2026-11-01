@@ -43,8 +43,13 @@ function fold(name: string): string {
 }
 
 function hasPhrase(folded: string, phrase: string): boolean {
+  const cleanPhrase = phrase.trim();
   const padded = ` ${folded} `;
-  return padded.includes(` ${phrase} `);
+  // Se a frase termina com espaço (ex: 'SH ', 'LR ', 'CAT '), verifica se começa palavra
+  if (phrase.endsWith(' ')) {
+    return padded.includes(` ${cleanPhrase} `) || padded.includes(` ${cleanPhrase}`);
+  }
+  return padded.includes(` ${cleanPhrase} `);
 }
 
 export function guessCategory(name: string): string {

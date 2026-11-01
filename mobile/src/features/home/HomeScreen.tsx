@@ -18,6 +18,7 @@ import {
   Screen,
   SectionHeader,
 } from '@/ui/components';
+import {PressableScale} from '@/ui/PressableScale';
 import {SavePill, ScreenScrollPad} from '@/ui/screenChrome';
 import {colors, radii, space} from '@/ui/theme';
 import {
@@ -368,20 +369,23 @@ export function HomeScreen() {
         }>
         <ScreenScrollPad>
           <View style={styles.filterBar}>
-            <Text style={styles.hello} numberOfLines={1}>
-              Bem-vindo{firstName ? `, ${firstName}` : ''}
-            </Text>
-            <Pressable
+            <View style={styles.welcomeBlock}>
+              <Text style={styles.hello} numberOfLines={1}>
+                {firstName ? `Olá, ${firstName}` : 'Início'}
+              </Text>
+            </View>
+            <PressableScale
               style={styles.filterBtn}
+              activeScale={0.93}
               onPress={() => setFiltersOpen(true)}>
-              <SlidersHorizontal size={16} color={colors.navy} />
+              <SlidersHorizontal size={15} color={colors.navy} />
               <Text style={styles.filterText}>Filtros</Text>
               {filterCount > 0 ? (
                 <View style={styles.filterBadge}>
                   <Text style={styles.filterBadgeText}>{filterCount}</Text>
                 </View>
               ) : null}
-            </Pressable>
+            </PressableScale>
           </View>
           <HomeSpendBoard
             dash={dash}
@@ -575,13 +579,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 12,
+    minHeight: 44,
+  },
+  welcomeBlock: {
+    flex: 1,
+    marginRight: 10,
   },
   hello: {
-    flex: 1,
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: '900',
     color: colors.navy,
+    letterSpacing: -0.4,
   },
   filterBtn: {
     flexDirection: 'row',
@@ -590,9 +598,16 @@ const styles = StyleSheet.create({
     backgroundColor: colors.white,
     borderRadius: radii.pill,
     paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingVertical: 7,
+    borderWidth: 1,
+    borderColor: 'rgba(230, 235, 245, 0.9)',
+    shadowColor: '#000',
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    shadowOffset: {width: 0, height: 2},
+    elevation: 2,
   },
-  filterText: {fontWeight: '800', color: colors.navy},
+  filterText: {fontWeight: '800', color: colors.navy, fontSize: 13},
   filterBadge: {
     minWidth: 18,
     height: 18,
@@ -602,7 +617,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 4,
   },
-  filterBadgeText: {fontSize: 11, fontWeight: '900', color: colors.navy},
+  filterBadgeText: {fontSize: 10, fontWeight: '900', color: colors.navy},
   heroCard: {
     marginHorizontal: space.md,
     marginTop: space.xs,

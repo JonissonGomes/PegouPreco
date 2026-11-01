@@ -6,6 +6,7 @@ import {RootNavigation} from './navigation';
 import {useAppStore} from '@/store/appStore';
 import {startAutoSync} from '@/data/syncWorker';
 import {AppDialogHost} from '@/ui/appDialog';
+import {AppLoadingHost} from '@/ui/appLoading';
 import {colors} from '@/ui/theme';
 
 export function AppRoot() {
@@ -26,6 +27,7 @@ export function AppRoot() {
         <StatusBar barStyle="dark-content" backgroundColor={colors.yellowBright} />
         <RootNavigation />
         <AppDialogHost />
+        <AppLoadingHost />
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

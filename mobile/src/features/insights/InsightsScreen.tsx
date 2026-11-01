@@ -5,6 +5,7 @@ import {Minus, TrendingDown, TrendingUp} from 'lucide-react-native';
 import {SoftCard, SoftHeader} from '@/ui/screenChrome';
 import {CategoryIcon} from '@/features/history/categoryIcon';
 import {colors, radii, space, spacing} from '@/ui/theme';
+import {PressableScale} from '@/ui/PressableScale';
 import {formatBrl} from '@/domain/money';
 import {buildInsightBoard, type PriceTrend} from '@/domain/insightBoard';
 import type {InsightPeriod} from '@/domain/homeInsights';
@@ -54,29 +55,41 @@ export function InsightsScreen() {
           {PERIODS.map(item => {
             const on = period === item.id;
             return (
-              <Pressable
+              <PressableScale
                 key={item.id}
                 onPress={() => setPeriod(item.id)}
+                activeScale={0.92}
                 style={[styles.period, on && styles.periodOn]}>
                 <Text style={[styles.periodText, on && styles.periodTextOn]}>
                   {item.label}
                 </Text>
-              </Pressable>
+              </PressableScale>
             );
           })}
         </View>
 
-        <SoftCard style={styles.hero}>
-          <Text style={styles.kicker}>Sua economia</Text>
-          <Text style={styles.heroValue}>
-            {board.saved > 0 ? formatBrl(board.saved) : 'R$ 0,00'}
-          </Text>
-          <Text style={styles.heroHint}>
-            {board.saved > 0
-              ? 'Pago abaixo de outros preços do mesmo item.'
-              : 'Aparece quando o mesmo item tiver dois preços.'}
-          </Text>
-        </SoftCard>
+        <View style={styles.heroRow}>
+          <View style={[styles.heroCard, styles.heroCardMain]}>
+            <Text style={styles.kicker}>SUA ECONOMIA</Text>
+            <Text style={styles.heroValue}>
+              {board.saved > 0 ? formatBrl(board.saved) : 'R$ 0,00'}
+            </Text>
+            <Text style={styles.heroHint} numberOfLines={2}>
+              {board.saved > 0
+                ? 'Economizado em itens comparados'
+                : 'Aparece ao comparar notas'}
+            </Text>
+          </View>
+          <View style={[styles.heroCard, styles.heroCardSec]}>
+            <Text style={styles.kickerSec}>MELHOR MERCADO</Text>
+            <Text style={styles.heroSecValue} numberOfLines={1}>
+              {board.bestMarket ? board.bestMarket : '—'}
+            </Text>
+            <Text style={styles.heroHintSec} numberOfLines={2}>
+              {board.bestDetail || 'Baseado em suas compras'}
+            </Text>
+          </View>
+        </View>
 
         {buyTip ? (
           <View style={styles.tipPill}>
@@ -84,40 +97,22 @@ export function InsightsScreen() {
           </View>
         ) : null}
 
-        <SoftCard>
-          <Text style={styles.section}>Onde você encontrou mais economia</Text>
-          {board.bestMarket ? (
-            <>
-              <Text style={[styles.place, styles.center]}>{board.bestMarket}</Text>
-              {board.bestDetail ? (
-                <Text style={[styles.hint, styles.center]}>{board.bestDetail}</Text>
-              ) : null}
-            </>
-          ) : (
-            <Text style={styles.hint}>Cadastre uma nota para ver o mercado da compra.</Text>
-          )}
-        </SoftCard>
-
-        <SoftCard>
+        <SoftCard style={styles.cardPad}>
           <Text style={styles.section}>Onde e quando comprar</Text>
           {board.places.length === 0 ? (
             <Text style={styles.hint}>Sem categorias comparadas neste período.</Text>
           ) : (
             board.places.map(item => (
               <View key={item.category} style={styles.row}>
-                <CategoryIcon name={item.category} />
+                <CategoryIcon name={item.category} size={14} />
                 <View style={styles.rowBody}>
                   <Text style={styles.rowTitle} numberOfLines={1}>
                     {item.category}
                   </Text>
                   <Text style={styles.hint} numberOfLines={1}>
                     {item.marketName}
+                    {item.weekday && item.dateLabel ? ` · ${item.weekday}` : ''}
                   </Text>
-                  {item.weekday && item.dateLabel ? (
-                    <Text style={styles.when}>
-                      {item.weekday}, {item.dateLabel}
-                    </Text>
-                  ) : null}
                 </View>
                 <TrendMark trend={item.trend} />
               </View>
@@ -125,20 +120,20 @@ export function InsightsScreen() {
           )}
         </SoftCard>
 
-        <SoftCard>
+        <SoftCard style={styles.cardPad}>
           <Text style={styles.section}>Média de preço por categoria</Text>
           {board.averages.length === 0 ? (
             <Text style={styles.hint}>Ainda não há preços de nota neste período.</Text>
           ) : (
             board.averages.map(item => (
               <View key={item.category} style={styles.avgRow}>
-                <CategoryIcon name={item.category} />
+                <CategoryIcon name={item.category} size={14} />
                 <View style={styles.rowBody}>
                   <Text style={styles.rowTitle} numberOfLines={1}>
                     {item.category}
                   </Text>
-                  <Text style={styles.hint} numberOfLines={2}>
-                    mais barato em: {item.marketName}
+                  <Text style={styles.hint} numberOfLines={1}>
+                    menor: {item.marketName}
                   </Text>
                 </View>
                 <Text style={styles.price}>
@@ -151,15 +146,16 @@ export function InsightsScreen() {
           )}
         </SoftCard>
 
-        <SoftCard>
-          <Text style={styles.section}>Itens que subiram</Text>
+        <SoftCard style={styles.cardPad}>
+          <Text style={styles.section}>Itens que subiram de preço</Text>
           {board.rising.length === 0 ? (
-            <Text style={styles.hint}>Nenhum item subiu de preço.</Text>
+            <Text style={styles.hint}>Nenhum item subiu de preço no período.</Text>
           ) : (
             board.rising.map(item => (
-              <Pressable
+              <PressableScale
                 key={item.productId}
                 style={styles.row}
+                activeScale={0.96}
                 onPress={() =>
                   nav.navigate('ProductDetail', {productId: item.productId})
                 }>
@@ -174,7 +170,7 @@ export function InsightsScreen() {
                     {formatBrl(item.previous)} → {formatBrl(item.latest)}
                   </Text>
                 </View>
-              </Pressable>
+              </PressableScale>
             ))
           )}
         </SoftCard>
@@ -231,55 +227,99 @@ const styles = StyleSheet.create({
     color: colors.navy,
     textAlign: 'center',
   },
-  periods: {flexDirection: 'row', gap: 8},
+  periods: {flexDirection: 'row', gap: 6},
   period: {
     borderRadius: radii.pill,
     backgroundColor: colors.white,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
   },
   periodOn: {backgroundColor: colors.navy},
-  periodText: {fontWeight: '800', color: colors.ink, fontSize: 13},
+  periodText: {fontWeight: '800', color: colors.ink, fontSize: 12},
   periodTextOn: {color: colors.white},
-  hero: {backgroundColor: colors.navy},
+  heroRow: {flexDirection: 'row', gap: 10},
+  heroCard: {
+    flex: 1,
+    borderRadius: radii.xl,
+    padding: space.md,
+    justifyContent: 'space-between',
+    minHeight: 104,
+  },
+  heroCardMain: {
+    backgroundColor: colors.navy,
+  },
+  heroCardSec: {
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: 'rgba(230, 235, 245, 0.9)',
+    shadowColor: '#000',
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    shadowOffset: {width: 0, height: 2},
+    elevation: 2,
+  },
   kicker: {
     color: colors.yellow,
     fontWeight: '800',
-    fontSize: 12,
-    letterSpacing: 0.3,
+    fontSize: 10,
+    letterSpacing: 0.5,
+  },
+  kickerSec: {
+    color: colors.muted,
+    fontWeight: '800',
+    fontSize: 10,
+    letterSpacing: 0.5,
   },
   heroValue: {
-    marginTop: 4,
+    marginTop: 2,
     color: colors.white,
-    fontSize: 32,
+    fontSize: 24,
+    fontWeight: '900',
+    letterSpacing: -0.5,
+  },
+  heroSecValue: {
+    marginTop: 2,
+    color: colors.navy,
+    fontSize: 18,
     fontWeight: '900',
   },
   heroHint: {
-    marginTop: 6,
+    marginTop: 4,
     color: '#D6E2F5',
     fontWeight: '600',
-    lineHeight: 18,
+    fontSize: 11,
+    lineHeight: 14,
   },
-  section: {fontWeight: '900', color: colors.navy, fontSize: 16, marginBottom: 8},
-  place: {fontWeight: '900', color: colors.ink, fontSize: 18},
+  heroHintSec: {
+    marginTop: 4,
+    color: colors.muted,
+    fontWeight: '600',
+    fontSize: 11,
+    lineHeight: 14,
+  },
+  cardPad: {
+    padding: space.sm + 4,
+  },
+  section: {fontWeight: '900', color: colors.navy, fontSize: 15, marginBottom: 4},
+  place: {fontWeight: '900', color: colors.ink, fontSize: 16},
   center: {textAlign: 'center'},
-  hint: {color: colors.muted, fontWeight: '600', fontSize: 13, lineHeight: 18},
-  row: {flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8},
+  hint: {color: colors.muted, fontWeight: '600', fontSize: 12, lineHeight: 16},
+  row: {flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6},
   rowBody: {flex: 1, minWidth: 0},
-  rowTitle: {flex: 1, fontWeight: '800', color: colors.navy, fontSize: 14},
-  when: {marginTop: 2, fontWeight: '800', color: colors.navy, fontSize: 13},
+  rowTitle: {flex: 1, fontWeight: '800', color: colors.navy, fontSize: 13},
+  when: {marginTop: 1, fontWeight: '800', color: colors.navy, fontSize: 12},
   mark: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },
   markDown: {backgroundColor: '#DCFCE7'},
   markUp: {backgroundColor: '#FEE2E2'},
   markFlat: {backgroundColor: colors.bg},
-  avgRow: {flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8},
-  price: {fontWeight: '900', color: colors.navy, fontSize: 13, textAlign: 'right'},
+  avgRow: {flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6},
+  price: {fontWeight: '900', color: colors.navy, fontSize: 12, textAlign: 'right'},
   riseBadge: {
     minWidth: 52,
     borderRadius: radii.pill,
