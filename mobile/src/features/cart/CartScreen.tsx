@@ -18,13 +18,17 @@ import {
   ClipboardList,
   FileText,
   History,
+  MapPin,
   MoreVertical,
+  Pencil,
   Plus,
   Barcode,
   QrCode,
   Search,
   SlidersHorizontal,
   Trash2,
+  TrendingDown,
+  TrendingUp,
   X,
 } from 'lucide-react-native';
 import {AppButton, AppField} from '@/ui/chrome';
@@ -38,6 +42,7 @@ import {appAlert} from '@/ui/appDialog';
 import {KeyboardSafeSheet} from '@/ui/keyboardSheet';
 import {MarketSuggestRow} from '@/ui/MarketSuggestRow';
 import {SwipeableActions} from '@/ui/SwipeableActions';
+import {PressableScale} from '@/ui/PressableScale';
 import {animateLayout} from '@/ui/motion';
 import {colors, radii, space, spacing} from '@/ui/theme';
 
@@ -58,6 +63,7 @@ import {
 import {
   cartRepo,
   prefs,
+  priceLogRepo,
   productRepo,
   useAppStore,
   useMarketName,
@@ -100,6 +106,10 @@ export function CartScreen() {
   const [importOpen, setImportOpen] = useState(false);
   const [limitModalOpen, setLimitModalOpen] = useState(false);
   const [limitModalText, setLimitModalText] = useState('');
+  const [renameCartOpen, setRenameCartOpen] = useState(false);
+  const [renameCartText, setRenameCartText] = useState('');
+  const [editMarketOpen, setEditMarketOpen] = useState(false);
+  const [editMarketQuery, setEditMarketQuery] = useState('');
   const [listName, setListName] = useState('Compras de hoje');
   const [spendLimitText, setSpendLimitText] = useState('');
   const presetMarketId = useRef<number | null>(null);
@@ -146,14 +156,29 @@ export function CartScreen() {
   const progress =
     totals.itemCount > 0 ? selectedCount / totals.itemCount : 0;
 
-  const addWrittenItem = () => {
+  const suggestedProducts = useMemo(() => {
+    const q = itemDraft.trim().toLowerCase();
+    if (!q || q.length < 2) return [];
+    // Prioritiza produtos que começam com o texto digitado e depois os que contêm
+    const matches = products.filter(p => p.name.toLowerCase().includes(q));
+    matches.sort((a, b) => {
+      const aStarts = a.name.toLowerCase().startsWith(q);
+      const bStarts = b.name.toLowerCase().startsWith(q);
+      if (aStarts && !bStarts) return -1;
+      if (!aStarts && bStarts) return 1;
+      return a.name.localeCompare(b.name, 'pt-BR');
+    });
+    return matches.slice(0, 5);
+  }, [itemDraft, products]);
+
+  const addWrittenItem = (chosenName?: string, category?: string | null) => {
     if (!activeListName || !activeMarketId) {
       setStartOpen(true);
       return;
     }
-    const name = itemDraft.trim();
+    const name = (chosenName ?? itemDraft).trim();
     if (!name) return;
-    const product = productRepo.resolveOrCreate(name);
+    const product = productRepo.resolveOrCreate(name, category);
     cartRepo.upsert({
       productId: product.id,
       productName: name,
@@ -434,6 +459,28 @@ export function CartScreen() {
                   style={styles.menuItem}
                   onPress={() =>
                     runMenuAction(() => {
+                      setRenameCartText(activeListName || '');
+                      setRenameCartOpen(true);
+                    })
+                  }>
+                  <Pencil size={18} color={colors.navy} />
+                  <Text style={styles.menuItemText}>Renomear compra</Text>
+                </Pressable>
+                <Pressable
+                  style={styles.menuItem}
+                  onPress={() =>
+                    runMenuAction(() => {
+                      setEditMarketQuery(marketName || '');
+                      setEditMarketOpen(true);
+                    })
+                  }>
+                  <MapPin size={18} color={colors.navy} />
+                  <Text style={styles.menuItemText}>Alterar mercado/local</Text>
+                </Pressable>
+                <Pressable
+                  style={styles.menuItem}
+                  onPress={() =>
+                    runMenuAction(() => {
                       setLimitModalText(
                         spendLimit != null && spendLimit > 0
                           ? spendLimit.toFixed(2)
@@ -548,14 +595,6 @@ export function CartScreen() {
               </View>
             ) : null}
 
-            <BasketWhereCard
-              cart={cart}
-              markets={markets}
-              token={auth?.token}
-              city={prefs.getLocationPrefs().city}
-              neighborhood={prefs.getLocationPrefs().neighborhood}
-              favoriteMarketIds={prefs.getLocationPrefs().favoriteMarketIds}
-            />
             {cart.length === 0 ? (
               <Text style={styles.emptyList}>
                 Lista vazia. Toque em + no topo ou importe uma lista no menu.
@@ -654,10 +693,9 @@ export function CartScreen() {
               </>
             ) : null}
           </ScrollView>
-          {keyboardOpen ? null : (
           <View style={[styles.finalizeBar, {paddingBottom: bottomPad}]}>
-            <AppButton
-              label={`Finalizar compra · ${formatBrl(totals.subtotal)}`}
+            <PressableScale
+              activeScale={0.96}
               onPress={() => {
                 if (!activeListName) {
                   setStartOpen(true);
@@ -691,10 +729,14 @@ export function CartScreen() {
                     },
                   ],
                 );
-              }}
-            />
+              }}>
+              <View style={styles.finalizeBtnPill}>
+                <Text style={styles.finalizeBtnText}>
+                  Finalizar compra · {formatBrl(totals.subtotal)}
+                </Text>
+              </View>
+            </PressableScale>
           </View>
-          )}
         </>
       )}
 
@@ -707,17 +749,45 @@ export function CartScreen() {
       <KeyboardSafeSheet
         visible={addOpen}
         onClose={() => setAddOpen(false)}>
-        <Text style={styles.modalTitle}>Adicionar item</Text>
-        <AppField
-          compact
-          value={itemDraft}
-          onChangeText={setItemDraft}
-          placeholder="Nome do item"
-          onSubmitEditing={addWrittenItem}
-          returnKeyType="done"
-          autoFocus
-        />
-        <AppButton label="Adicionar" onPress={addWrittenItem} />
+        <View style={styles.addItemForm}>
+          <AppField
+            compact
+            value={itemDraft}
+            onChangeText={setItemDraft}
+            placeholder="Nome do item (ex.: Leite, Arroz…)"
+            onSubmitEditing={() => addWrittenItem()}
+            returnKeyType="done"
+            autoFocus
+          />
+          {suggestedProducts.length > 0 ? (
+            <View style={styles.suggestionsContainer}>
+              <Text style={styles.suggestionsHeader}>Sugestões:</Text>
+              <ScrollView
+                nestedScrollEnabled
+                keyboardShouldPersistTaps="handled"
+                style={{maxHeight: 160}}
+                showsVerticalScrollIndicator={false}>
+                {suggestedProducts.map(p => (
+                  <Pressable
+                    key={p.id}
+                    onPress={() => addWrittenItem(p.name, p.category)}
+                    style={styles.suggestionRow}>
+                    <View style={styles.suggestionLeft}>
+                      <CategoryIcon name={p.category ?? 'Outros'} size={14} />
+                      <Text style={styles.suggestionName} numberOfLines={1}>
+                        {p.name}
+                      </Text>
+                    </View>
+                    {p.category ? (
+                      <Text style={styles.suggestionCat}>{p.category}</Text>
+                    ) : null}
+                  </Pressable>
+                ))}
+              </ScrollView>
+            </View>
+          ) : null}
+          <AppButton label="Adicionar" onPress={() => addWrittenItem()} />
+        </View>
       </KeyboardSafeSheet>
 
       <KeyboardSafeSheet
@@ -764,6 +834,107 @@ export function CartScreen() {
             />
           </View>
         </View>
+      </KeyboardSafeSheet>
+
+      <KeyboardSafeSheet
+        visible={renameCartOpen}
+        onClose={() => setRenameCartOpen(false)}>
+        <Text style={styles.modalTitle}>Renomear carrinho</Text>
+        <AppField
+          label="Nome da compra"
+          value={renameCartText}
+          onChangeText={setRenameCartText}
+          placeholder="Ex.: Compras do mês"
+          autoFocus
+          compact
+        />
+        <AppButton
+          label="Salvar nome"
+          onPress={() => {
+            const trimmed = renameCartText.trim();
+            if (!trimmed) {
+              appAlert('Nome inválido', 'Digite um nome para a compra.');
+              return;
+            }
+            prefs.setActiveListName(trimmed);
+            refresh();
+            setRenameCartOpen(false);
+          }}
+        />
+        <AppButton
+          label="Cancelar"
+          outlined
+          onPress={() => setRenameCartOpen(false)}
+        />
+      </KeyboardSafeSheet>
+
+      <KeyboardSafeSheet
+        visible={editMarketOpen}
+        onClose={() => setEditMarketOpen(false)}>
+        <Text style={styles.modalTitle}>Alterar mercado</Text>
+        <AppField
+          label="Buscar ou cadastrar mercado"
+          value={editMarketQuery}
+          onChangeText={setEditMarketQuery}
+          placeholder="Nome do mercado…"
+          compact
+          autoFocus
+        />
+        {editMarketQuery.trim().length >= 1 ? (
+          <ScrollView
+            nestedScrollEnabled
+            keyboardShouldPersistTaps="handled"
+            style={{maxHeight: 180, marginVertical: 6}}>
+            {markets
+              .filter(m =>
+                m.name.toLowerCase().includes(editMarketQuery.trim().toLowerCase()),
+              )
+              .slice(0, 5)
+              .map(m => (
+                <Pressable
+                  key={m.id}
+                  onPress={() => {
+                    prefs.setActiveMarketId(m.id);
+                    prefs.setCurrentMarketId(m.id);
+                    refresh();
+                    setEditMarketOpen(false);
+                  }}
+                  style={styles.suggestionRow}>
+                  <View style={styles.suggestionLeft}>
+                    <MapPin size={14} color={colors.navy} />
+                    <Text style={styles.suggestionName} numberOfLines={1}>
+                      {m.name}
+                    </Text>
+                  </View>
+                  {m.address ? (
+                    <Text style={styles.suggestionCat} numberOfLines={1}>
+                      {m.address.split(',')[0]}
+                    </Text>
+                  ) : null}
+                </Pressable>
+              ))}
+          </ScrollView>
+        ) : null}
+        <AppButton
+          label="Usar este mercado"
+          onPress={() => {
+            const q = editMarketQuery.trim();
+            if (!q) {
+              appAlert('Informe o mercado', 'Digite o nome do mercado.');
+              return;
+            }
+            const m = marketRepo.resolveOrCreate(q);
+            prefs.setActiveMarketId(m.id);
+            prefs.setCurrentMarketId(m.id);
+            refresh();
+            setEditMarketOpen(false);
+          }}
+        />
+        <AppButton
+          label="Cancelar"
+          outlined
+          onPress={() => setEditMarketOpen(false)}
+        />
       </KeyboardSafeSheet>
 
       <KeyboardSafeSheet
@@ -986,6 +1157,11 @@ function CartRow({
     refresh();
   };
 
+  const priceCtx = useMemo(() => {
+    if (!priced) return null;
+    return priceLogRepo.cartContext(item.productId, item.retailPrice);
+  }, [priced, item.productId, item.retailPrice]);
+
   return (
     <SwipeableActions dense onEdit={onEdit} onDelete={onDelete}>
       <Pressable
@@ -1001,15 +1177,24 @@ function CartRow({
             </Text>
             <Pressable
               onPress={onScan}
-              hitSlop={8}
+              hitSlop={6}
               style={styles.scanBtn}
               accessibilityLabel="Ler código de barras">
-              <Barcode size={18} color={colors.navy} />
+              <Barcode size={15} color={colors.navy} />
             </Pressable>
             {priced ? (
-              <Text style={[styles.price, muted && {opacity: 0.5}]}>
-                {formatBrl(total)}
-              </Text>
+              <View style={styles.priceWrap}>
+                {priceCtx?.previousPrice != null && priceCtx.previousPrice !== item.retailPrice ? (
+                  item.retailPrice < priceCtx.previousPrice ? (
+                    <TrendingDown size={13} color={colors.trustGreen} />
+                  ) : (
+                    <TrendingUp size={13} color={colors.danger} />
+                  )
+                ) : null}
+                <Text style={[styles.price, muted && {opacity: 0.5}]}>
+                  {formatBrl(total)}
+                </Text>
+              </View>
             ) : null}
           </View>
           {priced ? (
@@ -1297,69 +1482,93 @@ const styles = StyleSheet.create({
   list: {flex: 1},
   listPad: {paddingHorizontal: space.md, paddingTop: 4},
   scanBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.bg,
   },
   finalizeBar: {
+    paddingHorizontal: 20,
+    paddingTop: 4,
+    backgroundColor: 'transparent',
+  },
+  finalizeBtnPill: {
+    backgroundColor: colors.navy,
+    borderRadius: radii.pill,
+    paddingVertical: 10,
     paddingHorizontal: 16,
-    paddingTop: 8,
-    backgroundColor: colors.bg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    shadowOffset: {width: 0, height: 3},
+    elevation: 4,
+  },
+  finalizeBtnText: {
+    color: '#fff',
+    fontWeight: '900',
+    fontSize: 14,
   },
   rowCard: {
     backgroundColor: '#fff',
-    borderRadius: 14,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    marginBottom: 5,
+    borderRadius: 12,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    marginBottom: 4,
     shadowColor: '#000',
-    shadowOpacity: 0.03,
-    shadowRadius: 5,
+    shadowOpacity: 0.02,
+    shadowRadius: 3,
     shadowOffset: {width: 0, height: 1},
     elevation: 1,
     borderWidth: 1,
     borderColor: 'rgba(235, 240, 248, 0.7)',
   },
   cardDim: {opacity: 0.55},
-  rowBody: {flex: 1, minWidth: 0, gap: 4},
+  rowBody: {flex: 1, minWidth: 0, gap: 2},
   rowMain: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
-  },
-  rowMeta: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 6,
   },
+  priceWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  rowMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 4,
+  },
   itemName: {
     flex: 1,
     fontWeight: '800',
     color: colors.navy,
-    fontSize: 14,
+    fontSize: 13,
   },
-  price: {fontWeight: '900', color: colors.navy, fontSize: 14},
-  metaText: {fontSize: 11, fontWeight: '700', color: colors.muted},
+  price: {fontWeight: '900', color: colors.navy, fontSize: 13},
+  metaText: {fontSize: 10.5, fontWeight: '700', color: colors.muted},
   modeSeg: {
     flexDirection: 'row',
     backgroundColor: colors.bg,
     borderRadius: radii.pill,
-    padding: 1.5,
-    gap: 2,
+    padding: 1,
+    gap: 1,
   },
   modeSegBtn: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
+    paddingHorizontal: 7,
+    paddingVertical: 1.5,
     borderRadius: radii.pill,
   },
   modeSegBtnOn: {backgroundColor: colors.yellow},
   modeSegText: {
-    fontSize: 10,
+    fontSize: 9.5,
     fontWeight: '800',
     color: colors.muted,
   },
@@ -1411,5 +1620,60 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: colors.muted,
+  },
+  suggestionsContainer: {
+    backgroundColor: colors.white,
+    borderRadius: radii.md,
+    padding: 8,
+    marginTop: -2,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: 4,
+  },
+  suggestionsHeader: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: colors.muted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+    marginBottom: 4,
+    paddingHorizontal: 4,
+  },
+  suggestionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 7,
+    paddingHorizontal: 8,
+    borderRadius: radii.sm,
+    backgroundColor: colors.bg,
+  },
+  suggestionLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+    marginRight: 8,
+  },
+  suggestionName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.navy,
+    flex: 1,
+  },
+  suggestionCat: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.muted,
+    backgroundColor: colors.white,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  addItemForm: {
+    gap: 8,
   },
 });

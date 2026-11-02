@@ -114,37 +114,38 @@ export function HomeSpendBoard({
           {slices.length === 0 ? (
             <Text style={styles.empty}>Cadastre uma nota para ver as categorias.</Text>
           ) : (
-            <View style={styles.donutRow}>
-              <PressableScale onPress={onPress} disabled={!onPress} activeScale={0.96}>
-                <CategoryDonut
-                  play={play}
-                  slices={slices.map((item, index) => ({
-                    total: item.total,
-                    color: heatColor(index, slices.length),
-                  }))}
-                  center={formatBrl(dash.spent)}
-                />
-              </PressableScale>
-              <View style={styles.legend}>
-                {slices.map(item => (
+            <View style={styles.donutSection}>
+              <View style={styles.donutCenterWrap}>
+                <PressableScale onPress={onPress} disabled={!onPress} activeScale={0.96}>
+                  <CategoryDonut
+                    play={play}
+                    slices={slices.map((item, index) => ({
+                      total: item.total,
+                      color: heatColor(index, slices.length),
+                    }))}
+                    center={formatBrl(dash.spent)}
+                  />
+                </PressableScale>
+              </View>
+              <View style={styles.categoryGrid}>
+                {slices.map((item, index) => (
                   <PressableScale
                     key={item.category}
-                    style={styles.legendRow}
+                    style={styles.gridCard}
                     activeScale={0.97}
                     onPress={() => onOpenCategory?.(item.category)}>
-                    <View
-                      style={[
-                        styles.dot,
-                        {backgroundColor: heatColor(
-                          slices.findIndex(slice => slice.category === item.category),
-                          slices.length,
-                        )},
-                      ]}
-                    />
-                    <Text style={styles.legendName} numberOfLines={1}>
-                      {item.category}
-                    </Text>
-                    <Text style={styles.legendValue}>{formatBrl(item.total)}</Text>
+                    <View style={styles.gridItemRow}>
+                      <View
+                        style={[
+                          styles.dot,
+                          {backgroundColor: heatColor(index, slices.length)},
+                        ]}
+                      />
+                      <Text style={styles.legendName} numberOfLines={1}>
+                        {item.category}
+                      </Text>
+                    </View>
+                    <Text style={styles.gridValue}>{formatBrl(item.total)}</Text>
                   </PressableScale>
                 ))}
               </View>
@@ -408,6 +409,34 @@ const styles = StyleSheet.create({
   ringPct: {fontSize: 14, fontWeight: '900', color: colors.navy},
   cardTitle: {fontSize: 16, fontWeight: '900', color: colors.navy},
   empty: {color: colors.muted, fontWeight: '600'},
+  donutSection: {gap: 16, marginTop: 4},
+  donutCenterWrap: {alignItems: 'center', justifyContent: 'center'},
+  categoryGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  gridCard: {
+    width: '48.5%',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    gap: 4,
+  },
+  gridItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  gridValue: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: colors.navy,
+    marginLeft: 18,
+  },
   donutRow: {flexDirection: 'row', alignItems: 'center', gap: 12},
   legend: {flex: 1, gap: 8},
   legendRow: {flexDirection: 'row', alignItems: 'center', gap: 6},

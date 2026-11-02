@@ -56,6 +56,9 @@ export const prefs = {
     const v = metaGet('activeMarketId');
     return v ? Number(v) : null;
   },
+  setActiveListName: (name: string) => {
+    metaSet('activeListName', name);
+  },
   setActiveList: (name: string, marketId: number) => {
     metaSet('activeListName', name);
     metaSet('activeMarketId', String(marketId));
@@ -378,7 +381,39 @@ export const productRepo = {
   getById(id: number): Product | null {
     return getState().products.find(p => p.id === id) ?? null;
   },
-  resolveOrCreate(name: string, category?: string | null): Product {
+  findByEan(ean: string): Product | null {
+    const clean = ean.replace(/\D/g, '');
+    if (!clean) return null;
+    return (
+      getState().products.find(p => {
+        try {
+          const aliases: string[] = JSON.parse(p.aliasesJson || '[]');
+          return aliases.includes(clean);
+        } catch {
+          return false;
+        }
+      }) ?? null
+    );
+  },
+  resolveOrCreate(
+    name: string,
+    category?: string | null,
+    ean?: string | null,
+  ): Product {
+    const cleanEan = ean ? ean.replace(/\D/g, '') : null;
+    if (cleanEan) {
+      const byEan = productRepo.findByEan(cleanEan);
+      if (byEan) {
+        if (!byEan.category && category) {
+          byEan.category = category;
+          byEan.updatedAt = nowIso();
+          byEan.synced = 0;
+          saveState();
+        }
+        return byEan;
+      }
+    }
+
     const trimmed = name.trim();
     let best: Product | null = null;
     let bestScore = 0.72;
@@ -390,18 +425,36 @@ export const productRepo = {
       }
     }
     if (best) {
+      let changed = false;
       if (!best.category && category) {
         best.category = category;
+        changed = true;
+      }
+      if (cleanEan) {
+        try {
+          const aliases: string[] = JSON.parse(best.aliasesJson || '[]');
+          if (!aliases.includes(cleanEan)) {
+            aliases.push(cleanEan);
+            best.aliasesJson = JSON.stringify(aliases);
+            changed = true;
+          }
+        } catch {
+          best.aliasesJson = JSON.stringify([cleanEan]);
+          changed = true;
+        }
+      }
+      if (changed) {
         best.updatedAt = nowIso();
         best.synced = 0;
         saveState();
       }
       return best;
     }
+    const aliasesList = cleanEan ? [cleanEan] : [];
     const product: Product = {
       id: nextId('products'),
       name: trimmed,
-      aliasesJson: '[]',
+      aliasesJson: JSON.stringify(aliasesList),
       category: category ?? null,
       remoteId: null,
       updatedAt: nowIso(),
@@ -412,11 +465,46 @@ export const productRepo = {
     return product;
   },
   rename(id: number, name: string) {
+    const trimmed = name.trim();
+    if (!trimmed) return;
     const p = productRepo.getById(id);
     if (!p) return;
-    p.name = name.trim();
+    p.name = trimmed;
     p.updatedAt = nowIso();
     p.synced = 0;
+
+    // Propaga para os itens ativos no carrinho
+    for (const c of getState().cart_items) {
+      if (c.productId === id) {
+        c.productName = trimmed;
+        c.updatedAt = nowIso();
+      }
+    }
+
+    // Propaga para as listas de compras finalizadas no histórico
+    for (const list of getState().shopping_lists) {
+      if (!list.itemsJson) continue;
+      try {
+        const items = JSON.parse(list.itemsJson);
+        let changed = false;
+        if (Array.isArray(items)) {
+          for (const item of items) {
+            if (item && item.productId === id && item.productName !== trimmed) {
+              item.productName = trimmed;
+              changed = true;
+            }
+          }
+          if (changed) {
+            list.itemsJson = JSON.stringify(items);
+            list.updatedAt = nowIso();
+            list.synced = 0;
+          }
+        }
+      } catch {
+        // Ignora JSON malformado
+      }
+    }
+
     saveState();
   },
 };

@@ -31,6 +31,8 @@ export const CATEGORY_RULES: CategoryRule[] = [
       'LAVA ROUPAS',
       'PALHA ACO',
       'AM VPE',
+      'AM YPE',
+      'LV RP',
       'LR ',
     ],
     words: [
@@ -52,6 +54,7 @@ export const CATEGORY_RULES: CategoryRule[] = [
       'LIMPOL',
       'ESFR',
       'LR',
+      'YPE',
     ],
     prefixes: ['DETERG', 'AMACIAN', 'DESINFET', 'SABAO', 'SANIT', 'CLORIT', 'ESFR'],
   },
@@ -77,6 +80,8 @@ export const CATEGORY_RULES: CategoryRule[] = [
       'CR SEDA',
       'PAST AD',
       'AP DIC',
+      'AP BIC',
+      'D GIOV',
       'SH ',
       'PH ',
     ],
@@ -147,7 +152,7 @@ export const CATEGORY_RULES: CategoryRule[] = [
   },
   {
     category: 'Congelados',
-    phrases: ['LASANHA', 'LASAN', 'LI PC CONG'],
+    phrases: ['LASANHA', 'LASAN', 'LI PC CONG', 'LI FG', 'LI PC'],
     words: ['HAMBURGUER', 'HAMB', 'NUGGETS', 'NUGGET', 'PIZZA', 'PIZ', 'SORVETE', 'EMPANADO', 'SOBREC'],
     prefixes: ['HAMBUR', 'NUGGET', 'EMPANAD', 'LASAN', 'SOBREC'],
   },
@@ -205,8 +210,8 @@ export const CATEGORY_RULES: CategoryRule[] = [
   {
     category: 'Biscoitos e doces',
     phrases: ['MIST BOLO', 'MISTURA PARA BOLO', 'AGUA E SAL', 'CREAM CRACKER', 'CR CRACKER'],
-    words: ['BISCOITO', 'BISC', 'BOLACHA', 'WAFER', 'CHOCOLATE', 'CHOC', 'BOMBOM', 'GELATINA', 'PUDIM', 'PACOCA', 'COOKIE'],
-    prefixes: ['BISCOIT', 'BOLACH', 'CHOCOL', 'GELATIN'],
+    words: ['BISCOITO', 'BISC', 'BOLACHA', 'WAFER', 'TORTINHA', 'CHOCOLATE', 'CHOC', 'BOMBOM', 'GELATINA', 'PUDIM', 'PACOCA', 'COOKIE'],
+    prefixes: ['BISCOIT', 'BOLACH', 'CHOCOL', 'GELATIN', 'TORTINH', 'WAFER'],
   },
   {
     category: 'Padaria',
@@ -301,8 +306,14 @@ export const CATEGORY_RULES: CategoryRule[] = [
   },
   {
     category: 'Farinhas e açúcar',
-    phrases: ['FAR TRIGO', 'FAR MAND', 'SAL GROSSO', 'SAL REFINADO', 'SAL REF', 'AC REF', 'M S FRINA'],
+    phrases: ['FAR TRIGO', 'FAR MAND', 'F TR', 'SAL GROSSO', 'SAL REFINADO', 'SAL REF', 'AC REF', 'M S FRINA'],
     words: ['FARINHA', 'FAR', 'FUBA', 'AMIDO', 'MAIZENA', 'TAPIOCA', 'ACUCAR', 'ACUC', 'ADOCANTE', 'SAL', 'FLOCAO'],
     prefixes: ['FARINH', 'ACUCAR', 'ADOCANT', 'TAPIOC', 'FLOC'],
+  },
+  {
+    category: 'Mercearia',
+    phrases: ['OVO BRANCO', 'OVO VERM', 'OVOS BRANCOS', 'OVOS VERM'],
+    words: ['OVO', 'OVOS'],
+    prefixes: ['OVO'],
   },
 ];

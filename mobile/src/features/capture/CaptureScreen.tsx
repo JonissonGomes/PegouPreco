@@ -51,6 +51,8 @@ import {NfceReviewSheet} from '@/features/cart/NfceReviewSheet';
 import {SpendLimitBar} from '@/features/cart/SpendLimitBar';
 import {extractAccessKey, looksLikeReceipt, nfceConsultUrl} from '@/domain/nfceScan';
 import {ensureMarketOnMap} from '@/data/archivePurchase';
+import {guessCategory} from '@/domain/productCategory';
+import {lookupEanCatalog} from '@/data/remote/catalogClient';
 
 type ExtraMode = 'none' | 'text' | 'nfce';
 
@@ -229,19 +231,10 @@ export function CaptureScreen() {
 
   const ensureList = () => {
     if (!activeListName || !activeMarketId) {
-      appAlert(
-        'Lista necessária',
-        'Inicie uma compra na aba Compras antes de capturar.',
-        [
-          {label: 'Cancelar', style: 'cancel'},
-          {
-            label: 'Ir para Compras',
-            style: 'primary',
-            onPress: () => nav.navigate('Lists'),
-          },
-        ],
-      );
-      return false;
+      const defaultMarket = prefs.getCurrentMarketId() ?? 1;
+      prefs.setActiveList('Compras de hoje', defaultMarket);
+      prefs.setCurrentMarketId(defaultMarket);
+      refresh();
     }
     return true;
   };
@@ -496,7 +489,22 @@ export function CaptureScreen() {
       }
       const marketId = prefs.getActiveMarketId();
       for (const it of parsed.items) {
-        const product = productRepo.resolveOrCreate(it.description);
+        let name = it.description;
+        let category = guessCategory(it.description);
+        if (it.ean) {
+          try {
+            const catalog = await lookupEanCatalog(it.ean, 1500);
+            if (catalog?.name) {
+              name = catalog.name;
+              if (catalog.category) {
+                category = catalog.category;
+              }
+            }
+          } catch {
+            // Segue com a descrição da nota
+          }
+        }
+        const product = productRepo.resolveOrCreate(name, category, it.ean);
         const now = new Date().toISOString();
         priceLogRepo.insert({
           productId: product.id,
@@ -518,7 +526,7 @@ export function CaptureScreen() {
         });
         cartRepo.upsert({
           productId: product.id,
-          productName: it.description,
+          productName: name,
           quantity: it.quantity,
           retailPrice: it.unitPrice,
         });

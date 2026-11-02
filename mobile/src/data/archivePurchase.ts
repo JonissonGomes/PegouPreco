@@ -6,6 +6,7 @@ import {preferAddress} from '@/domain/marketUi';
 import type {Market} from '@/data/types';
 import {extractAccessKey} from '@/domain/nfceScan';
 import {guessCategory} from '@/domain/productCategory';
+import {lookupEanCatalog} from './remote/catalogClient';
 import {MAPBOX_ACCESS_TOKEN} from '@/config/env';
 import {getState, saveState} from '@/data/db';
 import {
@@ -221,11 +222,29 @@ export async function archiveNfcePurchase(
     return {ok: false, reason: 'duplicate'};
   }
   const contributorId = prefs.getLocalUserId();
-  const items = parsed.items.map((it, index) => {
-    const product = productRepo.resolveOrCreate(
-      it.description,
-      guessCategory(it.description),
-    );
+  const resolvedProducts = await Promise.all(
+    parsed.items.map(async it => {
+      let name = it.description;
+      let category = guessCategory(it.description);
+      if (it.ean) {
+        try {
+          const catalog = await lookupEanCatalog(it.ean, 2000);
+          if (catalog?.name) {
+            name = catalog.name;
+            if (catalog.category) {
+              category = catalog.category;
+            }
+          }
+        } catch {
+          // Fallback seguro para o nome da nota fiscal
+        }
+      }
+      const product = productRepo.resolveOrCreate(name, category, it.ean);
+      return {it, product};
+    }),
+  );
+
+  const items = resolvedProducts.map(({it, product}, index) => {
     if (!alreadyLogged.length) {
       priceLogRepo.insert({
         productId: product.id,

@@ -1,13 +1,15 @@
 import React, {useMemo, useState} from 'react';
 import {Pressable, ScrollView, StyleSheet, Text, TextInput, View} from 'react-native';
-import {Receipt, Search, Trash2, X} from 'lucide-react-native';
+import {Pencil, Receipt, Search, Trash2, X} from 'lucide-react-native';
 import {KeyboardSafeSheet} from '@/ui/keyboardSheet';
+import {AppButton, AppField} from '@/ui/chrome';
 import {colors, radii, space} from '@/ui/theme';
 import {formatBrl, formatQty} from '@/domain/money';
 import {resolveCategory} from '@/domain/productCategory';
 import {isFiscalList} from '@/domain/fiscal';
 import {lineSavings, lineTotal} from '@/domain/pricing';
 import type {CartItem, Product, ShoppingList} from '@/data/types';
+import {productRepo, useAppStore} from '@/store/appStore';
 import {categoryTone} from './categoryTone';
 import {CategoryIcon} from './categoryIcon';
 
@@ -44,8 +46,14 @@ export function HistoryDetailSheet({
   onDelete: (list: ShoppingList) => void;
   onReadNote: (list: ShoppingList) => void;
 }) {
+  const refresh = useAppStore(s => s.refresh);
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('Todas');
+  const [renamingItem, setRenamingItem] = useState<{
+    productId: number;
+    name: string;
+  } | null>(null);
+  const [renameText, setRenameText] = useState('');
   const items = useMemo(() => (list ? parseItems(list) : []), [list]);
   const categories = useMemo(() => {
     const set = new Set(items.map(it => itemCategory(it, products)));
@@ -194,9 +202,24 @@ export function HistoryDetailSheet({
                   <Receipt size={14} color={colors.navy} />
                 </View>
                 <View style={styles.body}>
-                  <Text style={styles.name} numberOfLines={1}>
-                    {item.productName}
-                  </Text>
+                  <View style={styles.nameRow}>
+                    <Text style={styles.name} numberOfLines={1}>
+                      {item.productName}
+                    </Text>
+                    <Pressable
+                      hitSlop={8}
+                      onPress={() => {
+                        setRenamingItem({
+                          productId: item.productId,
+                          name: item.productName,
+                        });
+                        setRenameText(item.productName);
+                      }}
+                      style={styles.renameBtn}
+                      accessibilityLabel="Renomear item">
+                      <Pencil size={13} color={colors.muted} />
+                    </Pressable>
+                  </View>
                   <View style={styles.metaRow}>
                     <Text style={styles.meta} numberOfLines={1}>
                       {formatQty(item.quantity)} × {formatBrl(item.retailPrice)}
@@ -217,6 +240,40 @@ export function HistoryDetailSheet({
             </Pressable>
           ) : null}
         </>
+      ) : null}
+
+      {renamingItem ? (
+        <KeyboardSafeSheet
+          visible={renamingItem != null}
+          onClose={() => setRenamingItem(null)}>
+          <Text style={styles.renameTitle}>Renomear produto</Text>
+          <Text style={styles.renameSub}>
+            O novo nome será atualizado em todo o aplicativo e no histórico.
+          </Text>
+          <AppField
+            label="Nome do produto"
+            value={renameText}
+            onChangeText={setRenameText}
+            autoFocus
+            compact
+          />
+          <AppButton
+            label="Salvar alteração"
+            onPress={() => {
+              const trimmed = renameText.trim();
+              if (trimmed && renamingItem) {
+                productRepo.rename(renamingItem.productId, trimmed);
+                refresh();
+              }
+              setRenamingItem(null);
+            }}
+          />
+          <AppButton
+            label="Cancelar"
+            outlined
+            onPress={() => setRenamingItem(null)}
+          />
+        </KeyboardSafeSheet>
       ) : null}
     </KeyboardSafeSheet>
   );
@@ -351,4 +408,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   removeText: {color: colors.danger, fontWeight: '800'},
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  renameBtn: {
+    padding: 2,
+    borderRadius: radii.sm,
+  },
+  renameTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: colors.navy,
+  },
+  renameSub: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.muted,
+    lineHeight: 18,
+    marginBottom: 6,
+  },
 });

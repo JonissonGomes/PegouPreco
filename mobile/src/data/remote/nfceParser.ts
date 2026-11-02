@@ -5,6 +5,7 @@ export type NfceItem = {
   description: string;
   quantity: number;
   unitPrice: number;
+  ean?: string | null;
 };
 
 export type NfceParseResult = {
@@ -95,6 +96,15 @@ export function sefazErrorMessage(code: string): string {
   return SEFAZ_ERRORS[code] ?? `A SEFAZ recusou a consulta (código ${code}).`;
 }
 
+function sanitizeEan(val: string | null): string | null {
+  if (!val) return null;
+  const digits = val.replace(/\D/g, '');
+  if (/SEM\s*GTIN/i.test(val) || digits.length < 8 || digits.length > 14) {
+    return null;
+  }
+  return digits;
+}
+
 /** Resposta XML da consulta por QR (nfeProc), usada em Pernambuco. */
 export function parseNfceXml(xml: string): NfceParseResult {
   const items: NfceItem[] = [];
@@ -105,7 +115,10 @@ export function parseNfceXml(xml: string): NfceParseResult {
     if (!description || !Number.isFinite(unit) || unit <= 0 || !(qty > 0)) {
       continue;
     }
-    items.push({description, quantity: qty, unitPrice: unit});
+    const ean =
+      sanitizeEan(xmlTag(det, 'cEAN')) ??
+      sanitizeEan(xmlTag(det, 'cEANTrib'));
+    items.push({description, quantity: qty, unitPrice: unit, ean});
   }
   const emit = xml.split(/<(?:\w+:)?dest[\s>]/)[0] ?? xml;
   const issued = xmlTag(xml, 'dhEmi');

@@ -51,7 +51,7 @@ export function PressableScale({
       disabled={disabled}
       hitSlop={hitSlop}
       style={style}>
-      <Animated.View style={{transform: [{scale}]}}>
+      <Animated.View style={[{transform: [{scale}]}, style]}>
         {children}
       </Animated.View>
     </Pressable>
