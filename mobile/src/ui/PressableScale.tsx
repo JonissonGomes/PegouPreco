@@ -51,7 +51,12 @@ export function PressableScale({
       disabled={disabled}
       hitSlop={hitSlop}
       style={style}>
-      <Animated.View style={[{transform: [{scale}]}, style]}>
+      <Animated.View
+        style={{
+          transform: [{scale}],
+          width: '100%',
+          alignSelf: 'stretch',
+        }}>
         {children}
       </Animated.View>
     </Pressable>

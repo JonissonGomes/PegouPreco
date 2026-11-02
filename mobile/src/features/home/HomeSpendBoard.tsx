@@ -129,24 +129,25 @@ export function HomeSpendBoard({
               </View>
               <View style={styles.categoryGrid}>
                 {slices.map((item, index) => (
-                  <PressableScale
-                    key={item.category}
-                    style={styles.gridCard}
-                    activeScale={0.97}
-                    onPress={() => onOpenCategory?.(item.category)}>
-                    <View style={styles.gridItemRow}>
-                      <View
-                        style={[
-                          styles.dot,
-                          {backgroundColor: heatColor(index, slices.length)},
-                        ]}
-                      />
-                      <Text style={styles.legendName} numberOfLines={1}>
-                        {item.category}
-                      </Text>
-                    </View>
-                    <Text style={styles.gridValue}>{formatBrl(item.total)}</Text>
-                  </PressableScale>
+                  <View key={item.category} style={styles.gridCol}>
+                    <PressableScale
+                      style={styles.gridCard}
+                      activeScale={0.97}
+                      onPress={() => onOpenCategory?.(item.category)}>
+                      <View style={styles.gridItemRow}>
+                        <View
+                          style={[
+                            styles.dot,
+                            {backgroundColor: heatColor(index, slices.length)},
+                          ]}
+                        />
+                        <Text style={styles.legendName} numberOfLines={1}>
+                          {item.category}
+                        </Text>
+                      </View>
+                      <Text style={styles.gridValue}>{formatBrl(item.total)}</Text>
+                    </PressableScale>
+                  </View>
                 ))}
               </View>
             </View>
@@ -414,10 +415,14 @@ const styles = StyleSheet.create({
   categoryGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    justifyContent: 'space-between',
+    rowGap: 8,
+  },
+  gridCol: {
+    width: '48.5%',
   },
   gridCard: {
-    width: '48.5%',
+    width: '100%',
     backgroundColor: '#F8FAFC',
     borderRadius: 14,
     paddingVertical: 10,
